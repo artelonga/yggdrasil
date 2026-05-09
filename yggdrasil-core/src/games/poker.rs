@@ -130,9 +130,7 @@ impl YggPoker {
 
     /// Saldo atual de sementes na carteira.
     pub fn sementes_balance(&self) -> u64 {
-        WalletManager::new(&self.storage)
-            .get_balance()
-            .unwrap_or(0)
+        WalletManager::new(&self.storage).get_balance().unwrap_or(0)
     }
 }
 

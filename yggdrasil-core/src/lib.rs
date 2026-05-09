@@ -28,3 +28,4 @@ pub mod upstream_games {
 
 pub mod games;
 pub mod lobby;
+pub mod sementes;
