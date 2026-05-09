@@ -14,18 +14,18 @@ use game_core::{
     games::GameAction,
 };
 use nanoid::nanoid;
-use yggdrasil_core::games::{YggGame, YggSnake};
+use yggdrasil_core::games::{YggGame, YggTetris};
 
 use super::common::{self, InputRequest, StartResponse, TickResponse, map_to_value};
 
-pub struct SnakeState {
-    sessions: Mutex<HashMap<String, YggSnake>>,
+pub struct TetrisState {
+    sessions: Mutex<HashMap<String, YggTetris>>,
     db: Mutex<rusqlite::Connection>,
 }
 
-pub fn make_snake_state(db_path: &str) -> rusqlite::Result<Arc<SnakeState>> {
+pub fn make_tetris_state(db_path: &str) -> rusqlite::Result<Arc<TetrisState>> {
     let conn = common::init_db(db_path)?;
-    Ok(Arc::new(SnakeState {
+    Ok(Arc::new(TetrisState {
         sessions: Mutex::new(HashMap::new()),
         db: Mutex::new(conn),
     }))
@@ -33,19 +33,20 @@ pub fn make_snake_state(db_path: &str) -> rusqlite::Result<Arc<SnakeState>> {
 
 fn parse_direction(s: &str) -> Input {
     match s {
-        "Up" => Input::Move(Direction::Up),
-        "Down" => Input::Move(Direction::Down),
         "Left" => Input::Move(Direction::Left),
         "Right" => Input::Move(Direction::Right),
+        "Down" => Input::Move(Direction::Down),
+        "Rotate" => Input::Move(Direction::Up),
+        "HardDrop" => Input::Action,
         "Quit" => Input::Quit,
-        _ => Input::None,
+        _ => Input::None, // "Drop" (gravity tick) and unknown inputs
     }
 }
 
-/// `GET /api/v1/games/snake/start` — cria sessão e retorna estado inicial.
-pub async fn start_game(State(state): State<Arc<SnakeState>>) -> impl IntoResponse {
-    let universe = Universe::snake();
-    let game = YggSnake::new(universe);
+/// `GET /api/v1/games/tetris/start` — cria sessão e retorna estado inicial.
+pub async fn start_game(State(state): State<Arc<TetrisState>>) -> impl IntoResponse {
+    let universe = Universe::tetris();
+    let game = YggTetris::new(universe);
     let state_val = map_to_value(&game.render_json());
     let id = nanoid!();
 
@@ -58,10 +59,10 @@ pub async fn start_game(State(state): State<Arc<SnakeState>>) -> impl IntoRespon
     })
 }
 
-/// `POST /api/v1/games/snake/:id/input` — avança um tick com o input recebido.
+/// `POST /api/v1/games/tetris/:id/input` — avança um tick com o input recebido.
 pub async fn send_input(
     Path(id): Path<String>,
-    State(state): State<Arc<SnakeState>>,
+    State(state): State<Arc<TetrisState>>,
     Json(body): Json<InputRequest>,
 ) -> impl IntoResponse {
     let input = parse_direction(&body.direction);
@@ -87,7 +88,7 @@ pub async fn send_input(
     let action_str = if action == GameAction::Continue {
         "continue"
     } else {
-        common::save_score_locked(&state.db, &body.user_id, "snake", score);
+        common::save_score_locked(&state.db, &body.user_id, "tetris", score);
         "quit"
     };
 
@@ -112,10 +113,10 @@ mod tests {
     use tower::ServiceExt;
 
     fn make_app(db_path: &str) -> Router {
-        let state = make_snake_state(db_path).unwrap();
+        let state = make_tetris_state(db_path).unwrap();
         Router::new()
-            .route("/api/v1/games/snake/start", get(start_game))
-            .route("/api/v1/games/snake/{id}/input", post(send_input))
+            .route("/api/v1/games/tetris/start", get(start_game))
+            .route("/api/v1/games/tetris/{id}/input", post(send_input))
             .with_state(state)
     }
 
@@ -128,7 +129,7 @@ mod tests {
         let resp = app
             .oneshot(
                 Request::builder()
-                    .uri("/api/v1/games/snake/start")
+                    .uri("/api/v1/games/tetris/start")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -141,26 +142,26 @@ mod tests {
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert!(v["id"].is_string());
-        assert!(v["state"]["width"].is_number());
-        assert!(v["state"]["tiles"].is_array());
+        assert!(v["state"]["board"].is_array());
+        assert_eq!(v["state"]["board"].as_array().unwrap().len(), 20);
         assert_eq!(v["score"], 0);
     }
 
     #[tokio::test]
-    async fn send_input_right_returns_continue() {
+    async fn drop_input_returns_continue() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let state = make_snake_state(&db).unwrap();
+        let state = make_tetris_state(&db).unwrap();
         let app = Router::new()
-            .route("/api/v1/games/snake/start", get(start_game))
-            .route("/api/v1/games/snake/{id}/input", post(send_input))
+            .route("/api/v1/games/tetris/start", get(start_game))
+            .route("/api/v1/games/tetris/{id}/input", post(send_input))
             .with_state(state.clone());
 
         let resp = app
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/api/v1/games/snake/start")
+                    .uri("/api/v1/games/tetris/start")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -172,12 +173,12 @@ mod tests {
         let start: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let id = start["id"].as_str().unwrap().to_string();
 
-        let body = serde_json::json!({ "direction": "Right" }).to_string();
+        let body = serde_json::json!({ "direction": "Drop" }).to_string();
         let resp = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/v1/games/snake/{id}/input"))
+                    .uri(format!("/api/v1/games/tetris/{id}/input"))
                     .header("content-type", "application/json")
                     .body(Body::from(body))
                     .unwrap(),
@@ -191,25 +192,25 @@ mod tests {
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["action"], "continue");
-        assert!(v["state"]["tiles"].is_array());
+        assert!(v["state"]["board"].is_array());
         assert!(v["score"].is_number());
     }
 
     #[tokio::test]
-    async fn send_quit_saves_score_and_returns_quit() {
+    async fn quit_saves_score_and_returns_quit() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let state = make_snake_state(&db).unwrap();
+        let state = make_tetris_state(&db).unwrap();
         let app = Router::new()
-            .route("/api/v1/games/snake/start", get(start_game))
-            .route("/api/v1/games/snake/{id}/input", post(send_input))
+            .route("/api/v1/games/tetris/start", get(start_game))
+            .route("/api/v1/games/tetris/{id}/input", post(send_input))
             .with_state(state.clone());
 
         let resp = app
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/api/v1/games/snake/start")
+                    .uri("/api/v1/games/tetris/start")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -221,12 +222,12 @@ mod tests {
         let start: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let id = start["id"].as_str().unwrap().to_string();
 
-        let body = serde_json::json!({ "direction": "Quit" }).to_string();
+        let body = serde_json::json!({ "direction": "Quit", "user_id": "jogador1" }).to_string();
         let resp = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/api/v1/games/snake/{id}/input"))
+                    .uri(format!("/api/v1/games/tetris/{id}/input"))
                     .header("content-type", "application/json")
                     .body(Body::from(body))
                     .unwrap(),
@@ -246,7 +247,7 @@ mod tests {
             .lock()
             .unwrap()
             .query_row(
-                "SELECT COUNT(*) FROM scores WHERE game = 'snake'",
+                "SELECT COUNT(*) FROM scores WHERE game = 'tetris'",
                 [],
                 |row| row.get(0),
             )
@@ -255,17 +256,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_input_unknown_game_returns_404() {
+    async fn unknown_session_returns_404() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("t.db").to_string_lossy().to_string();
         let app = make_app(&db);
 
-        let body = serde_json::json!({ "direction": "Right" }).to_string();
+        let body = serde_json::json!({ "direction": "Left" }).to_string();
         let resp = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/api/v1/games/snake/nope/input")
+                    .uri("/api/v1/games/tetris/nope/input")
                     .header("content-type", "application/json")
                     .body(Body::from(body))
                     .unwrap(),
