@@ -20,17 +20,24 @@ const SYMBOL = {
 const Direction = { Up: 'Up', Down: 'Down', Left: 'Left', Right: 'Right' };
 
 const state = {
+  canvas: null,
   playerX: 0,
   playerY: 0,
   tiles: null,
   width: 0,
   height: 0,
   ctx: null,
+  animating: false,
 };
 
 function isWall(x, y) {
   if (x < 0 || y < 0 || x >= state.width || y >= state.height) return true;
   return state.tiles[y][x] === 'Wall';
+}
+
+function setStatus(msg) {
+  const el = document.getElementById('rodape');
+  if (el) el.textContent = msg;
 }
 
 function draw() {
@@ -87,7 +94,102 @@ async function enterPortal() {
   window.location.assign('/games/' + slug);
 }
 
+function bfs(startX, startY, goalX, goalY) {
+  if (startX === goalX && startY === goalY) return [];
+
+  const queue = [[startX, startY]];
+  const prev = new Map();
+  prev.set(`${startX},${startY}`, null);
+  let visited = 0;
+
+  while (queue.length > 0) {
+    if (visited >= 200) return null;
+    const [x, y] = queue.shift();
+    visited++;
+
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const key = `${nx},${ny}`;
+      if (!prev.has(key) && !isWall(nx, ny)) {
+        prev.set(key, [x, y]);
+        if (nx === goalX && ny === goalY) {
+          const path = [];
+          let cx = nx, cy = ny;
+          while (cx !== startX || cy !== startY) {
+            path.unshift([cx, cy]);
+            [cx, cy] = prev.get(`${cx},${cy}`);
+          }
+          return path;
+        }
+        queue.push([nx, ny]);
+      }
+    }
+  }
+  return null;
+}
+
+function animatePath(path, onComplete) {
+  state.animating = true;
+  let i = 0;
+
+  function step() {
+    if (i >= path.length) {
+      state.animating = false;
+      onComplete();
+      return;
+    }
+    [state.playerX, state.playerY] = path[i];
+    draw();
+    i++;
+    setTimeout(step, 50);
+  }
+
+  step();
+}
+
+function handleClick(e) {
+  if (state.animating) return;
+
+  const rect = state.canvas.getBoundingClientRect();
+  const scaleX = state.canvas.width / rect.width;
+  const scaleY = state.canvas.height / rect.height;
+  const tileX = Math.floor((e.clientX - rect.left) * scaleX / TILE);
+  const tileY = Math.floor((e.clientY - rect.top) * scaleY / TILE);
+
+  if (tileX < 0 || tileX >= state.width || tileY < 0 || tileY >= state.height) return;
+
+  if (isWall(tileX, tileY)) {
+    setStatus('Sem caminho');
+    return;
+  }
+
+  const path = bfs(state.playerX, state.playerY, tileX, tileY);
+  if (path === null) {
+    setStatus('Sem caminho');
+    return;
+  }
+
+  setStatus('');
+
+  const destTile = state.tiles[tileY][tileX];
+  const isPortal = destTile && typeof destTile === 'object' && destTile.Portal;
+  if (isPortal) {
+    state.canvas.setAttribute('aria-label', `movendo para portal ${destTile.Portal}`);
+  }
+
+  if (path.length === 0) {
+    if (isPortal) enterPortal();
+    return;
+  }
+
+  animatePath(path, () => {
+    if (isPortal) enterPortal();
+  });
+}
+
 function handleKey(e) {
+  if (state.animating) return;
   let dx = 0;
   let dy = 0;
 
@@ -122,6 +224,7 @@ async function initLobby() {
   const canvas = document.getElementById('canvas');
   canvas.width = width * TILE;
   canvas.height = height * TILE;
+  state.canvas = canvas;
   state.ctx = canvas.getContext('2d');
   state.tiles = tiles;
   state.width = width;
@@ -131,6 +234,7 @@ async function initLobby() {
 
   draw();
   window.addEventListener('keydown', handleKey);
+  canvas.addEventListener('click', handleClick);
 }
 
 initLobby().catch(console.error);
