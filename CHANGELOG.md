@@ -4,6 +4,17 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-05-09
+
+### Added
+- `yggdrasil_core::lobby` — Universe 40x20 com 4 portais (snake/tetris/invaders/poker) em grid 2x2 (YG-2).
+- Constantes públicas `lobby::slug::*` e `lobby::pos::*` para uso por adaptadores e testes.
+- 8 testes unitários cobrindo dimensões, objetivo PT-BR, posição de cada portal, ausência de pointset, e transição via `Session::teleport_to`.
+
+### Notes
+- Pointset removido conforme decisão de produto (ver `YG-2.md`).
+- Adaptadores que conectam cada portal aos jogos reais entram em YG-6..YG-9.
+
 ## [0.0.1] — 2026-05-09
 
 ### Added

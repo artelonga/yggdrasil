@@ -1,7 +1,7 @@
 ---
 id: 2
 title: "Lobby Universe com 4 portais (snake, tetris, invaders, poker)"
-status: todo
+status: done
 priority: critical
 type: feat
 release: 0.1.0
@@ -29,12 +29,12 @@ imitar, removendo o portal `pointset` e ajustando posições para um layout
 
 ## Critérios de aceitação
 
-- [ ] `yggdrasil-core/src/lobby.rs` exporta `pub fn lobby() -> Universe`.
-- [ ] 4 portais nas coordenadas: snake (10,8), tetris (30,8), invaders (10,12), poker (30,12).
-- [ ] Cada portal tem `Tile::Portal(slug)` onde slug = nome do jogo.
-- [ ] `Universe.objective.description` = `"Escolha um universo para entrar"`.
-- [ ] Teste unitário: `lobby().map.get_tile(10, 8) == Some(&Tile::Portal("snake"))`.
-- [ ] Teste de teleporte: `Session::new("yggdrasil").teleport_to("snake")` registra transição.
+- [x] `yggdrasil-core/src/lobby.rs` exporta `pub fn lobby() -> Universe`.
+- [x] 4 portais nas coordenadas: snake (10,8), tetris (30,8), invaders (10,12), poker (30,12).
+- [x] Cada portal tem `Tile::Portal(slug)` onde slug = nome do jogo.
+- [x] `Universe.objective.description` = `"Escolha um universo para entrar"`.
+- [x] Teste unitário: `lobby().map.get_tile(10, 8) == Some(&Tile::Portal("snake"))`.
+- [x] Teste de teleporte: `Session::new("yggdrasil").teleport_to("snake")` registra transição.
 
 ## Commit
 

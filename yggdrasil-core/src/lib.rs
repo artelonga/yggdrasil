@@ -25,3 +25,5 @@ pub mod engine {
 pub mod upstream_games {
     pub use game_core::games::*;
 }
+
+pub mod lobby;
