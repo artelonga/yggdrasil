@@ -1,7 +1,7 @@
 ---
 id: 9
 title: "Adapter para Poker com sementes (WalletManager)"
-status: todo
+status: done
 priority: high
 type: feat
 release: 0.5.0
@@ -14,7 +14,7 @@ labels:
   - sementes
 module: yggdrasil-core
 created_at: 2026-05-09T00:00:00Z
-updated_at: 2026-05-09T00:00:00Z
+updated_at: 2026-05-09T14:21:32.285106+00:00
 ---
 
 GIVEN o conceito de "sementes" está estabelecido (YG-10) e os outros 3
