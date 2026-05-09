@@ -5,7 +5,7 @@ mod lobby_routes;
 use axum::{
     Router,
     response::{Html, IntoResponse, Redirect},
-    routing::get,
+    routing::{get, post},
 };
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
@@ -24,6 +24,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/lobby", get(serve_lobby))
         .route("/health", get(health))
         .route("/api/v1/lobby", get(lobby_routes::get_lobby))
+        .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
         .nest_service("/static", ServeDir::new("yggdrasil-web/static"));
 
     let addr: SocketAddr = "0.0.0.0:3030".parse()?;
