@@ -1,0 +1,17 @@
+/target
+**/*.rs.bk
+.DS_Store
+.env
+.env.local
+node_modules/
+dist/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# co-auto runtime state
+/.co/index.bin
+
+# Build artifacts
+/yggdrasil-web/static/dist/

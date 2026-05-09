@@ -1,0 +1,24 @@
+name: work
+version: 1
+content_types:
+  - epic
+  - user-story
+  - task
+  - release
+properties:
+  status:
+    kind: text
+    required: true
+  parent:
+    kind: link
+  module:
+    kind: text
+  priority:
+    kind: text
+  release:
+    kind: text
+  labels:
+    kind: list
+
+# Conteúdo parseado a partir de markdown:
+# user-story / task: ## Given, ## When, ## Then -> {context, action, outcome}

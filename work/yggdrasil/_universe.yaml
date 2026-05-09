@@ -1,0 +1,44 @@
+name: Yggdrasil
+description: >
+  Universo de desenvolvimento do Yggdrasil — board com user-stories e tarefas
+  da plataforma de universos digitais. Compatível com co-auto.
+schema_version: 1
+content_types:
+  - name: user-story
+    schema:
+      id:
+        type: number
+        required: true
+      title:
+        type: string
+        required: true
+      status:
+        type: enum
+        values: [todo, in_progress, done, blocked, cancelled]
+      priority:
+        type: enum
+        values: [low, medium, high, critical]
+      type:
+        type: string
+      parent:
+        type: number
+      module:
+        type: string
+  - name: task
+    schema:
+      title:
+        type: string
+        required: true
+      status:
+        type: enum
+        values: [todo, doing, done]
+  - name: release
+    schema:
+      title:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      target_date:
+        type: date

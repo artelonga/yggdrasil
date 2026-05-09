@@ -1,0 +1,14 @@
+# Yggdrasil Universe Registry
+# Permite que instâncias do CO (co.artelonga.com.br) se inscrevam nos universos públicos
+# do Yggdrasil. Análogo ao co-universes.yaml do repo co.
+
+server: https://co.artelonga.com.br
+
+universes:
+  - slug: yggdrasil
+    name: Yggdrasil
+    local: .
+    visibility: public-subscribable
+    description: >
+      Plataforma de universos digitais conectados — engine 2D portável, jogos
+      como universos, API pública para sementes/universos.
