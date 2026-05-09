@@ -8,6 +8,9 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
+use games::invaders_routes::{
+    make_invaders_state, send_input as invaders_input, start_game as invaders_start,
+};
 use games::snake_routes::{make_snake_state, send_input as snake_input, start_game as snake_start};
 use games::tetris_routes::{
     make_tetris_state, send_input as tetris_input, start_game as tetris_start,
@@ -27,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let db_path = std::env::var("YGGDRASIL_DB").unwrap_or_else(|_| "yggdrasil.db".to_string());
     let snake_state = make_snake_state(&db_path).expect("sqlite init (snake)");
     let tetris_state = make_tetris_state(&db_path).expect("sqlite init (tetris)");
+    let invaders_state = make_invaders_state(&db_path).expect("sqlite init (invaders)");
 
     let snake_router = Router::new()
         .route("/api/v1/games/snake/start", get(snake_start))
@@ -38,16 +42,23 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/games/tetris/{id}/input", post(tetris_input))
         .with_state(tetris_state);
 
+    let invaders_router = Router::new()
+        .route("/api/v1/games/invaders/start", get(invaders_start))
+        .route("/api/v1/games/invaders/{id}/input", post(invaders_input))
+        .with_state(invaders_state);
+
     let app = Router::new()
         .route("/", get(root))
         .route("/lobby", get(serve_lobby))
         .route("/games/snake", get(serve_snake))
         .route("/games/tetris", get(serve_tetris))
+        .route("/games/invaders", get(serve_invaders))
         .route("/health", get(health))
         .route("/api/v1/lobby", get(lobby_routes::get_lobby))
         .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
         .merge(snake_router)
         .merge(tetris_router)
+        .merge(invaders_router)
         .nest_service("/static", ServeDir::new("yggdrasil-web/static"));
 
     let addr: SocketAddr = "0.0.0.0:3030".parse()?;
@@ -71,6 +82,10 @@ async fn serve_snake() -> impl IntoResponse {
 
 async fn serve_tetris() -> impl IntoResponse {
     Html(include_str!("../static/games/tetris.html"))
+}
+
+async fn serve_invaders() -> impl IntoResponse {
+    Html(include_str!("../static/games/invaders.html"))
 }
 
 async fn health() -> impl IntoResponse {
