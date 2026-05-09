@@ -1,7 +1,11 @@
 //! Yggdrasil web server — entrypoint.
 
+mod auth;
 mod games;
 mod lobby_routes;
+
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 
 use axum::{
     Router,
@@ -15,7 +19,6 @@ use games::snake_routes::{make_snake_state, send_input as snake_input, start_gam
 use games::tetris_routes::{
     make_tetris_state, send_input as tetris_input, start_game as tetris_start,
 };
-use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use tracing::info;
 
@@ -27,10 +30,29 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    let jwt_secret = std::env::var("YGGDRASIL_JWT_SECRET").map_err(|_| {
+        anyhow::anyhow!(
+            "YGGDRASIL_JWT_SECRET não configurado — defina esta variável de ambiente para iniciar o servidor"
+        )
+    })?;
+
     let db_path = std::env::var("YGGDRASIL_DB").unwrap_or_else(|_| "yggdrasil.db".to_string());
+    let auth_conn = rusqlite::Connection::open(&db_path)?;
+    auth::init_auth_db(&auth_conn)?;
+    let auth_state = Arc::new(auth::AuthState {
+        db: Arc::new(Mutex::new(auth_conn)),
+        mail: Arc::new(game_core::mail::LogMailProvider),
+        jwt_secret,
+    });
+
     let snake_state = make_snake_state(&db_path).expect("sqlite init (snake)");
     let tetris_state = make_tetris_state(&db_path).expect("sqlite init (tetris)");
     let invaders_state = make_invaders_state(&db_path).expect("sqlite init (invaders)");
+
+    let auth_router = Router::new()
+        .route("/api/v1/auth/code", post(auth::request_code))
+        .route("/api/v1/auth/verify", post(auth::verify_code))
+        .with_state(auth_state);
 
     let snake_router = Router::new()
         .route("/api/v1/games/snake/start", get(snake_start))
@@ -56,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/api/v1/lobby", get(lobby_routes::get_lobby))
         .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
+        .merge(auth_router)
         .merge(snake_router)
         .merge(tetris_router)
         .merge(invaders_router)
