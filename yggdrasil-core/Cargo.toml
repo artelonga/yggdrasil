@@ -1,0 +1,19 @@
+[package]
+name = "yggdrasil-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Yggdrasil — núcleo: lobby, modelos de universo, integração com game-core"
+publish = false
+
+[dependencies]
+game-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+nanoid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

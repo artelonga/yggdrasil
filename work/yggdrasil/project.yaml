@@ -1,0 +1,8 @@
+name: Yggdrasil
+key: YG
+description: >
+  Yggdrasil — plataforma de universos digitais. Lobby 2D com jogos
+  (Snake/Tetris/Invaders/Poker), API pública, ponte Godot e modelo de
+  recompensas (sementes).
+created_at: 2026-05-09T00:00:00Z
+next_id: 21

@@ -1,0 +1,52 @@
+[workspace]
+resolver = "2"
+members = [
+    "yggdrasil-core",
+    "yggdrasil-web",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/artelonga/yggdrasil"
+description = "Yggdrasil — plataforma viva de criação, organização e conexão de universos digitais"
+publish = false
+
+[workspace.dependencies]
+# Engine importado do co (path dep no dev; será git rev em release — ver YG-17)
+game-core = { path = "../co/game-core" }
+
+# Web
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
+hyper = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+toml = "0.8"
+
+# Auth (alinhado com co-web/src/auth.rs)
+jsonwebtoken = "9"
+argon2 = "0.5"
+
+# Utilities
+anyhow = "1.0"
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+nanoid = "0.4"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Storage
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Testing
+tempfile = "3"
