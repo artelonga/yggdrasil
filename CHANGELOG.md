@@ -4,6 +4,11 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-05-09
+
+### Added
+- `docs/REWARDS.md` — sistema de 6 tiers em PT-BR (Semente → Yggdrasil) para a campanha de financiamento, com add-ons, custo de entrega e estrutura i18n prevista (YG-21).
+
 ## [0.1.0] — 2026-05-09
 
 ### Added
