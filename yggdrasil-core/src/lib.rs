@@ -26,4 +26,5 @@ pub mod upstream_games {
     pub use game_core::games::*;
 }
 
+pub mod games;
 pub mod lobby;

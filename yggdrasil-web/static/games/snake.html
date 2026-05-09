@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snake — Yggdrasil</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d12;
+      color: #e8e3d3;
+      font-family: system-ui, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+    h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.8rem; margin-bottom: 0.4rem; }
+    .subtitulo { opacity: 0.5; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    .info { display: flex; gap: 2rem; margin-bottom: 1rem; font-size: 0.95rem; }
+    .info span strong { font-size: 1.3rem; margin-left: 0.3rem; color: #d4af37; }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      border: 1px solid #1a1a2e;
+    }
+    .rodape {
+      min-height: 1.4em;
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: #e8a030;
+      letter-spacing: 0.03em;
+    }
+  </style>
+</head>
+<body>
+  <h1>🐍 SNAKE</h1>
+  <p class="subtitulo">Use as setas ou WASD para mover · ESC para sair</p>
+  <div class="info">
+    <span>Pontuação:<strong id="score">0</strong></span>
+  </div>
+  <canvas id="canvas" aria-label="Jogo Snake"></canvas>
+  <p id="rodape" class="rodape" aria-live="polite"></p>
+  <script src="/static/games/snake.js"></script>
+</body>
+</html>
