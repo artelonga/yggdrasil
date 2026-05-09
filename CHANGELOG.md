@@ -4,6 +4,15 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-09
+
+### Added
+- `GET /api/v1/lobby` em `yggdrasil-web/src/lobby_routes.rs` — retorna JSON do Universe do lobby (YG-3).
+- `yggdrasil-web/static/lobby.html` — página do lobby que carrega `lobby.js`.
+- `yggdrasil-web/static/lobby.js` — renderiza grid 40x20 (16px/tile) em `<canvas>` com cores: parede `#1a1a2e`, portal `#d4af37`, vazio `#0d0d12`; legenda PT-BR dos 4 jogos.
+- Rota `GET /lobby` no servidor serve o `lobby.html`; `GET /` redireciona para `/lobby`.
+- `static/index.html` com redirect via `<meta http-equiv="refresh">` e `window.location.replace`.
+
 ## [0.1.1] — 2026-05-09
 
 ### Added

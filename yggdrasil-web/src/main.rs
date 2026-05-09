@@ -1,9 +1,12 @@
 //! Yggdrasil web server — entrypoint.
-//!
-//! `v0.0.1`: apenas health check e serve estáticos de `static/`. As rotas
-//! reais (lobby, jogos, API pública) entram nos YG-3+ tasks.
 
-use axum::{Router, response::IntoResponse, routing::get};
+mod lobby_routes;
+
+use axum::{
+    Router,
+    response::{Html, IntoResponse, Redirect},
+    routing::get,
+};
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use tracing::info;
@@ -17,7 +20,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let app = Router::new()
+        .route("/", get(root))
+        .route("/lobby", get(serve_lobby))
         .route("/health", get(health))
+        .route("/api/v1/lobby", get(lobby_routes::get_lobby))
         .nest_service("/static", ServeDir::new("yggdrasil-web/static"));
 
     let addr: SocketAddr = "0.0.0.0:3030".parse()?;
@@ -25,6 +31,14 @@ async fn main() -> anyhow::Result<()> {
     info!("yggdrasil-web ouvindo em http://{}", addr);
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn root() -> impl IntoResponse {
+    Redirect::to("/lobby")
+}
+
+async fn serve_lobby() -> impl IntoResponse {
+    Html(include_str!("../static/lobby.html"))
 }
 
 async fn health() -> impl IntoResponse {
