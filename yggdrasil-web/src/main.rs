@@ -1,5 +1,6 @@
 //! Yggdrasil web server — entrypoint.
 
+mod api;
 mod auth;
 mod games;
 mod lobby_routes;
@@ -49,6 +50,24 @@ async fn main() -> anyhow::Result<()> {
     let tetris_state = make_tetris_state(&db_path).expect("sqlite init (tetris)");
     let invaders_state = make_invaders_state(&db_path).expect("sqlite init (invaders)");
 
+    let sementes_db = std::env::var("YGGDRASIL_SEMENTES_DB")
+        .unwrap_or_else(|_| "yggdrasil-sementes.db".to_string());
+    let sementes_storage = Arc::new(
+        game_core::storage::Storage::open(std::path::Path::new(&sementes_db))
+            .map_err(|e| anyhow::anyhow!("Erro ao abrir storage de sementes: {e}"))?,
+    );
+    let me_state = Arc::new(api::me::MeState {
+        jwt_secret: auth_state.jwt_secret.clone(),
+        sementes: Arc::new(yggdrasil_core::sementes::Sementes::new(sementes_storage)),
+    });
+
+    let me_router = Router::new()
+        .route(
+            "/api/v1/me/sementes",
+            axum::routing::get(api::me::get_sementes),
+        )
+        .with_state(me_state);
+
     let auth_router = Router::new()
         .route("/api/v1/auth/code", post(auth::request_code))
         .route("/api/v1/auth/verify", post(auth::verify_code))
@@ -79,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/lobby", get(lobby_routes::get_lobby))
         .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
         .merge(auth_router)
+        .merge(me_router)
         .merge(snake_router)
         .merge(tetris_router)
         .merge(invaders_router)

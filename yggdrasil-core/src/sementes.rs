@@ -22,6 +22,11 @@ impl From<game_core::engine::error::GameError> for SementesError {
 ///
 /// Todas as APIs públicas falam "sementes" e "saldo"; o `WalletManager` do engine
 /// nunca aparece na superfície pública.
+pub struct SaldoInfo {
+    pub saldo: u64,
+    pub atualizado_em: chrono::DateTime<chrono::Utc>,
+}
+
 pub struct Sementes {
     storage: Arc<Storage>,
 }
@@ -38,6 +43,25 @@ impl Sementes {
     /// Retorna o saldo atual de sementes do usuário.
     pub fn saldo(&self, _user_id: &str) -> Result<u64> {
         self.inner().get_balance().map_err(Into::into)
+    }
+
+    /// Retorna saldo e timestamp de última atualização para o usuário.
+    pub fn saldo_info(&self, user_id: &str) -> Result<SaldoInfo> {
+        match self
+            .storage
+            .get_wallet_for_user(user_id)
+            .map_err(SementesError::from)?
+        {
+            Some(wallet) => Ok(SaldoInfo {
+                saldo: wallet.balance,
+                atualizado_em: chrono::DateTime::from_timestamp(wallet.last_updated, 0)
+                    .unwrap_or_else(chrono::Utc::now),
+            }),
+            None => Ok(SaldoInfo {
+                saldo: 0,
+                atualizado_em: chrono::Utc::now(),
+            }),
+        }
     }
 
     /// Credita `qtd` sementes ao usuário.

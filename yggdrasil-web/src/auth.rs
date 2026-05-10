@@ -24,6 +24,7 @@ const MAX_ATTEMPTS: u32 = 3;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
+    #[serde(default)]
     pub email: String,
     pub exp: usize,
     pub iat: usize,
@@ -90,6 +91,17 @@ pub fn init_auth_db(conn: &Connection) -> rusqlite::Result<()> {
             requests TEXT NOT NULL
         );",
     )
+}
+
+pub fn verify_jwt(token: &str, secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )?;
+    Ok(token_data.claims.sub)
 }
 
 pub fn sign_jwt(user_id: &str, email: &str, secret: &str) -> anyhow::Result<String> {
