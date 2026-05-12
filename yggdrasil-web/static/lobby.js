@@ -102,8 +102,9 @@ function bfs(startX, startY, goalX, goalY) {
   prev.set(`${startX},${startY}`, null);
   let visited = 0;
 
+  const limit = state.width * state.height;
   while (queue.length > 0) {
-    if (visited >= 200) return null;
+    if (visited >= limit) return null;
     const [x, y] = queue.shift();
     visited++;
 
