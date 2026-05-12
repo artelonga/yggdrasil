@@ -20,7 +20,10 @@ pub const BOT_DISPLAY_NAME: &str = "Bot Carvalho";
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeatOccupant {
     Empty,
-    Human { user_id: String, sat_at: DateTime<Utc> },
+    Human {
+        user_id: String,
+        sat_at: DateTime<Utc>,
+    },
     Bot,
 }
 
@@ -60,7 +63,10 @@ impl PokerLobby {
     }
 
     pub fn bot_count(&self) -> usize {
-        self.seats.iter().filter(|s| matches!(s, SeatOccupant::Bot)).count()
+        self.seats
+            .iter()
+            .filter(|s| matches!(s, SeatOccupant::Bot))
+            .count()
     }
 
     fn human_seat(&self, user_id: &str) -> Option<usize> {

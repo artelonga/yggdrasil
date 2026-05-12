@@ -42,6 +42,7 @@ fn extract_bearer(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+#[allow(clippy::result_large_err)]
 fn require_user(headers: &HeaderMap, secret: &str) -> Result<String, Response> {
     let token = extract_bearer(headers).ok_or_else(unauthorized)?;
     verify_jwt(&token, secret).map_err(|_| unauthorized())
@@ -234,10 +235,7 @@ mod tests {
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let seats = v["seats"].as_array().unwrap();
-        let humans = seats
-            .iter()
-            .filter(|s| s["kind"] == "human")
-            .count();
+        let humans = seats.iter().filter(|s| s["kind"] == "human").count();
         let bots = seats.iter().filter(|s| s["kind"] == "bot").count();
         assert_eq!(humans, 1);
         assert_eq!(bots, 1);

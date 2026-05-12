@@ -25,6 +25,12 @@ primary_region = "gru"
   YGGDRASIL_DB = "/data/yggdrasil.db"
   YGGDRASIL_SEMENTES_DB = "/data/yggdrasil-sementes.db"
   RUST_LOG = "yggdrasil_web=info,tower_http=info"
+  # SMTP — deixar vazios aqui; definir via `flyctl secrets set` (ver docs/DEPLOY.md)
+  YGGDRASIL_SMTP_HOST = ""
+  YGGDRASIL_SMTP_PORT = "587"
+  YGGDRASIL_SMTP_USER = ""
+  YGGDRASIL_SMTP_FROM = "Yggdrasil <noreply@artelonga.com.br>"
+  # YGGDRASIL_SMTP_PASSWORD — definir via `flyctl secrets set YGGDRASIL_SMTP_PASSWORD=...`
 
 [http_service]
   internal_port = 3030

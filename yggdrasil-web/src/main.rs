@@ -4,6 +4,7 @@ mod api;
 mod auth;
 mod games;
 mod lobby_routes;
+mod mail;
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -17,8 +18,8 @@ use games::invaders_routes::{
     make_invaders_state, send_input as invaders_input, start_game as invaders_start,
 };
 use games::poker_routes::{
-    PokerState, get_lobby as poker_get_lobby, list_lobbies as poker_list_lobbies,
-    sit as poker_sit, stand as poker_stand,
+    PokerState, get_lobby as poker_get_lobby, list_lobbies as poker_list_lobbies, sit as poker_sit,
+    stand as poker_stand,
 };
 use games::snake_routes::{make_snake_state, send_input as snake_input, start_game as snake_start};
 use games::tetris_routes::{
@@ -46,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     auth::init_auth_db(&auth_conn)?;
     let auth_state = Arc::new(auth::AuthState {
         db: Arc::new(Mutex::new(auth_conn)),
-        mail: Arc::new(game_core::mail::LogMailProvider),
+        mail: mail::build_mail_provider(),
         jwt_secret,
     });
 
