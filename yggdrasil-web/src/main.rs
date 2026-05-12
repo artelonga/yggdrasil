@@ -18,8 +18,9 @@ use games::invaders_routes::{
     make_invaders_state, send_input as invaders_input, start_game as invaders_start,
 };
 use games::poker_routes::{
-    PokerState, get_lobby as poker_get_lobby, list_lobbies as poker_list_lobbies, sit as poker_sit,
-    stand as poker_stand,
+    PokerState, get_hand as poker_get_hand, get_hole_cards as poker_hole_cards,
+    get_lobby as poker_get_lobby, list_lobbies as poker_list_lobbies,
+    post_action as poker_post_action, sit as poker_sit, stand as poker_stand,
 };
 use games::snake_routes::{make_snake_state, send_input as snake_input, start_game as snake_start};
 use games::tetris_routes::{
@@ -100,6 +101,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/poker/lobbies/{id}", get(poker_get_lobby))
         .route("/api/v1/poker/lobbies/{id}/sit", post(poker_sit))
         .route("/api/v1/poker/lobbies/{id}/stand", post(poker_stand))
+        .route("/api/v1/poker/lobbies/{id}/hand", get(poker_get_hand))
+        .route(
+            "/api/v1/poker/lobbies/{id}/hole-cards",
+            get(poker_hole_cards),
+        )
+        .route("/api/v1/poker/lobbies/{id}/action", post(poker_post_action))
         .with_state(poker_state);
 
     let app = Router::new()

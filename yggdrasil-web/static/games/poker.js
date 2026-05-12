@@ -9,20 +9,38 @@ const state = {
   lobbies: [],
   activeLobby: null,
   pollTimer: null,
+  meSeated: false,
+  lastRound: null,
 };
 
 const el = {
-  ctaLogin: document.getElementById('cta-login'),
-  lobbyList: document.getElementById('lobby-list'),
-  tableView: document.getElementById('table-view'),
-  tableName: document.getElementById('table-name'),
-  seats: document.getElementById('seats'),
-  ctaInvite: document.getElementById('cta-invite'),
-  inviteUrl: document.getElementById('invite-url'),
-  copiedMsg: document.getElementById('copied-msg'),
-  voltar: document.getElementById('btn-voltar'),
-  status: document.getElementById('status'),
-  erroBanner: document.getElementById('erro-banner'),
+  ctaLogin:       document.getElementById('cta-login'),
+  lobbyList:      document.getElementById('lobby-list'),
+  tableView:      document.getElementById('table-view'),
+  tableName:      document.getElementById('table-name'),
+  seats:          document.getElementById('seats'),
+  ctaInvite:      document.getElementById('cta-invite'),
+  inviteUrl:      document.getElementById('invite-url'),
+  copiedMsg:      document.getElementById('copied-msg'),
+  voltar:         document.getElementById('btn-voltar'),
+  status:         document.getElementById('status'),
+  erroBanner:     document.getElementById('erro-banner'),
+  gameArea:       document.getElementById('game-area'),
+  suaVezBanner:   document.getElementById('sua-vez-banner'),
+  communityCards: document.getElementById('community-cards'),
+  roundName:      document.getElementById('round-name'),
+  potValue:       document.getElementById('pot-value'),
+  betValue:       document.getElementById('bet-value'),
+  holeCardsArea:  document.getElementById('hole-cards-area'),
+  holeCards:      document.getElementById('hole-cards'),
+  actionBar:      document.getElementById('action-bar'),
+  btnFold:        document.getElementById('btn-fold'),
+  btnCheck:       document.getElementById('btn-check'),
+  btnCall:        document.getElementById('btn-call'),
+  btnRaise:       document.getElementById('btn-raise'),
+  raiseAmount:    document.getElementById('raise-amount'),
+  winnerBanner:   document.getElementById('winner-banner'),
+  playersList:    document.getElementById('players-list'),
 };
 
 function decodeJwt(token) {
@@ -53,15 +71,10 @@ async function api(path, options = {}) {
   return res;
 }
 
-function setStatus(msg) {
-  el.status.textContent = msg;
-}
+function setStatus(msg) { el.status.textContent = msg; }
 
 function showError(msg) {
-  if (!msg) {
-    el.erroBanner.style.display = 'none';
-    return;
-  }
+  if (!msg) { el.erroBanner.style.display = 'none'; return; }
   el.erroBanner.textContent = msg;
   el.erroBanner.style.display = 'block';
 }
@@ -118,7 +131,10 @@ async function enterLobby(id) {
 
 function leaveLobby() {
   state.activeLobby = null;
+  state.meSeated = false;
+  state.lastRound = null;
   stopPolling();
+  hideGameArea();
   loadLobbies();
 }
 
@@ -127,22 +143,46 @@ async function refreshLobby() {
   showError('');
   try {
     const res = await api(`/api/v1/poker/lobbies/${state.activeLobby}`);
-    if (!res.ok) {
-      showError('Erro ao atualizar mesa');
-      return;
-    }
+    if (!res.ok) { showError('Erro ao atualizar mesa'); return; }
     const lobby = await res.json();
     renderTable(lobby);
+    state.meSeated = lobby.seats.some((s) => s.kind === 'human' && s.user_id === state.userId);
+    if (state.meSeated) {
+      await refreshHand();
+    } else {
+      hideGameArea();
+    }
   } catch (e) {
     if (e.message !== '401') showError(`Erro: ${e.message}`);
   }
 }
 
+async function refreshHand() {
+  if (!state.activeLobby) return;
+  try {
+    const res = await api(`/api/v1/poker/lobbies/${state.activeLobby}/hand`);
+    if (!res.ok) return;
+    const hand = await res.json();
+
+    // Fetch hole cards if seated and game is active
+    let holeCards = null;
+    if (!hand.game_over && hand.round !== 'Aguardando') {
+      const hcRes = await api(`/api/v1/poker/lobbies/${state.activeLobby}/hole-cards`);
+      if (hcRes.ok) {
+        const hcData = await hcRes.json();
+        holeCards = hcData.cards;
+      }
+    }
+
+    renderGame(hand, holeCards);
+  } catch (e) {
+    if (e.message !== '401') setStatus('Erro ao carregar partida');
+  }
+}
+
 function renderTable(lobby) {
   el.tableName.textContent = lobby.name;
-  const meSeated = lobby.seats.some(
-    (s) => s.kind === 'human' && s.user_id === state.userId,
-  );
+  const meSeated = lobby.seats.some((s) => s.kind === 'human' && s.user_id === state.userId);
   const hasBot = lobby.seats.some((s) => s.kind === 'bot');
 
   if (hasBot && meSeated) {
@@ -193,7 +233,7 @@ function renderTable(lobby) {
     });
   });
 
-  // Action bar — show "stand" if seated
+  // Stand button
   if (meSeated && !document.getElementById('btn-stand')) {
     const btn = document.createElement('button');
     btn.id = 'btn-stand';
@@ -201,12 +241,153 @@ function renderTable(lobby) {
     btn.style.marginTop = '0.5rem';
     btn.textContent = 'Levantar da mesa';
     btn.onclick = stand;
-    el.tableView.appendChild(btn);
+    el.tableView.insertBefore(btn, el.gameArea);
   } else if (!meSeated) {
     const btn = document.getElementById('btn-stand');
     if (btn) btn.remove();
   }
 }
+
+// ── Card rendering ──────────────────────────────────────────────────────────
+
+const SUIT_SYMBOLS = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
+const RED_SUITS = new Set(['hearts', 'diamonds']);
+
+function cardEl(card) {
+  const div = document.createElement('div');
+  div.className = 'playing-card' + (RED_SUITS.has(card.suit) ? ' red' : '');
+  div.innerHTML = `<span>${card.rank}</span><span class="card-suit">${SUIT_SYMBOLS[card.suit] || card.suit}</span>`;
+  return div;
+}
+
+function cardBackEl() {
+  const div = document.createElement('div');
+  div.className = 'card-back';
+  return div;
+}
+
+// ── Game rendering ──────────────────────────────────────────────────────────
+
+function hideGameArea() {
+  el.gameArea.style.display = 'none';
+  el.winnerBanner.style.display = 'none';
+  el.actionBar.style.display = 'none';
+  el.suaVezBanner.style.display = 'none';
+  el.holeCardsArea.style.display = 'none';
+}
+
+function renderGame(hand, holeCards) {
+  if (!hand || hand.round === 'Aguardando') {
+    hideGameArea();
+    return;
+  }
+
+  el.gameArea.style.display = 'block';
+
+  // Round + pot
+  el.roundName.textContent = hand.round;
+  el.potValue.textContent = hand.pot;
+  el.betValue.textContent = hand.current_bet;
+
+  // Community cards — animate new ones
+  const newRound = hand.round !== state.lastRound;
+  state.lastRound = hand.round;
+  el.communityCards.innerHTML = '';
+  const numBack = Math.max(0, 5 - hand.community_cards.length);
+  hand.community_cards.forEach((c) => {
+    const ce = cardEl(c);
+    if (newRound) ce.style.animation = 'card-flip 0.3s ease-out';
+    el.communityCards.appendChild(ce);
+  });
+  for (let i = 0; i < numBack; i++) el.communityCards.appendChild(cardBackEl());
+
+  // Hole cards
+  if (holeCards && holeCards.length === 2) {
+    el.holeCardsArea.style.display = 'block';
+    el.holeCards.innerHTML = '';
+    holeCards.forEach((c) => el.holeCards.appendChild(cardEl(c)));
+  } else {
+    el.holeCardsArea.style.display = 'none';
+  }
+
+  // Winner banner
+  if (hand.game_over && hand.winner_message) {
+    el.winnerBanner.textContent = hand.winner_message;
+    el.winnerBanner.style.display = 'block';
+    el.actionBar.style.display = 'none';
+    el.suaVezBanner.style.display = 'none';
+  } else {
+    el.winnerBanner.style.display = 'none';
+  }
+
+  // Action buttons — only on user's turn
+  const isMyTurn = !hand.game_over && hand.current_actor === state.userId;
+  if (isMyTurn) {
+    el.suaVezBanner.style.display = 'block';
+    el.actionBar.style.display = 'flex';
+    // Auto-scroll to game area
+    el.gameArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // Show/hide check vs call based on whether we owe chips
+    const myPlayer = hand.players.find((p) => p.user_id === state.userId);
+    const myBet = myPlayer ? myPlayer.current_bet : 0;
+    if (myBet < hand.current_bet) {
+      el.btnCheck.style.display = 'none';
+      el.btnCall.style.display = 'inline-block';
+    } else {
+      el.btnCheck.style.display = 'inline-block';
+      el.btnCall.style.display = 'none';
+    }
+  } else {
+    el.suaVezBanner.style.display = 'none';
+    el.actionBar.style.display = 'none';
+  }
+
+  // Players list
+  el.playersList.innerHTML = hand.players.map((p) => {
+    const dealer = p.is_dealer ? '<span class="dealer-chip">★</span>' : '';
+    const foldedCls = p.folded ? ' folded' : '';
+    const isActor = !hand.game_over && p.user_id === hand.current_actor ? ' →' : '';
+    return `<div class="player-row${foldedCls}">${dealer} ${p.user_id}${isActor} — ${p.chips} fichas (bet: ${p.current_bet})</div>`;
+  }).join('');
+}
+
+// ── Action handlers ─────────────────────────────────────────────────────────
+
+async function sendAction(action, amount) {
+  const body = { action };
+  if (amount !== undefined) body.amount = amount;
+  try {
+    const res = await api(`/api/v1/poker/lobbies/${state.activeLobby}/action`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showError(data.erro || `Erro ${res.status}`);
+      return;
+    }
+    const hand = await res.json();
+    let holeCards = null;
+    if (!hand.game_over && hand.round !== 'Aguardando') {
+      const hcRes = await api(`/api/v1/poker/lobbies/${state.activeLobby}/hole-cards`);
+      if (hcRes.ok) { const d = await hcRes.json(); holeCards = d.cards; }
+    }
+    renderGame(hand, holeCards);
+  } catch (e) {
+    if (e.message !== '401') showError(`Erro: ${e.message}`);
+  }
+}
+
+el.btnFold.addEventListener('click', () => sendAction('fold'));
+el.btnCheck.addEventListener('click', () => sendAction('check'));
+el.btnCall.addEventListener('click', () => sendAction('call'));
+el.btnRaise.addEventListener('click', () => {
+  const amt = parseInt(el.raiseAmount.value, 10) || 40;
+  sendAction('raise', amt);
+});
+
+// ── Seating ─────────────────────────────────────────────────────────────────
 
 async function sit(seat) {
   try {
@@ -247,19 +428,13 @@ function startPolling() {
 }
 
 function stopPolling() {
-  if (state.pollTimer) {
-    clearInterval(state.pollTimer);
-    state.pollTimer = null;
-  }
+  if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
 }
 
 el.voltar.addEventListener('click', leaveLobby);
 
 function init() {
-  if (!state.token) {
-    showLoginCta();
-    return;
-  }
+  if (!state.token) { showLoginCta(); return; }
   const claims = decodeJwt(state.token);
   if (!claims || !claims.sub) {
     localStorage.removeItem(STORAGE_KEY);

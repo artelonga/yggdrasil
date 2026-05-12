@@ -139,6 +139,78 @@
       font-size: 0.85rem;
     }
 
+    /* Game area */
+    .community-area { margin-bottom: 1.5rem; }
+    .game-info { display: flex; gap: 1.5rem; margin-bottom: 0.8rem; font-size: 0.85rem; align-items: center; }
+    .round-badge { background: #d4af37; color: #0d0d12; padding: 0.15rem 0.5rem; font-size: 0.75rem; letter-spacing: 0.1em; }
+    .pot-label, .bet-label { opacity: 0.8; }
+    .card-row { display: flex; gap: 0.6rem; flex-wrap: wrap; min-height: 4rem; }
+    .playing-card {
+      width: 2.8rem; height: 4rem;
+      border: 1px solid #444;
+      background: #fff;
+      color: #111;
+      border-radius: 4px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: 1rem; font-weight: bold;
+      cursor: default;
+      animation: card-flip 0.3s ease-out;
+      transform-origin: center;
+    }
+    .playing-card.red { color: #c0392b; }
+    .playing-card .card-suit { font-size: 0.85rem; }
+    .card-back {
+      width: 2.8rem; height: 4rem;
+      border: 1px solid #444;
+      background: #1a3a6e;
+      border-radius: 4px;
+    }
+    @keyframes card-flip {
+      from { transform: rotateY(90deg); opacity: 0; }
+      to   { transform: rotateY(0deg);  opacity: 1; }
+    }
+    .hole-cards-area { margin-bottom: 1rem; }
+    .hole-label { font-size: 0.8rem; opacity: 0.6; margin-bottom: 0.4rem; }
+    .action-bar { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+    .action-btn {
+      border: none; padding: 0.5rem 1.2rem;
+      font-family: inherit; font-size: 0.9rem;
+      cursor: pointer; letter-spacing: 0.05em;
+    }
+    .btn-fold   { background: #6b2121; color: #e8e3d3; }
+    .btn-check  { background: #1e4d2b; color: #e8e3d3; }
+    .btn-call   { background: #1e3a4d; color: #e8e3d3; }
+    .btn-raise  { background: #4d3a1e; color: #e8e3d3; }
+    .action-btn:hover { opacity: 0.85; }
+    .raise-row { display: flex; gap: 0.4rem; align-items: center; }
+    .raise-input {
+      width: 5rem; padding: 0.45rem 0.5rem;
+      background: #14141e; border: 1px solid #2a2a3e;
+      color: #e8e3d3; font-family: inherit; font-size: 0.85rem;
+    }
+    .sua-vez-banner {
+      background: rgba(212, 175, 55, 0.12);
+      border: 1px solid #d4af37;
+      color: #d4af37;
+      padding: 0.6rem 1rem;
+      font-size: 0.9rem;
+      margin-bottom: 0.8rem;
+    }
+    .winner-banner {
+      background: rgba(212, 175, 55, 0.1);
+      border: 1px solid #d4af37;
+      color: #d4af37;
+      padding: 0.8rem 1rem;
+      font-size: 1rem;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    .players-list { font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem; }
+    .players-list .player-row { display: flex; gap: 1rem; margin-bottom: 0.3rem; }
+    .players-list .dealer-chip { color: #d4af37; }
+    .players-list .folded { opacity: 0.4; text-decoration: line-through; }
+
     /* Status bar */
     .status {
       position: fixed;
@@ -159,7 +231,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>🃏 POKER <span class="badge">EM CONSTRUÇÃO</span></h1>
+    <h1>🃏 POKER</h1>
     <p class="subtitulo">Mesas multiplayer com aposta em sementes</p>
 
     <div id="cta-login">
@@ -182,9 +254,35 @@
         <span class="copied" id="copied-msg"></span>
       </div>
       <div class="seats" id="seats"></div>
-      <div class="placeholder-game">
-        Mecânica de partida (dealer, blinds, ações) virá na próxima entrega.
-        Por enquanto: sente, levante, convide.
+
+      <!-- Game area (shown when hand is active) -->
+      <div id="game-area" style="display:none">
+        <div id="sua-vez-banner" class="sua-vez-banner" style="display:none">
+          ⚡ Sua vez! Escolha uma ação.
+        </div>
+        <div class="community-area">
+          <div class="game-info">
+            <span id="round-name" class="round-badge"></span>
+            <span class="pot-label">Pot: <strong id="pot-value">0</strong></span>
+            <span class="bet-label">Aposta atual: <strong id="bet-value">0</strong></span>
+          </div>
+          <div id="community-cards" class="card-row"></div>
+        </div>
+        <div id="hole-cards-area" class="hole-cards-area" style="display:none">
+          <p class="hole-label">Suas cartas:</p>
+          <div id="hole-cards" class="card-row"></div>
+        </div>
+        <div id="action-bar" class="action-bar" style="display:none">
+          <button id="btn-fold" class="action-btn btn-fold">Fold</button>
+          <button id="btn-check" class="action-btn btn-check">Check</button>
+          <button id="btn-call" class="action-btn btn-call">Call</button>
+          <div class="raise-row">
+            <input id="raise-amount" class="raise-input" type="number" min="20" step="10" value="40" />
+            <button id="btn-raise" class="action-btn btn-raise">Raise</button>
+          </div>
+        </div>
+        <div id="winner-banner" class="winner-banner" style="display:none"></div>
+        <div id="players-list" class="players-list"></div>
       </div>
     </div>
 
