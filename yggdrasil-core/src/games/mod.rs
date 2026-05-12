@@ -1,5 +1,6 @@
 pub mod invaders;
 pub mod poker;
+pub mod poker_lobby;
 pub mod snake;
 pub mod tetris;
 pub use invaders::YggInvaders;

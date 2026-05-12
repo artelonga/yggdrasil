@@ -16,6 +16,10 @@ use axum::{
 use games::invaders_routes::{
     make_invaders_state, send_input as invaders_input, start_game as invaders_start,
 };
+use games::poker_routes::{
+    PokerState, get_lobby as poker_get_lobby, list_lobbies as poker_list_lobbies,
+    sit as poker_sit, stand as poker_stand,
+};
 use games::snake_routes::{make_snake_state, send_input as snake_input, start_game as snake_start};
 use games::tetris_routes::{
     make_tetris_state, send_input as tetris_input, start_game as tetris_start,
@@ -68,6 +72,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(me_state);
 
+    let poker_state = Arc::new(PokerState::new(auth_state.jwt_secret.clone()));
+
     let auth_router = Router::new()
         .route("/api/v1/auth/code", post(auth::request_code))
         .route("/api/v1/auth/verify", post(auth::verify_code))
@@ -88,12 +94,21 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/games/invaders/{id}/input", post(invaders_input))
         .with_state(invaders_state);
 
+    let poker_router = Router::new()
+        .route("/api/v1/poker/lobbies", get(poker_list_lobbies))
+        .route("/api/v1/poker/lobbies/{id}", get(poker_get_lobby))
+        .route("/api/v1/poker/lobbies/{id}/sit", post(poker_sit))
+        .route("/api/v1/poker/lobbies/{id}/stand", post(poker_stand))
+        .with_state(poker_state);
+
     let app = Router::new()
         .route("/", get(root))
         .route("/lobby", get(serve_lobby))
+        .route("/login", get(serve_login))
         .route("/games/snake", get(serve_snake))
         .route("/games/tetris", get(serve_tetris))
         .route("/games/invaders", get(serve_invaders))
+        .route("/games/poker", get(serve_poker))
         .route("/health", get(health))
         .route("/api/v1/lobby", get(lobby_routes::get_lobby))
         .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
@@ -102,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(snake_router)
         .merge(tetris_router)
         .merge(invaders_router)
+        .merge(poker_router)
         .nest_service("/static", ServeDir::new("yggdrasil-web/static"));
 
     let addr: SocketAddr = "0.0.0.0:3030".parse()?;
@@ -119,6 +135,10 @@ async fn serve_lobby() -> impl IntoResponse {
     Html(include_str!("../static/lobby.html"))
 }
 
+async fn serve_login() -> impl IntoResponse {
+    Html(include_str!("../static/login.html"))
+}
+
 async fn serve_snake() -> impl IntoResponse {
     Html(include_str!("../static/games/snake.html"))
 }
@@ -129,6 +149,10 @@ async fn serve_tetris() -> impl IntoResponse {
 
 async fn serve_invaders() -> impl IntoResponse {
     Html(include_str!("../static/games/invaders.html"))
+}
+
+async fn serve_poker() -> impl IntoResponse {
+    Html(include_str!("../static/games/poker.html"))
 }
 
 async fn health() -> impl IntoResponse {
