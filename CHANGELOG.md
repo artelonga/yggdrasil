@@ -4,6 +4,19 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (Godot POC, YG-31)
+- `yggdrasil-godot/` — diretório paralelo de POC Godot 4.5 que avalia scene tree + signals + lazy spawn + multiplayer-native como substrato dos universos do Yggdrasil. Trilho B do epic YG-22, abre a sequência YG-31..YG-35. Não modifica `yggdrasil-core` nem `yggdrasil-web`.
+- `yggdrasil-godot/project.godot` — projeto Godot 4.5 com `config/features=("4.5", "Forward Plus")`; renderer `gl_compatibility` para web e mobile; cena principal `res://scenes/HelloUniverso.tscn`.
+- `yggdrasil-godot/scenes/HelloUniverso.tscn` + `scripts/hello_universo.gd` — Node2D com `Label "Olá universo"` e script que imprime `hello from server` ou `hello from client` conforme `multiplayer.is_server()`. Sanity-check da toolchain; sem lógica de jogo.
+- `yggdrasil-godot/export_presets.cfg` — dois export presets:
+  - **Web** (HTML5/wasm) — `variant/thread_support=true`, compressão de textura mobile+desktop, target `out/web/index.html`.
+  - **Linux/X11** — `dedicated_server=true`, `custom_features="headless"`, target `out/headless/yggdrasil-godot`.
+- `yggdrasil-godot/scripts/build.sh` — detecta `godot` ou `godot4` no `$PATH` e falha cedo com mensagem PT-BR clara se ausente; suporta targets `web`, `headless` ou `all` (default); usa `--headless --path` para não exigir GPU.
+- `yggdrasil-godot/Dockerfile` — multi-stage: stage 1 (`debian:trixie-slim`) baixa Godot 4.5 + export templates, roda `build.sh`; stage 2 (`debian:trixie-slim`) copia headless binary + assets web, roda como user `godot`, expõe porta `3031` (separada da `:3030` do Rust).
+- `yggdrasil-godot/.gitignore` — `.godot/`, `*.tmp.tscn`, `out/`, `.import/`, `*.bak`, OS cruft.
+- `yggdrasil-godot/icon.svg` — ícone placeholder do projeto (gold + green sobre fundo `#0d0d12`, paleta do lobby).
+- `yggdrasil-godot/README.md` — pré-requisitos (Godot 4.5 + export templates), como abrir no editor, buildar os dois targets, rodar headless localmente, servir build web com COOP/COEP, e build Docker. Documenta os 4 pilares avaliados (scene tree, signals, lazy spawn, multiplayer nativo) e os não-objetivos desta tarefa.
+
 ### Changed (auth, signup via Google)
 - Botão de login agora aponta para `https://co.artelonga.com.br/api/v1/auth/google/start` (Google OAuth start), em vez de `/auth/co-handover` que exigia auth prévia no CO. Espelha o padrão de `quilomboaraucaria/web/src/routes/cadastro/+page.svelte`: usuário entra direto via Google, conta CO é criada/atualizada automaticamente, retorna ao Yggdrasil com sessão local.
 - Texto do botão: "Entrar com CO" → "Continuar com Google" (com logo Google SVG, fundo branco — mesmo estilo do quilombo).

@@ -1,0 +1,21 @@
+# Godot 4 cache & temporary files
+.godot/
+*.tmp.tscn
+*.import
+.import/
+
+# Build outputs (gerados por scripts/build.sh)
+out/
+
+# Editor backups
+*.bak
+*.swp
+*~
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local environment overrides
+.env
+.env.local
