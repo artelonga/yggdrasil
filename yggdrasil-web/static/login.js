@@ -29,6 +29,21 @@ function redirectTarget() {
   return '/lobby';
 }
 
+// Propagate ?next= to the "Entrar com CO" button so post-login redirect
+// matches the email-code flow.
+{
+  const params = new URLSearchParams(location.search);
+  const next = params.get('next');
+  if (next && next.startsWith('/')) {
+    const coBtn = document.getElementById('btn-co-login');
+    if (coBtn) {
+      const u = new URL(coBtn.href, location.origin);
+      u.searchParams.set('next', next);
+      coBtn.href = u.toString();
+    }
+  }
+}
+
 formEmail.addEventListener('submit', async (e) => {
   e.preventDefault();
   erroEmail.textContent = '';

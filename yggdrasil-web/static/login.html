@@ -63,6 +63,26 @@
       margin-top: -0.5rem;
       opacity: 0.8;
     }
+    .btn-co {
+      display: inline-block;
+      width: 100%;
+      max-width: 22rem;
+      background: #d4af37;
+      color: #0d0d12;
+      padding: 0.8rem 1rem;
+      text-align: center;
+      text-decoration: none;
+      font-size: 0.95rem;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.2rem;
+    }
+    .btn-co:hover { opacity: 0.85; }
+    .separator {
+      font-size: 0.75rem;
+      opacity: 0.4;
+      letter-spacing: 0.2em;
+      margin-bottom: 1.2rem;
+    }
     .link-volta {
       margin-top: 2rem;
       font-size: 0.85rem;
@@ -74,6 +94,9 @@
 <body>
   <h1>YGGDRASIL</h1>
   <p class="subtitulo">Conectando ideias. Construindo universos.</p>
+
+  <a id="btn-co-login" class="btn-co" href="/auth/co-login">Entrar com CO</a>
+  <p class="separator">— ou —</p>
 
   <form id="form-email">
     <label for="email">EMAIL</label>

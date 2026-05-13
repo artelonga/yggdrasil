@@ -4,6 +4,28 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (auth, CO handover SSO)
+- `yggdrasil_web::auth_co::{JwksCache, CoHandoverClaims, verify_co_token, co_login_url}` — módulo de cross-apex SSO via CO. Fetch + cache (TTL 1h) de `https://co.artelonga.com.br/.well-known/jwks.json`; verificação de JWT ES256 com lookup por `kid`.
+- `GET /auth/co-login?next=<path>` — redirect 302 para o endpoint `/auth/co-handover` do CO; constrói `return_to` a partir do Host header.
+- `GET /auth/co-handover-receive?co_token=<jwt>&next=<path>` — recebe JWT ES256 emitido pelo CO, valida via JWKS, e mintar JWT local HS256 com o mesmo `sub` e `email`. Responde com HTML que armazena o JWT em `localStorage.yggdrasil-jwt` e navega para `next` (ou `/lobby`).
+- `CO_BASE_URL` env var (default `https://co.artelonga.com.br`) — permite apontar UAT/staging/dev local em testes.
+- Login UI ganha botão "Entrar com CO" como CTA principal; email-code permanece como fallback abaixo da divisória "— ou —".
+- Sem segredo compartilhado entre CO e Yggdrasil; rotação de chave em CO requer apenas que o cache de JWKS expire (≤ 1h) ou seja invalidado por falta do `kid` no cache.
+- Dependências: `reqwest = "0.12"` com features `rustls-tls-native-roots,json` (reaproveita rustls já em uso por lettre); `tokio-util = "0.7"`.
+
+### Added (universos rename)
+- Rotas públicas renomeadas: `/games/{slug}` → `/universos/{slug}`. Cada jogo é um universo agora também na URL.
+- 301 `Redirect::permanent` de `/games/{snake,tetris,invaders,poker}` → `/universos/{slug}` preservam links externos.
+- Static dir `yggdrasil-web/static/games/` movido para `static/universos/`.
+- Lobby copy: "Cada jogo é um universo. Caminhe até um portal e entre." + nota "Em breve: criar o seu universo."
+- API paths (`/api/v1/games/*`, `/api/v1/poker/*`) **não** mudam — superfície de programador, não usuário.
+
+### Added (lobby UI)
+- Auth area no canto superior direito do `/lobby`: botão "Entrar" quando anônimo; email + "Sair" quando autenticado (decodifica JWT do `localStorage`).
+- Sidebar com "HIGH SCORES" (top 3 por universo) e "ATIVIDADE RECENTE" (últimas 10 partidas) — alimentadas pelas tabelas que snake/tetris/invaders populam desde YG-7/8.
+- `yggdrasil-web/src/api/scores.rs`: `GET /api/v1/scores/top?limit=N` e `GET /api/v1/scores/recent` — anônimos, agregam a tabela `scores`.
+- Seção "REVIEWS" placeholder — sistema de ratings por universo virá depois.
+
 ### Fixed (sementes)
 - `Sementes::saldo/debitar/creditar` agora usam `storage.get_wallet_for_user` + `save_wallet_for_user` — antes encaminhavam para `WalletManager` que ignora `user_id` e opera em uma única wallet global. Multiplayer (YG-27) exigia carteiras por usuário.
 

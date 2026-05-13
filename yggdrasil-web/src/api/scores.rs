@@ -79,7 +79,11 @@ pub async fn get_top(
         .and_then(|m| m.collect::<Result<Vec<_>, _>>());
 
     match rows {
-        Ok(scores) => (StatusCode::OK, Json(serde_json::json!({ "scores": scores }))).into_response(),
+        Ok(scores) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "scores": scores })),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!("scores top query: {e}");
             (
@@ -94,9 +98,9 @@ pub async fn get_top(
 /// `GET /api/v1/scores/recent` — últimas 10 entradas (atividade recente).
 pub async fn get_recent(State(state): State<Arc<ScoresState>>) -> impl IntoResponse {
     let conn = state.db.lock().unwrap();
-    let mut stmt = match conn.prepare(
-        "SELECT user_id, game, score, ts FROM scores ORDER BY ts DESC LIMIT 10",
-    ) {
+    let mut stmt = match conn
+        .prepare("SELECT user_id, game, score, ts FROM scores ORDER BY ts DESC LIMIT 10")
+    {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("scores recent prepare: {e}");
@@ -119,7 +123,11 @@ pub async fn get_recent(State(state): State<Arc<ScoresState>>) -> impl IntoRespo
         .and_then(|m| m.collect::<Result<Vec<_>, _>>());
 
     match rows {
-        Ok(scores) => (StatusCode::OK, Json(serde_json::json!({ "scores": scores }))).into_response(),
+        Ok(scores) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "scores": scores })),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!("scores recent query: {e}");
             (

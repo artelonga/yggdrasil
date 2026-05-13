@@ -42,5 +42,13 @@ lettre = { version = "0.11", default-features = false, features = [
     "builder",
 ] }
 
+# YG-N: fetch CO's JWKS for cross-apex SSO. Uses rustls-tls-native-roots to
+# avoid bringing in openssl alongside lettre's rustls.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls-native-roots",
+    "json",
+] }
+tokio-util = "0.7"
+
 [dev-dependencies]
 tempfile = { workspace = true }

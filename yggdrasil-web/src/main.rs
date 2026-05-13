@@ -2,6 +2,7 @@
 
 mod api;
 mod auth;
+mod auth_co;
 mod games;
 mod lobby_routes;
 mod mail;
@@ -86,6 +87,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/scores/recent", get(api::scores::get_recent))
         .with_state(scores_state);
 
+    let co_handover_state = Arc::new(CoHandoverState {
+        jwt_secret: auth_state.jwt_secret.clone(),
+        jwks: Arc::new(auth_co::JwksCache::new()),
+    });
+    let co_handover_router = Router::new()
+        .route("/auth/co-handover-receive", get(receive_co_handover))
+        .route("/auth/co-login", get(redirect_to_co_login))
+        .with_state(co_handover_state);
+
     let poker_state = Arc::new(PokerState::new(
         auth_state.jwt_secret.clone(),
         sementes.clone(),
@@ -143,6 +153,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/lobby", get(lobby_routes::get_lobby))
         .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
         .merge(auth_router)
+        .merge(co_handover_router)
         .merge(me_router)
         .merge(scores_router)
         .merge(snake_router)
@@ -203,4 +214,120 @@ async fn redirect_to_universo_poker() -> impl IntoResponse {
 
 async fn health() -> impl IntoResponse {
     "ok"
+}
+
+// ── CO handover receiver ───────────────────────────────────────────────────
+
+#[derive(Clone)]
+struct CoHandoverState {
+    jwt_secret: String,
+    jwks: Arc<auth_co::JwksCache>,
+}
+
+#[derive(serde::Deserialize)]
+struct CoHandoverParams {
+    co_token: String,
+    #[serde(default)]
+    next: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct CoLoginParams {
+    #[serde(default)]
+    next: Option<String>,
+}
+
+/// `GET /auth/co-login?next=<path>` — redirect 302 para CO. Server-side
+/// para que `CO_BASE_URL` (env var) seja resolvido em runtime sem precisar
+/// passar para o frontend.
+async fn redirect_to_co_login(
+    axum::extract::Query(params): axum::extract::Query<CoLoginParams>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    // Construct yggdrasil base from Host header (preserves dev vs prod).
+    let host = headers
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("yggdrasil.artelonga.com.br");
+    let scheme = if host.contains("localhost") || host.starts_with("127.") {
+        "http"
+    } else {
+        "https"
+    };
+    let base = format!("{scheme}://{host}");
+    let url = auth_co::co_login_url(&base, params.next.as_deref());
+    Redirect::temporary(&url)
+}
+
+/// `GET /auth/co-handover-receive?co_token=<es256_jwt>&next=<path>`
+///
+/// Recebe token assinado por CO, valida via JWKS de CO, e mintar JWT local
+/// HS256 com o mesmo `sub`/`email`. Responde com HTML que armazena o JWT em
+/// `localStorage.yggdrasil-jwt` e navega para `next` (ou `/lobby` se ausente).
+async fn receive_co_handover(
+    axum::extract::State(state): axum::extract::State<Arc<CoHandoverState>>,
+    axum::extract::Query(params): axum::extract::Query<CoHandoverParams>,
+) -> axum::response::Response {
+    let claims = match auth_co::verify_co_token(&params.co_token, &state.jwks).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("co-handover verify failed: {e}");
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                Html(co_handover_error_page("Token de CO inválido ou expirado")),
+            )
+                .into_response();
+        }
+    };
+    let local_jwt = match auth::sign_jwt(&claims.sub, &claims.email, &state.jwt_secret) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("co-handover sign local jwt failed: {e}");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Html(co_handover_error_page("Erro interno ao gerar sessão local")),
+            )
+                .into_response();
+        }
+    };
+    let next = params
+        .next
+        .as_deref()
+        .filter(|n| n.starts_with('/'))
+        .unwrap_or("/lobby");
+    Html(co_handover_success_page(&local_jwt, next)).into_response()
+}
+
+fn co_handover_success_page(token: &str, next: &str) -> String {
+    // Token e next vão para o HTML; ambos validados antes (token é base64-url+ascii,
+    // next começa com /). Escapagem mínima já basta — não há control chars.
+    let token_escaped = token.replace('<', "&lt;").replace('>', "&gt;");
+    let next_escaped = next
+        .replace('<', "%3C")
+        .replace('>', "%3E")
+        .replace('"', "");
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Entrando…</title>
+<style>body{{background:#0d0d12;color:#e8e3d3;font-family:system-ui,monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}</style></head>
+<body><div>Concluindo login com CO…</div>
+<script>
+try {{
+  localStorage.setItem('yggdrasil-jwt', '{token_escaped}');
+  location.replace('{next_escaped}');
+}} catch (_) {{
+  document.body.textContent = 'Não foi possível armazenar sessão local.';
+}}
+</script></body></html>"#
+    )
+}
+
+fn co_handover_error_page(msg: &str) -> String {
+    let msg_esc = msg.replace('<', "&lt;").replace('>', "&gt;");
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Erro no login</title>
+<style>body{{background:#0d0d12;color:#e8e3d3;font-family:system-ui,monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center}}.box{{max-width:30rem;padding:2rem}}a{{color:#d4af37}}</style></head>
+<body><div class="box"><h1 style="font-weight:300;letter-spacing:0.2em">ERRO</h1><p style="opacity:0.7;margin:1rem 0">{msg_esc}</p><p><a href="/login">Tentar novamente</a></p></div></body></html>"#
+    )
 }
