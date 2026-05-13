@@ -109,9 +109,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/co-login", get(redirect_to_co_login))
         .with_state(co_handover_state);
 
-    let poker_state = Arc::new(PokerState::new(
+    // YG-29: poker persiste seating + stacks na mesma SQLite controlada por
+    // `YGGDRASIL_DB`. Restart do servidor mantém quem está sentado e quanto
+    // tem em chips; mãos em curso são forfeit.
+    let poker_state = Arc::new(PokerState::with_persistence(
         auth_state.jwt_secret.clone(),
         sementes.clone(),
+        std::path::Path::new(&db_path),
     ));
 
     let auth_router = Router::new()

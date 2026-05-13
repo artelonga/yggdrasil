@@ -7,7 +7,7 @@ use game_core::{
     PokerGame, create_poker_universe,
     games::poker::{BettingRound, GameConfig, PlayerStatus, PokerAction, deck::Suit},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::games::poker_lobby::{BOT_USER_ID, LobbyError, PokerLobby, SeatOccupant};
@@ -83,6 +83,19 @@ pub struct PokerTable {
     pub stacks: HashMap<String, u32>,
 }
 
+/// Snapshot serializável de uma `PokerTable` para persistência em SQLite
+/// (YG-29). Persiste apenas `lobby` (seating) + `stacks` (chips entre mãos).
+/// Mãos em curso (`PokerGame`) NÃO são persistidas — um restart no meio de
+/// uma mão é forfeit, mas seats e chip-stacks sobrevivem. Esta é uma escolha
+/// pragmática: o engine `PokerGame` do `co/game-core` não é serde-friendly,
+/// e o custo de uma mão perdida (≤ algumas dezenas de sementes) é muito
+/// menor que o custo de perder buy-ins (1k+ sementes).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PokerTableSnapshot {
+    pub lobby: PokerLobby,
+    pub stacks: HashMap<String, u32>,
+}
+
 impl PokerTable {
     pub fn new(lobby: PokerLobby) -> Self {
         Self {
@@ -91,6 +104,32 @@ impl PokerTable {
             current_actor: None,
             player_map: vec![],
             stacks: HashMap::new(),
+        }
+    }
+
+    /// Serializa a mesa para persistência (YG-29). Captura `lobby` + `stacks`;
+    /// `game` em curso é descartado (vide doc de [`PokerTableSnapshot`]).
+    /// Faz snapshot dos chips do engine para `stacks` antes — assim mesmo que
+    /// uma mão esteja a meio caminho, os chips refletem o estado atual.
+    pub fn to_snapshot(&mut self) -> PokerTableSnapshot {
+        self.snapshot_stacks_from_game();
+        PokerTableSnapshot {
+            lobby: self.lobby.clone(),
+            stacks: self.stacks.clone(),
+        }
+    }
+
+    /// Restaura uma mesa a partir de um snapshot persistido (YG-29).
+    /// `game` fica `None` — qualquer mão em curso no momento do snapshot é
+    /// considerada forfeit; a próxima chamada a `start_hand` (acionada por
+    /// `GET /hand`) reabre o jogo.
+    pub fn from_snapshot(snap: PokerTableSnapshot) -> Self {
+        Self {
+            lobby: snap.lobby,
+            game: None,
+            current_actor: None,
+            player_map: vec![],
+            stacks: snap.stacks,
         }
     }
 
@@ -543,6 +582,55 @@ mod tests {
         table.sit_with_sementes(0, "alice", &sementes).unwrap();
         // Lobby auto-adicionou o bot — PokerTable deve ter dado stack a ele.
         assert_eq!(table.stack_of(BOT_USER_ID), BUY_IN_SEMENTES as u32);
+    }
+
+    // ── YG-29: snapshot/restore para persistência em SQLite ───────────────
+
+    #[test]
+    fn snapshot_round_trip_preserva_lobby_e_stacks() {
+        let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 5_000);
+        sementes.creditar("bob", 5_000).unwrap();
+        table.sit_with_sementes(0, "alice", &sementes).unwrap();
+        table.sit_with_sementes(3, "bob", &sementes).unwrap();
+
+        let snap = table.to_snapshot();
+        let json = serde_json::to_string(&snap).unwrap();
+        let restored_snap: PokerTableSnapshot = serde_json::from_str(&json).unwrap();
+        let restored = PokerTable::from_snapshot(restored_snap);
+
+        assert_eq!(restored.lobby.id, "t1");
+        assert_eq!(restored.lobby.name, "Mesa Teste");
+        assert_eq!(restored.lobby.human_count(), 2);
+        assert_eq!(restored.stack_of("alice"), BUY_IN_SEMENTES as u32);
+        assert_eq!(restored.stack_of("bob"), BUY_IN_SEMENTES as u32);
+        // Mãos em curso são forfeit — game sempre None após restore.
+        assert!(restored.game.is_none());
+    }
+
+    #[test]
+    fn snapshot_preserva_seats_por_indice() {
+        // Heads-up table com alice no seat 0 e bot no seat 1.
+        let mut table = PokerTable::new(PokerLobby::with_max_seats("hu", "Heads-Up", 2));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 5_000);
+        table.sit_with_sementes(0, "alice", &sementes).unwrap();
+
+        let snap = table.to_snapshot();
+        let restored = PokerTable::from_snapshot(snap);
+
+        assert_eq!(restored.lobby.max_seats, 2);
+        assert_eq!(restored.lobby.seats.len(), 2);
+        // Alice no seat 0
+        assert!(matches!(
+            &restored.lobby.seats[0],
+            crate::games::poker_lobby::SeatOccupant::Human { user_id, .. } if user_id == "alice"
+        ));
+        // Bot no seat 1 (auto-spawn quando há 1 humano).
+        assert!(matches!(
+            &restored.lobby.seats[1],
+            crate::games::poker_lobby::SeatOccupant::Bot
+        ));
+        assert_eq!(restored.stack_of(BOT_USER_ID), BUY_IN_SEMENTES as u32);
     }
 
     #[test]
