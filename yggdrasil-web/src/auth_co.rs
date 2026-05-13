@@ -220,9 +220,17 @@ pub async fn verify_co_token(
     Ok(data.claims)
 }
 
-/// URL para o botão "Entrar com CO" do Yggdrasil. Aceita um `next` opcional
-/// (rota local pós-login). Yggdrasil é sempre o `return_to` ponto-final;
-/// `next` viaja como query string no `return_to`.
+/// URL para o botão "Continuar com Google" do Yggdrasil.
+///
+/// Aponta para o endpoint de início de OAuth Google do CO (não para a tela
+/// de login do CO). CO faz a dança OAuth com Google, cria/atualiza a conta
+/// no CO, e — porque `return_to` contém `/auth/co-handover` — anexa um
+/// `co_token` ES256 no redirect final via `maybe_attach_co_handover_token`.
+/// Nosso receiver `/auth/co-handover-receive` valida via JWKS e mintar a
+/// sessão local.
+///
+/// Espelha o padrão usado em `quilomboaraucaria/web/src/routes/cadastro/+page.svelte`:
+/// usuário entra direto via Google sem ter passado pela tela de login do CO.
 pub fn co_login_url(yggdrasil_base: &str, next: Option<&str>) -> String {
     let return_to = match next {
         Some(n) => format!(
@@ -233,7 +241,7 @@ pub fn co_login_url(yggdrasil_base: &str, next: Option<&str>) -> String {
         None => format!("{}/auth/co-handover-receive", yggdrasil_base),
     };
     format!(
-        "{}/auth/co-handover?return_to={}",
+        "{}/api/v1/auth/google/start?return_to={}",
         co_base_url(),
         urlencoding(&return_to)
     )
@@ -291,7 +299,10 @@ mod tests {
             std::env::remove_var("CO_BASE_URL");
         }
         let url = co_login_url("https://yggdrasil.test", Some("/lobby"));
-        assert!(url.starts_with("https://co.artelonga.com.br/auth/co-handover?return_to="));
+        assert!(
+            url.starts_with("https://co.artelonga.com.br/api/v1/auth/google/start?return_to="),
+            "url={url}"
+        );
         // `next=/lobby` é encodado uma vez (%2Flobby) e depois encodado de
         // novo ao ser embarcado no return_to externo (%252Flobby).
         assert!(url.contains("next%3D%252Flobby"), "url={url}");
@@ -305,5 +316,17 @@ mod tests {
         let url = co_login_url("https://yggdrasil.test", None);
         assert!(url.contains("co-handover-receive"));
         assert!(!url.contains("next%3D"));
+    }
+
+    #[test]
+    fn co_login_url_aponta_para_google_start_nao_para_login() {
+        // Regressão: usuário não deve ser redirecionado para tela de login
+        // do CO. O fluxo correto é Google OAuth → cria conta CO → handover.
+        unsafe {
+            std::env::remove_var("CO_BASE_URL");
+        }
+        let url = co_login_url("https://yggdrasil.test", None);
+        assert!(url.contains("/api/v1/auth/google/start"), "url={url}");
+        assert!(!url.contains("/auth/co-handover?"), "url={url}");
     }
 }

@@ -4,9 +4,13 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed (auth, signup via Google)
+- Botão de login agora aponta para `https://co.artelonga.com.br/api/v1/auth/google/start` (Google OAuth start), em vez de `/auth/co-handover` que exigia auth prévia no CO. Espelha o padrão de `quilomboaraucaria/web/src/routes/cadastro/+page.svelte`: usuário entra direto via Google, conta CO é criada/atualizada automaticamente, retorna ao Yggdrasil com sessão local.
+- Texto do botão: "Entrar com CO" → "Continuar com Google" (com logo Google SVG, fundo branco — mesmo estilo do quilombo).
+
 ### Added (auth, CO handover SSO)
 - `yggdrasil_web::auth_co::{JwksCache, CoHandoverClaims, verify_co_token, co_login_url}` — módulo de cross-apex SSO via CO. Fetch + cache (TTL 1h) de `https://co.artelonga.com.br/.well-known/jwks.json`; verificação de JWT ES256 com lookup por `kid`.
-- `GET /auth/co-login?next=<path>` — redirect 302 para o endpoint `/auth/co-handover` do CO; constrói `return_to` a partir do Host header.
+- `GET /auth/co-login?next=<path>` — redirect 302 para `/api/v1/auth/google/start` do CO; constrói `return_to` a partir do Host header.
 - `GET /auth/co-handover-receive?co_token=<jwt>&next=<path>` — recebe JWT ES256 emitido pelo CO, valida via JWKS, e mintar JWT local HS256 com o mesmo `sub` e `email`. Responde com HTML que armazena o JWT em `localStorage.yggdrasil-jwt` e navega para `next` (ou `/lobby`).
 - `CO_BASE_URL` env var (default `https://co.artelonga.com.br`) — permite apontar UAT/staging/dev local em testes.
 - Login UI ganha botão "Entrar com CO" como CTA principal; email-code permanece como fallback abaixo da divisória "— ou —".
