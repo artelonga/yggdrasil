@@ -91,7 +91,7 @@ async function enterPortal() {
   });
   if (!res.ok) return;
   const { slug } = await res.json();
-  window.location.assign('/games/' + slug);
+  window.location.assign('/universos/' + slug);
 }
 
 function bfs(startX, startY, goalX, goalY) {

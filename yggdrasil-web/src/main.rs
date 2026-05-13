@@ -117,10 +117,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(root))
         .route("/lobby", get(serve_lobby))
         .route("/login", get(serve_login))
-        .route("/games/snake", get(serve_snake))
-        .route("/games/tetris", get(serve_tetris))
-        .route("/games/invaders", get(serve_invaders))
-        .route("/games/poker", get(serve_poker))
+        .route("/universos/snake", get(serve_snake))
+        .route("/universos/tetris", get(serve_tetris))
+        .route("/universos/invaders", get(serve_invaders))
+        .route("/universos/poker", get(serve_poker))
+        // 301 redirects para preservar bookmarks/links externos com a URL
+        // antiga `/games/<slug>`. Remover quando todos os universos ativos
+        // estiverem na nova URL por ≥ 1 release.
+        .route("/games/snake", get(redirect_to_universo_snake))
+        .route("/games/tetris", get(redirect_to_universo_tetris))
+        .route("/games/invaders", get(redirect_to_universo_invaders))
+        .route("/games/poker", get(redirect_to_universo_poker))
         .route("/health", get(health))
         .route("/api/v1/lobby", get(lobby_routes::get_lobby))
         .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
@@ -152,19 +159,34 @@ async fn serve_login() -> impl IntoResponse {
 }
 
 async fn serve_snake() -> impl IntoResponse {
-    Html(include_str!("../static/games/snake.html"))
+    Html(include_str!("../static/universos/snake.html"))
 }
 
 async fn serve_tetris() -> impl IntoResponse {
-    Html(include_str!("../static/games/tetris.html"))
+    Html(include_str!("../static/universos/tetris.html"))
 }
 
 async fn serve_invaders() -> impl IntoResponse {
-    Html(include_str!("../static/games/invaders.html"))
+    Html(include_str!("../static/universos/invaders.html"))
 }
 
 async fn serve_poker() -> impl IntoResponse {
-    Html(include_str!("../static/games/poker.html"))
+    Html(include_str!("../static/universos/poker.html"))
+}
+
+// ── Legacy redirects (YG-N rename `/games/*` → `/universos/*`) ─────────────
+
+async fn redirect_to_universo_snake() -> impl IntoResponse {
+    Redirect::permanent("/universos/snake")
+}
+async fn redirect_to_universo_tetris() -> impl IntoResponse {
+    Redirect::permanent("/universos/tetris")
+}
+async fn redirect_to_universo_invaders() -> impl IntoResponse {
+    Redirect::permanent("/universos/invaders")
+}
+async fn redirect_to_universo_poker() -> impl IntoResponse {
+    Redirect::permanent("/universos/poker")
 }
 
 async fn health() -> impl IntoResponse {

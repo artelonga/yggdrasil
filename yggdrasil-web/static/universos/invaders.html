@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Snake — Yggdrasil</title>
+  <title>Space Invaders — Yggdrasil</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -35,13 +35,14 @@
   </style>
 </head>
 <body>
-  <h1>🐍 SNAKE</h1>
-  <p class="subtitulo">Use as setas ou WASD para mover · ESC para sair</p>
+  <h1>👾 SPACE INVADERS</h1>
+  <p class="subtitulo">← → mover · Espaço / ↑ atirar · ESC sair</p>
   <div class="info">
     <span>Pontuação:<strong id="score">0</strong></span>
+    <span>Vidas:<strong id="lives">3</strong></span>
   </div>
-  <canvas id="canvas" aria-label="Jogo Snake"></canvas>
+  <canvas id="canvas" aria-label="Jogo Space Invaders"></canvas>
   <p id="rodape" class="rodape" aria-live="polite"></p>
-  <script src="/static/games/snake.js"></script>
+  <script src="/static/universos/invaders.js"></script>
 </body>
 </html>
