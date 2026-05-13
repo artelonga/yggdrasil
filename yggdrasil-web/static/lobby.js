@@ -238,4 +238,123 @@ async function initLobby() {
   canvas.addEventListener('click', handleClick);
 }
 
+// ── Auth area (top-right) ────────────────────────────────────────────────────
+
+const JWT_KEY = 'yggdrasil-jwt';
+
+function decodeJwt(token) {
+  try {
+    const payload = token.split('.')[1];
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(json);
+  } catch { return null; }
+}
+
+function renderAuthArea() {
+  const area = document.getElementById('auth-area');
+  const token = localStorage.getItem(JWT_KEY);
+  if (!token) {
+    area.innerHTML = `<a href="/login?next=/lobby">Entrar</a>`;
+    return;
+  }
+  const claims = decodeJwt(token);
+  const email = claims && claims.email ? claims.email : 'logado';
+  area.innerHTML = `
+    <span class="auth-user">${email}</span>
+    <button id="btn-logout">Sair</button>
+  `;
+  document.getElementById('btn-logout').addEventListener('click', () => {
+    localStorage.removeItem(JWT_KEY);
+    location.reload();
+  });
+}
+
+// ── Scores + activity sidebar ────────────────────────────────────────────────
+
+const GAME_LABEL = {
+  snake: '🐍 Snake',
+  tetris: '🟦 Tetris',
+  invaders: '👾 Invaders',
+  poker: '🃏 Poker',
+};
+
+async function loadScores() {
+  try {
+    const res = await fetch('/api/v1/scores/top?limit=3');
+    if (!res.ok) return;
+    const { scores } = await res.json();
+    renderScores(scores);
+  } catch (_) { /* silent */ }
+}
+
+function renderScores(scores) {
+  const root = document.getElementById('scores-content');
+  if (!scores.length) {
+    root.innerHTML = '<div class="empty">Ainda não há pontuações registradas. Jogue para entrar no quadro.</div>';
+    return;
+  }
+  // Group by game
+  const byGame = {};
+  for (const s of scores) {
+    if (!byGame[s.game]) byGame[s.game] = [];
+    byGame[s.game].push(s);
+  }
+  const parts = [];
+  for (const game of ['snake', 'tetris', 'invaders']) {
+    if (!byGame[game]) continue;
+    parts.push(`<div class="group-label">${GAME_LABEL[game] || game}</div>`);
+    for (const s of byGame[game]) {
+      parts.push(`
+        <div class="score-row">
+          <span class="user">${s.user_id}</span>
+          <span class="score">${s.score}</span>
+        </div>
+      `);
+    }
+  }
+  root.classList.remove('empty');
+  root.innerHTML = parts.join('') || '<div class="empty">Sem dados.</div>';
+}
+
+async function loadActivity() {
+  try {
+    const res = await fetch('/api/v1/scores/recent');
+    if (!res.ok) return;
+    const { scores } = await res.json();
+    renderActivity(scores);
+  } catch (_) { /* silent */ }
+}
+
+function shortDate(iso) {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = (now - d) / 1000;
+    if (diff < 60) return 'agora';
+    if (diff < 3600) return `${Math.floor(diff / 60)}min`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+    return d.toLocaleDateString('pt-BR');
+  } catch { return ''; }
+}
+
+function renderActivity(scores) {
+  const root = document.getElementById('activity-content');
+  if (!scores.length) {
+    root.innerHTML = '<div class="empty">Nenhuma atividade ainda.</div>';
+    return;
+  }
+  root.classList.remove('empty');
+  root.innerHTML = scores.map((s) => `
+    <div class="score-row">
+      <span class="game">${GAME_LABEL[s.game] || s.game}</span>
+      <span class="user">${s.user_id}</span>
+      <span class="score">${s.score}</span>
+      <span class="ts">${shortDate(s.ts)}</span>
+    </div>
+  `).join('');
+}
+
+renderAuthArea();
+loadScores();
+loadActivity();
 initLobby().catch(console.error);

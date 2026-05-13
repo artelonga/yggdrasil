@@ -56,6 +56,12 @@ async fn main() -> anyhow::Result<()> {
     let tetris_state = make_tetris_state(&db_path).expect("sqlite init (tetris)");
     let invaders_state = make_invaders_state(&db_path).expect("sqlite init (invaders)");
 
+    // Scores DB compartilhada (mesma tabela `scores` que snake/tetris/invaders gravam).
+    let scores_conn = rusqlite::Connection::open(&db_path)?;
+    let scores_state = Arc::new(api::scores::ScoresState {
+        db: Arc::new(Mutex::new(scores_conn)),
+    });
+
     let sementes_db = std::env::var("YGGDRASIL_SEMENTES_DB")
         .unwrap_or_else(|_| "yggdrasil-sementes.db".to_string());
     let sementes_storage = Arc::new(
@@ -74,6 +80,11 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::get(api::me::get_sementes),
         )
         .with_state(me_state);
+
+    let scores_router = Router::new()
+        .route("/api/v1/scores/top", get(api::scores::get_top))
+        .route("/api/v1/scores/recent", get(api::scores::get_recent))
+        .with_state(scores_state);
 
     let poker_state = Arc::new(PokerState::new(
         auth_state.jwt_secret.clone(),
@@ -133,6 +144,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
         .merge(auth_router)
         .merge(me_router)
+        .merge(scores_router)
         .merge(snake_router)
         .merge(tetris_router)
         .merge(invaders_router)
