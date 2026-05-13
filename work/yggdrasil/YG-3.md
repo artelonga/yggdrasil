@@ -1,7 +1,7 @@
 ---
 id: 3
 title: "Renderização <canvas> do lobby"
-status: todo
+status: done
 priority: critical
 type: feat
 release: 0.1.0
@@ -13,7 +13,7 @@ labels:
   - lobby
 module: yggdrasil-web
 created_at: 2026-05-09T00:00:00Z
-updated_at: 2026-05-09T00:00:00Z
+updated_at: 2026-05-09T13:16:56.782809+00:00
 ---
 
 GIVEN o lobby Universe está construído (YG-2),

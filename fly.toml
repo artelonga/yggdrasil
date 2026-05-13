@@ -1,0 +1,59 @@
+# Fly.io deployment for yggdrasil-web.
+#
+# NOTE: until YG-17 swaps the path dep for a git rev pin, deploys must be run
+# from the PARENT directory of this repo so the build context includes
+# co/game-core:
+#
+#   cd /Users/artelonga/projects
+#   flyctl deploy --config yggdrasil/fly.toml \
+#                 --dockerfile yggdrasil/yggdrasil-web/Dockerfile
+
+app = "yggdrasil-artelonga"
+primary_region = "gru"
+
+# Dockerfile path is resolved relative to THIS fly.toml's directory. The build
+# context (where COPY paths root from) is the positional arg to `flyctl deploy`
+# — pass the parent dir so co/game-core is reachable.
+[build]
+  dockerfile = "yggdrasil-web/Dockerfile"
+
+[mounts]
+  source = "yggdrasil_data"
+  destination = "/data"
+
+[env]
+  YGGDRASIL_DB = "/data/yggdrasil.db"
+  YGGDRASIL_SEMENTES_DB = "/data/yggdrasil-sementes.db"
+  RUST_LOG = "yggdrasil_web=info,tower_http=info"
+  # SMTP — deixar vazios aqui; definir via `flyctl secrets set` (ver docs/DEPLOY.md)
+  YGGDRASIL_SMTP_HOST = ""
+  YGGDRASIL_SMTP_PORT = "587"
+  YGGDRASIL_SMTP_USER = ""
+  YGGDRASIL_SMTP_FROM = "Yggdrasil <noreply@artelonga.com.br>"
+  # YGGDRASIL_SMTP_PASSWORD — definir via `flyctl secrets set YGGDRASIL_SMTP_PASSWORD=...`
+
+[http_service]
+  internal_port = 3030
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[checks]
+  [checks.health]
+    type = "http"
+    port = 3030
+    path = "/health"
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "60s"

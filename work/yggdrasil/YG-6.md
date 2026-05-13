@@ -1,7 +1,7 @@
 ---
 id: 6
 title: "Adapter para Snake (game_core::SnakeGame)"
-status: todo
+status: done
 priority: high
 type: feat
 release: 0.1.0
@@ -12,7 +12,7 @@ labels:
   - adapter
 module: yggdrasil-core
 created_at: 2026-05-09T00:00:00Z
-updated_at: 2026-05-09T00:00:00Z
+updated_at: 2026-05-09T13:46:36.830644+00:00
 ---
 
 GIVEN o usuário entrou no portal "snake" (YG-5),

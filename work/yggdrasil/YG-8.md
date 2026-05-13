@@ -1,7 +1,7 @@
 ---
 id: 8
 title: "Adapter para Space Invaders (game_core::InvadersGame)"
-status: todo
+status: done
 priority: medium
 type: feat
 release: 0.5.0
@@ -12,7 +12,7 @@ labels:
   - adapter
 module: yggdrasil-core
 created_at: 2026-05-09T00:00:00Z
-updated_at: 2026-05-09T00:00:00Z
+updated_at: 2026-05-09T14:08:47.707579+00:00
 ---
 
 GIVEN o trait comum `YggGame` está consolidado (YG-7),
@@ -26,10 +26,10 @@ THEN entrar no portal "invaders" inicia a partida.
 
 ## Critérios de aceitação
 
-- [ ] `yggdrasil-core/src/games/invaders.rs`.
-- [ ] Rotas em `yggdrasil-web/src/games/invaders_routes.rs`.
-- [ ] `static/games/invaders.js`.
-- [ ] Score persistido `(user_id, "invaders", score, ts)`.
+- [x] `yggdrasil-core/src/games/invaders.rs`.
+- [x] Rotas em `yggdrasil-web/src/games/invaders_routes.rs`.
+- [x] `static/games/invaders.js`.
+- [x] Score persistido `(user_id, "invaders", score, ts)`.
 
 ## Commit
 

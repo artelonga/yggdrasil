@@ -1,7 +1,7 @@
 ---
 id: 4
 title: "Input de teclado no lobby (WASD/setas + Enter)"
-status: todo
+status: done
 priority: high
 type: feat
 release: 0.1.0
@@ -13,7 +13,7 @@ labels:
   - lobby
 module: yggdrasil-web
 created_at: 2026-05-09T00:00:00Z
-updated_at: 2026-05-09T00:00:00Z
+updated_at: 2026-05-09T13:25:56.190408+00:00
 ---
 
 GIVEN o lobby está renderizado (YG-3),
