@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1hello1universo1"]
+
+[ext_resource type="Script" path="res://scripts/hello_universo.gd" id="1_hello"]
+
+[node name="HelloUniverso" type="Node2D"]
+script = ExtResource("1_hello")
+
+[node name="Label" type="Label" parent="."]
+offset_left = 320.0
+offset_top = 240.0
+offset_right = 640.0
+offset_bottom = 300.0
+text = "Olá universo"
+horizontal_alignment = 1
+vertical_alignment = 1

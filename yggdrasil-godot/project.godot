@@ -1,0 +1,37 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="yggdrasil-godot"
+config/description="POC Godot 4 — substrato de universos do Yggdrasil. Avalia scene tree + signals + lazy spawn + multiplayer-native (YG-31..YG-35)."
+run/main_scene="res://scenes/HelloUniverso.tscn"
+config/features=PackedStringArray("4.5", "Forward Plus")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=960
+window/size/viewport_height=540
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[network]
+
+limits/debugger/max_chars_per_second=32768
+limits/debugger/max_queued_messages=2048
+limits/debugger/max_errors_per_second=400
+limits/debugger/max_warnings_per_second=400
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="gl_compatibility"
+renderer/rendering_method.web="gl_compatibility"
