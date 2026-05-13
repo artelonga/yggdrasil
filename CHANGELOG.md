@@ -4,6 +4,20 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (poker, YG-29 — persistência em SQLite)
+- `yggdrasil_core::games::poker_game::PokerTableSnapshot { lobby, stacks }` — formato serde-friendly que captura o estado persistível de uma mesa: seating + chip-stacks por usuário (humano ou bot). Mãos em curso (`PokerGame`) NÃO entram no snapshot — um restart no meio de uma mão é forfeit, mas seats e chips sobrevivem. Escolha pragmática: o engine `PokerGame` do `co/game-core` não é serde-friendly, e o custo de uma mão perdida (≤ poucas dezenas de sementes) é muito menor que o custo de perder buy-ins (1k+ sementes).
+- `PokerTable::to_snapshot()` / `PokerTable::from_snapshot(snap)` — serialização round-trip. `to_snapshot` chama `snapshot_stacks_from_game` antes para garantir que os chips do engine refletem em `stacks`.
+- `SeatOccupant` e `PokerLobby` agora derivam `Deserialize` além de `Serialize`.
+- `yggdrasil_web::games::poker_persistence` — novo módulo com:
+  - `init_poker_db(path)` — abre conexão SQLite e cria tabela `poker_lobbies (id TEXT PRIMARY KEY, name TEXT, state TEXT)` se ausente. Idempotente.
+  - `save_lobby(conn, snap)` — UPSERT do snapshot serializado em JSON.
+  - `load_all(conn)` / `load_tables(conn)` — leitura ordenada por id; `load_tables` já materializa como `PokerTable`.
+- `PokerState::with_persistence(secret, sementes, db_path)` — novo construtor. No primeiro boot, semeia 3 mesas defaults (Carvalho, Olmo, Heads-Up) e persiste. Em boots subsequentes, restaura mesas persistidas. Falhas de SQLite são logadas mas não abortam o boot — degrada para in-memory.
+- `PokerState::new(secret, sementes)` permanece como alias in-memory (sem persistência) para testes legados.
+- `main.rs` agora usa `PokerState::with_persistence` apontando para o mesmo `YGGDRASIL_DB` controlado pelas demais rotas (snake/tetris/invaders/scores). Sem nova env var.
+- Persistência é acionada após cada `sit_with_sementes`, `stand_with_sementes` e `act` bem-sucedido. Cada save abre/fecha sua própria conexão — locking SQLite (WAL) faz o serializing.
+- 8 novos testes (3 em `poker_game.rs`, 4 em `poker_persistence.rs`, 2 em `poker_routes.rs`): round-trip de snapshot, persistência através de reconexão SQLite (simula kill -9), UPSERT, primeiro boot semeia 3 mesas, restart preserva seat e stack. 183 testes no total.
+
 ## [0.8.0] — 2026-05-13
 
 Pôquer multiplayer ponta-a-ponta + universos como grafo + SSO via CO. Fecha o epic YG-22.

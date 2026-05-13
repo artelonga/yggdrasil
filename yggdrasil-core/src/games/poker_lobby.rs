@@ -10,7 +10,7 @@
 //! - 2+ humans → no bots (multiplayer encouraged)
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const SEATS_PER_LOBBY: usize = 6;
 pub const BOT_USER_ID: &str = "bot:carvalho";
@@ -19,7 +19,7 @@ pub const BOT_DISPLAY_NAME: &str = "Bot Carvalho";
 /// Variantes de tamanho de mesa (YG-37). 6 = cash game padrão; 2 = heads-up.
 /// Outros valores são aceitos para futuras configurações.
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeatOccupant {
     Empty,
@@ -30,7 +30,7 @@ pub enum SeatOccupant {
     Bot,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PokerLobby {
     pub id: String,
     pub name: String,
