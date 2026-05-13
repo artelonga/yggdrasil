@@ -13,24 +13,30 @@ use axum::{
 };
 use game_core::games::poker::PokerAction;
 use serde::Deserialize;
-use yggdrasil_core::games::poker_game::{PokerTable, PokerTableError};
+use yggdrasil_core::games::poker_bot::auto_step_bots;
+use yggdrasil_core::games::poker_game::{
+    PokerSitError, PokerStandError, PokerTable, PokerTableError,
+};
 use yggdrasil_core::games::poker_lobby::{LobbyError, PokerLobby};
+use yggdrasil_core::sementes::{Sementes, SementesError};
 
 use crate::auth::verify_jwt;
 
 pub struct PokerState {
     pub jwt_secret: String,
     pub tables: Mutex<Vec<PokerTable>>,
+    pub sementes: Arc<Sementes>,
 }
 
 impl PokerState {
-    pub fn new(jwt_secret: String) -> Self {
+    pub fn new(jwt_secret: String, sementes: Arc<Sementes>) -> Self {
         Self {
             jwt_secret,
             tables: Mutex::new(vec![
                 PokerTable::new(PokerLobby::new("carvalho", "Mesa Carvalho")),
                 PokerTable::new(PokerLobby::new("olmo", "Mesa Olmo")),
             ]),
+            sementes,
         }
     }
 }
@@ -74,6 +80,33 @@ fn lobby_error(e: LobbyError) -> Response {
         LobbyError::NotSeated => StatusCode::BAD_REQUEST,
     };
     (status, Json(serde_json::json!({"erro": e.to_string()}))).into_response()
+}
+
+fn sit_error(e: PokerSitError) -> Response {
+    match e {
+        PokerSitError::Lobby(le) => lobby_error(le),
+        PokerSitError::Sementes(SementesError::SaldoInsuficiente) => (
+            StatusCode::PAYMENT_REQUIRED,
+            Json(serde_json::json!({"erro": "Saldo insuficiente para sentar"})),
+        )
+            .into_response(),
+        PokerSitError::Sementes(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"erro": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+fn stand_error(e: PokerStandError) -> Response {
+    match e {
+        PokerStandError::Lobby(le) => lobby_error(le),
+        PokerStandError::Sementes(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"erro": e.to_string()})),
+        )
+            .into_response(),
+    }
 }
 
 fn table_error(e: PokerTableError) -> Response {
@@ -152,9 +185,9 @@ pub async fn sit(
         Some(t) => t,
         None => return lobby_not_found(),
     };
-    match table.lobby.sit(req.seat, &user_id) {
+    match table.sit_with_sementes(req.seat, &user_id, &state.sementes) {
         Ok(()) => (StatusCode::OK, Json(table.lobby.clone())).into_response(),
-        Err(e) => lobby_error(e),
+        Err(e) => sit_error(e),
     }
 }
 
@@ -172,9 +205,9 @@ pub async fn stand(
         Some(t) => t,
         None => return lobby_not_found(),
     };
-    match table.lobby.stand(&user_id) {
+    match table.stand_with_sementes(&user_id, &state.sementes) {
         Ok(()) => (StatusCode::OK, Json(table.lobby.clone())).into_response(),
-        Err(e) => lobby_error(e),
+        Err(e) => stand_error(e),
     }
 }
 
@@ -198,6 +231,7 @@ pub async fn get_hand(
     if table.game.is_none() {
         let _ = table.start_hand();
     }
+    auto_step_bots(table);
     match table.hand_state() {
         Some(s) => (StatusCode::OK, Json(s)).into_response(),
         None => (StatusCode::OK, Json(waiting_state())).into_response(),
@@ -269,10 +303,13 @@ pub async fn post_action(
     };
 
     match table.act(&user_id, poker_action) {
-        Ok(()) => match table.hand_state() {
-            Some(s) => (StatusCode::OK, Json(s)).into_response(),
-            None => (StatusCode::OK, Json(waiting_state())).into_response(),
-        },
+        Ok(()) => {
+            auto_step_bots(table);
+            match table.hand_state() {
+                Some(s) => (StatusCode::OK, Json(s)).into_response(),
+                None => (StatusCode::OK, Json(waiting_state())).into_response(),
+            }
+        }
         Err(e) => table_error(e),
     }
 }
@@ -289,9 +326,19 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::auth::sign_jwt;
+    use game_core::storage::Storage;
+    use tempfile::TempDir;
 
-    fn make_app(secret: &str) -> (Router, Arc<PokerState>) {
-        let state = Arc::new(PokerState::new(secret.to_string()));
+    /// Test helper: cria PokerState com Sementes seeded para os usuários comuns
+    /// dos testes (user-a, user-b). Cada um recebe 100k para não topar o limite
+    /// em testes que sentam várias vezes.
+    fn make_app(secret: &str) -> (Router, Arc<PokerState>, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(Storage::open(&dir.path().join("test.db")).unwrap());
+        let sementes = Arc::new(Sementes::new(storage));
+        sementes.creditar("user-a", 100_000).unwrap();
+        sementes.creditar("user-b", 100_000).unwrap();
+        let state = Arc::new(PokerState::new(secret.to_string(), sementes));
         let app = Router::new()
             .route("/api/v1/poker/lobbies", get(list_lobbies))
             .route("/api/v1/poker/lobbies/{id}", get(get_lobby))
@@ -301,7 +348,7 @@ mod tests {
             .route("/api/v1/poker/lobbies/{id}/hole-cards", get(get_hole_cards))
             .route("/api/v1/poker/lobbies/{id}/action", post(post_action))
             .with_state(state.clone());
-        (app, state)
+        (app, state, dir)
     }
 
     async fn parse_body(resp: axum::response::Response) -> serde_json::Value {
@@ -347,7 +394,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_sem_auth_retorna_401() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let resp = app
             .oneshot(
                 Request::builder()
@@ -362,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_com_auth_retorna_duas_mesas() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let token = sign_jwt("user-a", "a@test.com", "s").unwrap();
         let resp = app
             .oneshot(
@@ -384,7 +431,7 @@ mod tests {
 
     #[tokio::test]
     async fn sit_persiste_humano_e_adiciona_bot() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let token = sign_jwt("user-a", "a@test.com", "s").unwrap();
         let resp = app.oneshot(sit_req(2, &token)).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -398,7 +445,7 @@ mod tests {
 
     #[tokio::test]
     async fn sit_em_mesa_inexistente_retorna_404() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let token = sign_jwt("user-a", "a@test.com", "s").unwrap();
         let resp = app
             .oneshot(
@@ -417,7 +464,7 @@ mod tests {
 
     #[tokio::test]
     async fn stand_remove_jogador() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let token = sign_jwt("user-a", "a@test.com", "s").unwrap();
         let sit_resp = app.clone().oneshot(sit_req(0, &token)).await.unwrap();
         assert_eq!(sit_resp.status(), StatusCode::OK);
@@ -462,7 +509,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_hand_sem_auth_retorna_401() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let resp = app
             .oneshot(
                 Request::builder()
@@ -477,7 +524,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_hand_inicia_partida_com_dois_jogadores() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let (token_a, _token_b) = seat_two_players(&app).await;
         let resp = app.oneshot(hand_req(&token_a)).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -489,7 +536,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_hand_sem_jogadores_retorna_estado_aguardando() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let token_a = sign_jwt("user-a", "a@test.com", "s").unwrap();
         // Seat only 1 player → bot fills but start_hand on GET /hand with 1 human + 1 bot
         app.clone().oneshot(sit_req(0, &token_a)).await.unwrap();
@@ -502,7 +549,7 @@ mod tests {
 
     #[tokio::test]
     async fn acao_fora_da_vez_retorna_409() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let (token_a, token_b) = seat_two_players(&app).await;
         // Start the hand
         let hand_v = parse_body(app.clone().oneshot(hand_req(&token_a)).await.unwrap()).await;
@@ -522,7 +569,7 @@ mod tests {
 
     #[tokio::test]
     async fn fold_encerra_mao_imediatamente_via_http() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let (token_a, token_b) = seat_two_players(&app).await;
         let hand_v = parse_body(app.clone().oneshot(hand_req(&token_a)).await.unwrap()).await;
         let current_actor = hand_v["current_actor"].as_str().unwrap().to_string();
@@ -543,7 +590,7 @@ mod tests {
 
     #[tokio::test]
     async fn dois_humanos_completam_mao_ate_showdown_via_http() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let (token_a, token_b) = seat_two_players(&app).await;
         app.clone().oneshot(hand_req(&token_a)).await.unwrap();
 
@@ -595,7 +642,7 @@ mod tests {
 
     #[tokio::test]
     async fn hole_cards_retorna_apenas_cartas_do_usuario_autenticado() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let (token_a, _) = seat_two_players(&app).await;
         app.clone().oneshot(hand_req(&token_a)).await.unwrap();
         let resp = app
@@ -614,8 +661,108 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sit_sem_saldo_retorna_402_payment_required() {
+        // Usuário com saldo zero (não foi seeded em make_app).
+        let (app, _, _dir) = make_app("s");
+        let token = sign_jwt("user-pobre", "p@test.com", "s").unwrap();
+        let resp = app.oneshot(sit_req(0, &token)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+        let v = parse_body(resp).await;
+        assert!(
+            v["erro"].as_str().unwrap().contains("Saldo insuficiente"),
+            "mensagem PT-BR: {}",
+            v["erro"]
+        );
+    }
+
+    #[tokio::test]
+    async fn sit_debita_buy_in_da_carteira_do_usuario() {
+        let (app, state, _dir) = make_app("s");
+        let token = sign_jwt("user-a", "a@test.com", "s").unwrap();
+        let saldo_antes = state.sementes.saldo("user-a").unwrap();
+        let resp = app.oneshot(sit_req(0, &token)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let saldo_depois = state.sementes.saldo("user-a").unwrap();
+        assert_eq!(saldo_antes - saldo_depois, 1_000);
+    }
+
+    #[tokio::test]
+    async fn stand_credita_chips_remanescentes() {
+        let (app, state, _dir) = make_app("s");
+        let token = sign_jwt("user-a", "a@test.com", "s").unwrap();
+        let saldo_inicial = state.sementes.saldo("user-a").unwrap();
+        // Sit → debita 1000
+        app.clone().oneshot(sit_req(0, &token)).await.unwrap();
+        // Stand → credita o stack remanescente (1000 se não jogou)
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/poker/lobbies/carvalho/stand")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(state.sementes.saldo("user-a").unwrap(), saldo_inicial);
+    }
+
+    #[tokio::test]
+    async fn humano_vs_bot_completa_mao_sem_travar_via_http() {
+        // Regressão YG-26: bot deve responder automaticamente quando é a vez dele.
+        let (app, _, _dir) = make_app("s");
+        let token_a = sign_jwt("user-a", "a@test.com", "s").unwrap();
+        // Senta 1 humano → lobby auto-adiciona bot.
+        app.clone().oneshot(sit_req(0, &token_a)).await.unwrap();
+
+        let mut game_over = false;
+        for _ in 0..40 {
+            let hand_v = parse_body(app.clone().oneshot(hand_req(&token_a)).await.unwrap()).await;
+            if hand_v["game_over"].as_bool().unwrap_or(false) {
+                game_over = true;
+                break;
+            }
+            let current_actor = hand_v["current_actor"].as_str().unwrap_or("").to_string();
+            // Se for vez do bot, auto_step já deveria ter rodado — esperar próximo poll
+            // não ajudaria. Se chegou aqui, é vez do humano.
+            assert_eq!(
+                current_actor, "user-a",
+                "bot deveria ter agido antes de retornar para o cliente"
+            );
+
+            let table_bet = hand_v["current_bet"].as_u64().unwrap_or(0);
+            let player_bet = hand_v["players"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["user_id"].as_str() == Some("user-a"))
+                .and_then(|p| p["current_bet"].as_u64())
+                .unwrap_or(0);
+            let action = if player_bet < table_bet {
+                "call"
+            } else {
+                "check"
+            };
+            let resp = app
+                .clone()
+                .oneshot(action_req(&token_a, action, None))
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let v = parse_body(resp).await;
+            if v["game_over"].as_bool().unwrap_or(false) {
+                game_over = true;
+                break;
+            }
+        }
+        assert!(game_over, "mão humano vs bot deveria completar");
+    }
+
+    #[tokio::test]
     async fn acao_desconhecida_retorna_400() {
-        let (app, _) = make_app("s");
+        let (app, _, _dir) = make_app("s");
         let (token_a, _) = seat_two_players(&app).await;
         app.clone().oneshot(hand_req(&token_a)).await.unwrap();
         let resp = app

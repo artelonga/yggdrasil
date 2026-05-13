@@ -8,8 +8,13 @@ use game_core::{
     games::poker::{BettingRound, GameConfig, PlayerStatus, PokerAction, deck::Suit},
 };
 use serde::Serialize;
+use std::collections::HashMap;
 
-use crate::games::poker_lobby::{BOT_USER_ID, PokerLobby, SeatOccupant};
+use crate::games::poker_lobby::{BOT_USER_ID, LobbyError, PokerLobby, SeatOccupant};
+use crate::sementes::{Sementes, SementesError};
+
+/// Buy-in fixo por sentar à mesa (YG-27). Em chips 1:1 com sementes.
+pub const BUY_IN_SEMENTES: u64 = 1_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PokerTableError {
@@ -21,6 +26,24 @@ pub enum PokerTableError {
     MesaSemJogadores,
     #[error("Rodada encerrada")]
     RoundEncerrado,
+}
+
+/// Erros ao sentar com buy-in em sementes (YG-27).
+#[derive(Debug, thiserror::Error)]
+pub enum PokerSitError {
+    #[error(transparent)]
+    Lobby(#[from] LobbyError),
+    #[error(transparent)]
+    Sementes(#[from] SementesError),
+}
+
+/// Erros ao levantar e cashar out (YG-27).
+#[derive(Debug, thiserror::Error)]
+pub enum PokerStandError {
+    #[error(transparent)]
+    Lobby(#[from] LobbyError),
+    #[error(transparent)]
+    Sementes(#[from] SementesError),
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -55,6 +78,9 @@ pub struct PokerTable {
     pub game: Option<PokerGame>,
     pub current_actor: Option<String>,
     player_map: Vec<String>,
+    /// Chip stack persistido entre mãos. Chave = user_id (humano ou `BOT_USER_ID`).
+    /// Buy-in entra aqui no `sit_with_sementes` (YG-27), atualizado após cada mão.
+    pub stacks: HashMap<String, u32>,
 }
 
 impl PokerTable {
@@ -64,6 +90,7 @@ impl PokerTable {
             game: None,
             current_actor: None,
             player_map: vec![],
+            stacks: HashMap::new(),
         }
     }
 
@@ -79,28 +106,124 @@ impl PokerTable {
             .collect()
     }
 
-    /// Inicia uma nova mão. Requer ≥ 2 ocupantes.
+    /// Saldo de chips de um usuário (humano ou bot). Zero se nunca sentou.
+    pub fn stack_of(&self, user_id: &str) -> u32 {
+        self.stacks.get(user_id).copied().unwrap_or(0)
+    }
+
+    /// Inicia uma nova mão. Requer ≥ 2 ocupantes com stack > 0.
+    ///
+    /// Para jogadores ainda não tracked em `stacks` (ex.: testes legados que
+    /// usam `lobby.sit` direto, sem buy-in), o stack é auto-inicializado com
+    /// `GameConfig::default().starting_chips`. Callers do YG-27
+    /// (`sit_with_sementes`) populam `stacks` explicitamente com o buy-in.
     pub fn start_hand(&mut self) -> Result<(), PokerTableError> {
         let occupants = self.occupants();
-        if occupants.len() < 2 {
+        let default_stack = GameConfig::default().starting_chips;
+        for uid in &occupants {
+            self.stacks.entry(uid.clone()).or_insert(default_stack);
+        }
+        let active: Vec<(String, u32)> = occupants
+            .into_iter()
+            .filter_map(|uid| {
+                let stack = self.stacks.get(&uid).copied().unwrap_or(0);
+                if stack > 0 { Some((uid, stack)) } else { None }
+            })
+            .collect();
+        if active.len() < 2 {
             return Err(PokerTableError::MesaSemJogadores);
         }
 
         let universe = create_poker_universe();
-        let config = GameConfig::default();
-        let chips = config.starting_chips;
+        let config = GameConfig {
+            starting_chips: active[0].1,
+            ..Default::default()
+        };
 
-        let mut game = PokerGame::with_config(universe, config, occupants[0].clone());
-        for occ in &occupants[1..] {
-            game.add_player(occ.clone(), chips);
+        let mut game = PokerGame::with_config(universe, config, active[0].0.clone());
+        for (uid, stack) in &active[1..] {
+            game.add_player(uid.clone(), *stack);
         }
         game.start_hand();
 
         let action_pos = game.table.action_position;
-        self.player_map = occupants;
+        self.player_map = active.into_iter().map(|(uid, _)| uid).collect();
         self.current_actor = self.player_map.get(action_pos).cloned();
         self.game = Some(game);
         Ok(())
+    }
+
+    /// Senta com buy-in em sementes (YG-27). Debita BUY_IN_SEMENTES da carteira
+    /// antes de ocupar o assento; se a debitação falhar, o assento não é tocado.
+    /// Se o lobby recusar (assento ocupado, já sentado, etc.), a debitação é
+    /// revertida via `creditar`.
+    pub fn sit_with_sementes(
+        &mut self,
+        seat: usize,
+        user_id: &str,
+        sementes: &Sementes,
+    ) -> Result<(), PokerSitError> {
+        sementes.debitar(user_id, BUY_IN_SEMENTES)?;
+        if let Err(e) = self.lobby.sit(seat, user_id) {
+            // Refund — sit não chegou a acontecer.
+            let _ = sementes.creditar(user_id, BUY_IN_SEMENTES);
+            return Err(e.into());
+        }
+        self.stacks
+            .insert(user_id.to_string(), BUY_IN_SEMENTES as u32);
+        self.sync_bot_stack();
+        Ok(())
+    }
+
+    /// Levanta da mesa e credita o stack remanescente de volta em sementes (YG-27).
+    /// Se está no meio de uma mão, faz fold automático antes.
+    pub fn stand_with_sementes(
+        &mut self,
+        user_id: &str,
+        sementes: &Sementes,
+    ) -> Result<(), PokerStandError> {
+        // Fold se for a vez do usuário e o jogo está em curso.
+        if self.current_actor.as_deref() == Some(user_id) {
+            let _ = self.act(user_id, PokerAction::Fold);
+        }
+        // Captura chips atuais do engine antes de levantar.
+        self.snapshot_stacks_from_game();
+        let remaining = self.stacks.remove(user_id).unwrap_or(0);
+        self.lobby.stand(user_id)?;
+        if remaining > 0 {
+            sementes.creditar(user_id, remaining as u64)?;
+        }
+        self.sync_bot_stack();
+        Ok(())
+    }
+
+    /// Garante que o bot tem stack inicializado quando está sentado, e que é
+    /// removido de `stacks` quando sai. Idempotente.
+    fn sync_bot_stack(&mut self) {
+        let bot_seated = self
+            .lobby
+            .seats
+            .iter()
+            .any(|s| matches!(s, SeatOccupant::Bot));
+        if bot_seated {
+            self.stacks
+                .entry(BOT_USER_ID.to_string())
+                .or_insert(BUY_IN_SEMENTES as u32);
+        } else {
+            self.stacks.remove(BOT_USER_ID);
+        }
+    }
+
+    /// Copia chips do `PokerGame` para `stacks`. Chamado após cada mão
+    /// (ou antes de cash-out) para que o saldo persista entre mãos.
+    fn snapshot_stacks_from_game(&mut self) {
+        if let Some(game) = self.game.as_ref() {
+            for (i, p) in game.players.iter().enumerate() {
+                if let Some(uid) = self.player_map.get(i) {
+                    self.stacks.insert(uid.clone(), p.chips);
+                }
+            }
+        }
     }
 
     /// Aplica uma ação do jogador `user_id`. Valida vez e consistência da ação.
@@ -132,6 +255,9 @@ impl PokerTable {
             let action_pos = game.table.action_position;
             self.current_actor = self.player_map.get(action_pos).cloned();
         }
+        // Snapshot stacks após cada ação para que o saldo flutue corretamente
+        // — necessário para YG-27 (cash-out a qualquer momento).
+        self.snapshot_stacks_from_game();
         Ok(())
     }
 
@@ -329,5 +455,105 @@ mod tests {
         let mut table = make_two_player_table();
         table.start_hand().unwrap();
         assert!(table.hole_cards_for("user-x").is_none());
+    }
+
+    // ── YG-27: buy-in / cash-out em sementes ───────────────────────────────
+
+    use crate::sementes::Sementes;
+    use game_core::storage::Storage;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    fn make_sementes_com_saldo(user: &str, saldo: u64) -> (Sementes, tempfile::TempDir) {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.db");
+        let storage = Arc::new(Storage::open(&path).unwrap());
+        let s = Sementes::new(storage);
+        if saldo > 0 {
+            s.creditar(user, saldo).unwrap();
+        }
+        (s, dir)
+    }
+
+    #[test]
+    fn sit_with_sementes_debita_buy_in_e_inicializa_stack() {
+        let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 5_000);
+        table.sit_with_sementes(0, "alice", &sementes).unwrap();
+        assert_eq!(sementes.saldo("alice").unwrap(), 5_000 - BUY_IN_SEMENTES);
+        assert_eq!(table.stack_of("alice"), BUY_IN_SEMENTES as u32);
+    }
+
+    #[test]
+    fn sit_with_sementes_saldo_insuficiente_recusa() {
+        let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 100);
+        let err = table.sit_with_sementes(0, "alice", &sementes).unwrap_err();
+        assert!(matches!(
+            err,
+            PokerSitError::Sementes(SementesError::SaldoInsuficiente)
+        ));
+        // Não deve ter debitado nem sentado.
+        assert_eq!(sementes.saldo("alice").unwrap(), 100);
+        assert_eq!(table.stack_of("alice"), 0);
+    }
+
+    #[test]
+    fn sit_with_sementes_assento_ocupado_devolve_buy_in() {
+        let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 5_000);
+        sementes.creditar("bob", 5_000).unwrap();
+        table.sit_with_sementes(0, "alice", &sementes).unwrap();
+        // Bob tenta sentar no mesmo assento.
+        let saldo_bob_antes = sementes.saldo("bob").unwrap();
+        let err = table.sit_with_sementes(0, "bob", &sementes).unwrap_err();
+        assert!(matches!(err, PokerSitError::Lobby(LobbyError::SeatTaken)));
+        // Bob não foi debitado (refund executado).
+        assert_eq!(sementes.saldo("bob").unwrap(), saldo_bob_antes);
+    }
+
+    #[test]
+    fn stand_with_sementes_credita_stack_remanescente() {
+        let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 5_000);
+        table.sit_with_sementes(0, "alice", &sementes).unwrap();
+        let saldo_apos_sit = sementes.saldo("alice").unwrap();
+        table.stand_with_sementes("alice", &sementes).unwrap();
+        // Stand devolveu o buy-in (alice nunca jogou uma mão).
+        assert_eq!(
+            sementes.saldo("alice").unwrap(),
+            saldo_apos_sit + BUY_IN_SEMENTES
+        );
+    }
+
+    #[test]
+    fn ciclo_sit_stand_preserva_soma_de_sementes() {
+        let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 5_000);
+        let inicial = sementes.saldo("alice").unwrap();
+        table.sit_with_sementes(0, "alice", &sementes).unwrap();
+        table.stand_with_sementes("alice", &sementes).unwrap();
+        assert_eq!(sementes.saldo("alice").unwrap(), inicial);
+    }
+
+    #[test]
+    fn bot_recebe_stack_quando_humano_solo_senta() {
+        let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 5_000);
+        table.sit_with_sementes(0, "alice", &sementes).unwrap();
+        // Lobby auto-adicionou o bot — PokerTable deve ter dado stack a ele.
+        assert_eq!(table.stack_of(BOT_USER_ID), BUY_IN_SEMENTES as u32);
+    }
+
+    #[test]
+    fn bot_perde_stack_quando_segundo_humano_senta() {
+        let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
+        let (sementes, _dir) = make_sementes_com_saldo("alice", 5_000);
+        sementes.creditar("bob", 5_000).unwrap();
+        table.sit_with_sementes(0, "alice", &sementes).unwrap();
+        assert_eq!(table.stack_of(BOT_USER_ID), BUY_IN_SEMENTES as u32);
+        table.sit_with_sementes(1, "bob", &sementes).unwrap();
+        // Bot foi deslocado pelo bob.
+        assert_eq!(table.stack_of(BOT_USER_ID), 0);
     }
 }

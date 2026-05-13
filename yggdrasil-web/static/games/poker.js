@@ -41,7 +41,11 @@ const el = {
   raiseAmount:    document.getElementById('raise-amount'),
   winnerBanner:   document.getElementById('winner-banner'),
   playersList:    document.getElementById('players-list'),
+  saldoHeader:    document.getElementById('saldo-header'),
+  saldoValue:     document.getElementById('saldo-value'),
 };
+
+const BUY_IN_SEMENTES = 1_000;
 
 function decodeJwt(token) {
   try {
@@ -72,6 +76,16 @@ async function api(path, options = {}) {
 }
 
 function setStatus(msg) { el.status.textContent = msg; }
+
+async function refreshSaldo() {
+  try {
+    const res = await api('/api/v1/me/sementes');
+    if (!res.ok) return;
+    const data = await res.json();
+    el.saldoValue.textContent = data.saldo.toLocaleString('pt-BR');
+    el.saldoHeader.style.display = 'flex';
+  } catch (_) { /* silent — saldo é informativo */ }
+}
 
 function showError(msg) {
   if (!msg) { el.erroBanner.style.display = 'none'; return; }
@@ -316,8 +330,15 @@ function renderGame(hand, holeCards) {
     el.winnerBanner.style.display = 'block';
     el.actionBar.style.display = 'none';
     el.suaVezBanner.style.display = 'none';
+    // Pot foi creditado ao chip stack do vencedor — saldo só muda no cash-out (stand).
+    // Mas atualizar saldo aqui é um no-op informativo barato.
+    if (!state.handEndedAcked) {
+      state.handEndedAcked = true;
+      refreshSaldo();
+    }
   } else {
     el.winnerBanner.style.display = 'none';
+    state.handEndedAcked = false;
   }
 
   // Action buttons — only on user's turn
@@ -397,9 +418,14 @@ async function sit(seat) {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      showError(body.erro || `Erro ${res.status}`);
+      if (res.status === 402) {
+        showError(`${body.erro || 'Saldo insuficiente'} — buy-in é ${BUY_IN_SEMENTES} sementes.`);
+      } else {
+        showError(body.erro || `Erro ${res.status}`);
+      }
       return;
     }
+    refreshSaldo();
     refreshLobby();
   } catch (e) {
     if (e.message !== '401') showError(`Erro: ${e.message}`);
@@ -416,6 +442,7 @@ async function stand() {
       showError(body.erro || `Erro ${res.status}`);
       return;
     }
+    refreshSaldo();
     refreshLobby();
   } catch (e) {
     if (e.message !== '401') showError(`Erro: ${e.message}`);
@@ -443,6 +470,7 @@ function init() {
     return;
   }
   state.userId = claims.sub;
+  refreshSaldo();
   loadLobbies().catch((e) => {
     if (e.message !== '401') {
       showError(`Erro ao carregar: ${e.message}`);

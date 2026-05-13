@@ -19,6 +19,25 @@
     }
     h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.6rem; margin-bottom: 0.4rem; }
     .subtitulo { opacity: 0.5; font-size: 0.85rem; margin-bottom: 2rem; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .saldo-header {
+      border: 1px solid #2a2a3e;
+      background: #14141e;
+      padding: 0.6rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.1rem;
+    }
+    .saldo-label { font-size: 0.65rem; opacity: 0.5; letter-spacing: 0.15em; }
+    .saldo-value { color: #d4af37; font-size: 1.2rem; font-weight: 500; }
+    .saldo-unit { font-size: 0.7rem; opacity: 0.5; letter-spacing: 0.1em; }
     .badge {
       display: inline-block;
       border: 1px solid #d4af37;
@@ -231,8 +250,17 @@
 </head>
 <body>
   <div class="container">
-    <h1>🃏 POKER</h1>
-    <p class="subtitulo">Mesas multiplayer com aposta em sementes</p>
+    <div class="page-header">
+      <div>
+        <h1>🃏 POKER</h1>
+        <p class="subtitulo">Mesas multiplayer com aposta em sementes</p>
+      </div>
+      <div id="saldo-header" class="saldo-header" style="display:none">
+        <span class="saldo-label">SEU SALDO</span>
+        <span id="saldo-value" class="saldo-value">—</span>
+        <span class="saldo-unit">sementes</span>
+      </div>
+    </div>
 
     <div id="cta-login">
       <h2>Entrar para jogar</h2>

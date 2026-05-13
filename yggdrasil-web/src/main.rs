@@ -62,9 +62,10 @@ async fn main() -> anyhow::Result<()> {
         game_core::storage::Storage::open(std::path::Path::new(&sementes_db))
             .map_err(|e| anyhow::anyhow!("Erro ao abrir storage de sementes: {e}"))?,
     );
+    let sementes = Arc::new(yggdrasil_core::sementes::Sementes::new(sementes_storage));
     let me_state = Arc::new(api::me::MeState {
         jwt_secret: auth_state.jwt_secret.clone(),
-        sementes: Arc::new(yggdrasil_core::sementes::Sementes::new(sementes_storage)),
+        sementes: sementes.clone(),
     });
 
     let me_router = Router::new()
@@ -74,7 +75,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(me_state);
 
-    let poker_state = Arc::new(PokerState::new(auth_state.jwt_secret.clone()));
+    let poker_state = Arc::new(PokerState::new(
+        auth_state.jwt_secret.clone(),
+        sementes.clone(),
+    ));
 
     let auth_router = Router::new()
         .route("/api/v1/auth/code", post(auth::request_code))
