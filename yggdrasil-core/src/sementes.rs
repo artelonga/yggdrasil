@@ -1,4 +1,4 @@
-use game_core::storage::{Storage, WalletManager};
+use game_core::storage::{Storage, schema};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -36,13 +36,35 @@ impl Sementes {
         Self { storage }
     }
 
-    fn inner(&self) -> WalletManager<'_> {
-        WalletManager::new(&self.storage)
+    fn load_wallet(&self, user_id: &str) -> Result<schema::Wallet> {
+        match self
+            .storage
+            .get_wallet_for_user(user_id)
+            .map_err(SementesError::from)?
+        {
+            Some(w) => Ok(w),
+            None => Ok(schema::Wallet {
+                user_id: user_id.to_string(),
+                balance: 0,
+                last_updated: chrono::Utc::now().timestamp(),
+            }),
+        }
+    }
+
+    fn save_wallet(&self, user_id: &str, balance: u64) -> Result<()> {
+        let wallet = schema::Wallet {
+            user_id: user_id.to_string(),
+            balance,
+            last_updated: chrono::Utc::now().timestamp(),
+        };
+        self.storage
+            .save_wallet_for_user(user_id, &wallet)
+            .map_err(SementesError::from)
     }
 
     /// Retorna o saldo atual de sementes do usuário.
-    pub fn saldo(&self, _user_id: &str) -> Result<u64> {
-        self.inner().get_balance().map_err(Into::into)
+    pub fn saldo(&self, user_id: &str) -> Result<u64> {
+        Ok(self.load_wallet(user_id)?.balance)
     }
 
     /// Retorna saldo e timestamp de última atualização para o usuário.
@@ -66,25 +88,21 @@ impl Sementes {
 
     /// Credita `qtd` sementes ao usuário.
     pub fn creditar(&self, user_id: &str, qtd: u64) -> Result<()> {
-        let qtd_u32 = qtd.min(u32::MAX as u64) as u32;
-        self.inner()
-            .cash_out(user_id, qtd_u32, 0)
-            .map_err(Into::into)
+        let saldo_atual = self.load_wallet(user_id)?.balance;
+        self.save_wallet(user_id, saldo_atual + qtd)
     }
 
     /// Debita `qtd` sementes do usuário. Retorna o saldo restante.
     ///
     /// Erro [`SementesError::SaldoInsuficiente`] se o saldo for menor que `qtd`.
     pub fn debitar(&self, user_id: &str, qtd: u64) -> Result<u64> {
-        let saldo_atual = self.saldo(user_id)?;
+        let saldo_atual = self.load_wallet(user_id)?.balance;
         if saldo_atual < qtd {
             return Err(SementesError::SaldoInsuficiente);
         }
-        let qtd_u32 = qtd.min(u32::MAX as u64) as u32;
-        self.inner()
-            .buy_in(user_id, qtd_u32)
-            .map_err(SementesError::from)?;
-        self.saldo(user_id)
+        let restante = saldo_atual - qtd;
+        self.save_wallet(user_id, restante)?;
+        Ok(restante)
     }
 }
 
@@ -103,7 +121,7 @@ mod tests {
             balance,
             last_updated: 0,
         };
-        storage.save_wallet(&wallet).unwrap();
+        storage.save_wallet_for_user("user1", &wallet).unwrap();
         (Sementes::new(storage), dir)
     }
 
@@ -154,5 +172,39 @@ mod tests {
         let (s, _dir) = make_sementes(0);
         let err = s.debitar("user1", 1).unwrap_err();
         assert_eq!(err.to_string(), "Saldo insuficiente");
+    }
+
+    #[test]
+    fn usuario_sem_carteira_tem_saldo_zero() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.db");
+        let storage = Arc::new(Storage::open(&path).unwrap());
+        let s = Sementes::new(storage);
+        assert_eq!(s.saldo("usuario-novo").unwrap(), 0);
+    }
+
+    #[test]
+    fn creditar_em_usuario_sem_carteira_inicializa() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.db");
+        let storage = Arc::new(Storage::open(&path).unwrap());
+        let s = Sementes::new(storage);
+        s.creditar("user-novo", 500).unwrap();
+        assert_eq!(s.saldo("user-novo").unwrap(), 500);
+    }
+
+    #[test]
+    fn saldos_de_usuarios_distintos_nao_se_misturam() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test.db");
+        let storage = Arc::new(Storage::open(&path).unwrap());
+        let s = Sementes::new(storage);
+
+        s.creditar("alice", 1_000).unwrap();
+        s.creditar("bob", 500).unwrap();
+        s.debitar("alice", 200).unwrap();
+
+        assert_eq!(s.saldo("alice").unwrap(), 800);
+        assert_eq!(s.saldo("bob").unwrap(), 500);
     }
 }
