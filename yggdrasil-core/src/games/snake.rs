@@ -15,6 +15,14 @@ pub trait YggGame {
 ///
 /// Adds real snake movement logic (body, food, collision) on top of the
 /// game-core session/universe bookkeeping.
+/// Opções de inicialização que vêm de uma variante do registro de universos.
+/// `None` = comportamento padrão (root).
+#[derive(Default, Debug, Clone)]
+pub struct SnakeOptions {
+    /// Posições adicionais de paredes internas. Usado pela variante `snake/walls`.
+    pub walls: Vec<(usize, usize)>,
+}
+
 pub struct YggSnake {
     pub inner: SnakeGame,
     snake_body: Vec<(usize, usize)>,
@@ -26,10 +34,16 @@ pub struct YggSnake {
     pub game_over: bool,
     width: usize,
     height: usize,
+    /// Paredes internas adicionadas por variantes (YG-37).
+    walls: Vec<(usize, usize)>,
 }
 
 impl YggSnake {
     pub fn new(universe: Universe) -> Self {
+        Self::with_options(universe, SnakeOptions::default())
+    }
+
+    pub fn with_options(universe: Universe, opts: SnakeOptions) -> Self {
         let width = universe.map.width;
         let height = universe.map.height;
         let inner = SnakeGame::new(universe);
@@ -54,14 +68,39 @@ impl YggSnake {
             game_over: false,
             width,
             height,
+            walls: opts.walls,
         }
+    }
+
+    /// Helper: gera um padrão determinístico de paredes internas para a
+    /// variante `snake/walls`. 3 colunas verticais de paredes a 1/4, 2/4, 3/4
+    /// da largura, deixando passagem nas extremidades.
+    pub fn walls_pattern(width: usize, height: usize) -> Vec<(usize, usize)> {
+        let mut walls = Vec::new();
+        for col_frac in [4, 2, 4] {
+            // 4 → width/4, 2 → width/2, 4 → 3*width/4 (calculado abaixo)
+            let _ = col_frac;
+        }
+        for &x in &[width / 4, width / 2, 3 * width / 4] {
+            if x == 0 || x >= width.saturating_sub(1) {
+                continue;
+            }
+            // passa pela metade da coluna, deixando 2 tiles de fresta no topo e base
+            let start_y = 3;
+            let end_y = height.saturating_sub(3);
+            for y in start_y..end_y {
+                walls.push((x, y));
+            }
+        }
+        walls
     }
 
     fn place_food(&mut self) {
         for y in 1..(self.height - 1) {
             for x in 1..(self.width - 1) {
-                if !self.snake_body.contains(&(x, y)) {
-                    self.food = (x, y);
+                let pos = (x, y);
+                if !self.snake_body.contains(&pos) && !self.walls.contains(&pos) {
+                    self.food = pos;
                     return;
                 }
             }
@@ -70,6 +109,11 @@ impl YggSnake {
 
     fn build_map(&self) -> Map {
         let mut map = Map::new(self.width, self.height);
+
+        // Internal walls from variant (YG-37).
+        for &(x, y) in &self.walls {
+            let _ = map.set_tile(x, y, Tile::Wall);
+        }
 
         let _ = map.set_tile(
             self.food.0,
@@ -145,7 +189,8 @@ impl YggGame for YggSnake {
 
         let new_head = (new_x as usize, new_y as usize);
 
-        if self.snake_body.contains(&new_head) {
+        // Snake body collision OR internal wall (YG-37 variant).
+        if self.snake_body.contains(&new_head) || self.walls.contains(&new_head) {
             self.game_over = true;
             return GameAction::Quit;
         }

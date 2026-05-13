@@ -5,7 +5,7 @@ use std::{
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -14,9 +14,10 @@ use game_core::{
     games::GameAction,
 };
 use nanoid::nanoid;
+use yggdrasil_core::games::snake::SnakeOptions;
 use yggdrasil_core::games::{YggGame, YggSnake};
 
-use super::common::{self, InputRequest, StartResponse, TickResponse, map_to_value};
+use super::common::{self, InputRequest, StartResponse, TickResponse, VariantQuery, map_to_value};
 
 pub struct SnakeState {
     sessions: Mutex<HashMap<String, YggSnake>>,
@@ -42,10 +43,19 @@ fn parse_direction(s: &str) -> Input {
     }
 }
 
-/// `GET /api/v1/games/snake/start` — cria sessão e retorna estado inicial.
-pub async fn start_game(State(state): State<Arc<SnakeState>>) -> impl IntoResponse {
+/// `GET /api/v1/games/snake/start[?variant=<slug>]` — cria sessão e retorna estado inicial.
+/// Variantes suportadas: `snake/walls` adiciona paredes internas (YG-37).
+pub async fn start_game(
+    State(state): State<Arc<SnakeState>>,
+    Query(q): Query<VariantQuery>,
+) -> impl IntoResponse {
     let universe = Universe::snake();
-    let game = YggSnake::new(universe);
+    let opts = snake_opts_for_variant(
+        q.variant.as_deref(),
+        universe.map.width,
+        universe.map.height,
+    );
+    let game = YggSnake::with_options(universe, opts);
     let state_val = map_to_value(&game.render_json());
     let id = nanoid!();
 
@@ -56,6 +66,18 @@ pub async fn start_game(State(state): State<Arc<SnakeState>>) -> impl IntoRespon
         state: state_val,
         score: 0,
     })
+}
+
+/// Mapeia variant slug → `SnakeOptions`. Inline em vez de consultar o registry
+/// global — variantes são parte do contrato deste universo, registry é só o
+/// catálogo público.
+fn snake_opts_for_variant(variant: Option<&str>, width: usize, height: usize) -> SnakeOptions {
+    match variant {
+        Some("snake/walls") => SnakeOptions {
+            walls: YggSnake::walls_pattern(width, height),
+        },
+        _ => SnakeOptions::default(),
+    }
 }
 
 /// `POST /api/v1/games/snake/:id/input` — avança um tick com o input recebido.
@@ -252,6 +274,87 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn variant_walls_adiciona_paredes_internas() {
+        // YG-37: ?variant=snake/walls deve produzir Tile::Wall em posições
+        // internas (não-borda) no estado retornado.
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("t.db").to_string_lossy().to_string();
+        let app = make_app(&db);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/games/snake/start?variant=snake/walls")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let tiles = v["state"]["tiles"].as_array().unwrap();
+        let width = v["state"]["width"].as_u64().unwrap() as usize;
+        let height = v["state"]["height"].as_u64().unwrap() as usize;
+        let mut internal_walls = 0;
+        for (y, row) in tiles.iter().enumerate() {
+            for (x, cell) in row.as_array().unwrap().iter().enumerate() {
+                // ignora bordas
+                if x == 0 || y == 0 || x + 1 == width || y + 1 == height {
+                    continue;
+                }
+                if cell == "Wall" {
+                    internal_walls += 1;
+                }
+            }
+        }
+        assert!(
+            internal_walls > 0,
+            "variant snake/walls deveria gerar ≥ 1 wall interno, got {internal_walls}"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_snake_sem_paredes_internas() {
+        // Regressão: comportamento root permanece sem paredes internas.
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("t.db").to_string_lossy().to_string();
+        let app = make_app(&db);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/games/snake/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let tiles = v["state"]["tiles"].as_array().unwrap();
+        let width = v["state"]["width"].as_u64().unwrap() as usize;
+        let height = v["state"]["height"].as_u64().unwrap() as usize;
+        for (y, row) in tiles.iter().enumerate() {
+            for (x, cell) in row.as_array().unwrap().iter().enumerate() {
+                if x == 0 || y == 0 || x + 1 == width || y + 1 == height {
+                    continue;
+                }
+                assert_ne!(
+                    cell, "Wall",
+                    "root snake não deve ter Wall interno em ({x},{y})"
+                );
+            }
+        }
     }
 
     #[tokio::test]

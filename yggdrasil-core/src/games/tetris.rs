@@ -52,10 +52,25 @@ pub struct YggTetris {
     lines_cleared: u32,
     pub game_over: bool,
     rng_state: u64,
+    /// YG-37: variante `tetris/sprint-40` encerra a mão ao atingir N linhas.
+    /// `None` = modo marathon (sem limite).
+    sprint_limit: Option<u32>,
+}
+
+/// Opções de inicialização que vêm de uma variante do registro de universos.
+/// `None` = comportamento padrão (root). YG-37.
+#[derive(Default, Debug, Clone)]
+pub struct TetrisOptions {
+    /// `Some(N)` = sprint mode, encerra ao limpar N linhas.
+    pub sprint_lines: Option<u32>,
 }
 
 impl YggTetris {
     pub fn new(universe: Universe) -> Self {
+        Self::with_options(universe, TetrisOptions::default())
+    }
+
+    pub fn with_options(universe: Universe, opts: TetrisOptions) -> Self {
         let mut game = Self {
             inner: TetrisGame::new(universe),
             board: vec![vec![0u8; 10]; 20],
@@ -68,6 +83,7 @@ impl YggTetris {
             lines_cleared: 0,
             game_over: false,
             rng_state: 12345,
+            sprint_limit: opts.sprint_lines,
         };
         game.spawn_piece();
         game
@@ -151,6 +167,12 @@ impl YggTetris {
             self.score += pts;
             self.lines_cleared += cleared;
             self.level = self.lines_cleared / 10 + 1;
+            // YG-37: sprint mode encerra ao atingir o limite.
+            if let Some(limit) = self.sprint_limit
+                && self.lines_cleared >= limit
+            {
+                self.game_over = true;
+            }
         }
     }
 
@@ -271,6 +293,39 @@ mod tests {
         let g = make_game();
         assert!(!g.is_over());
         assert_eq!(g.score(), 0);
+    }
+
+    #[test]
+    fn sprint_limit_encerra_jogo_ao_atingir_n_linhas() {
+        // YG-37: variant tetris/sprint-40 sets sprint_lines=Some(40); ao
+        // limpar 40+ linhas, game_over deve virar true automaticamente.
+        let mut g = YggTetris::with_options(
+            Universe::tetris(),
+            TetrisOptions {
+                sprint_lines: Some(3),
+            },
+        );
+        // Força clear_lines diretamente preenchendo o board com 3 linhas cheias.
+        for y in 17..20 {
+            g.board[y] = vec![1u8; 10];
+        }
+        g.clear_lines();
+        assert_eq!(g.lines_cleared, 3);
+        assert!(
+            g.game_over,
+            "sprint deveria encerrar ao atingir o limite de linhas"
+        );
+    }
+
+    #[test]
+    fn marathon_mode_nao_encerra_ao_limpar_linhas() {
+        let mut g = make_game(); // sprint_limit = None
+        for y in 17..20 {
+            g.board[y] = vec![1u8; 10];
+        }
+        g.clear_lines();
+        assert_eq!(g.lines_cleared, 3);
+        assert!(!g.game_over, "marathon não deve encerrar por linhas limpas");
     }
 
     #[test]

@@ -35,6 +35,12 @@ impl PokerState {
             tables: Mutex::new(vec![
                 PokerTable::new(PokerLobby::new("carvalho", "Mesa Carvalho")),
                 PokerTable::new(PokerLobby::new("olmo", "Mesa Olmo")),
+                // YG-37 variante `poker/heads-up`: mesa 2-seats para duelos.
+                PokerTable::new(PokerLobby::with_max_seats(
+                    "heads-up",
+                    "Heads-Up Carvalho",
+                    2,
+                )),
             ]),
             sementes,
         }
@@ -408,7 +414,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_com_auth_retorna_duas_mesas() {
+    async fn list_com_auth_retorna_mesas_seed() {
+        // Cash game (carvalho, olmo) + heads-up — YG-37 variant.
         let (app, _, _dir) = make_app("s");
         let token = sign_jwt("user-a", "a@test.com", "s").unwrap();
         let resp = app
@@ -424,9 +431,12 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let v = parse_body(resp).await;
         let lobbies = v["lobbies"].as_array().unwrap();
-        assert_eq!(lobbies.len(), 2);
-        assert_eq!(lobbies[0]["id"], "carvalho");
-        assert_eq!(lobbies[1]["id"], "olmo");
+        assert_eq!(lobbies.len(), 3);
+        let ids: Vec<&str> = lobbies.iter().map(|l| l["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["carvalho", "olmo", "heads-up"]);
+        // Heads-up mesa tem max_seats=2.
+        assert_eq!(lobbies[2]["max_seats"], 2);
+        assert_eq!(lobbies[2]["seats"].as_array().unwrap().len(), 2);
     }
 
     #[tokio::test]

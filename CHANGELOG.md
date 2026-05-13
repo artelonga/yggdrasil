@@ -4,6 +4,16 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (universes, YG-37 — variantes parametrizam engines)
+- `yggdrasil_core::games::snake::SnakeOptions { walls }` + `YggSnake::with_options` + `YggSnake::walls_pattern` — variante `snake/walls` adiciona paredes internas em 3 colunas determinísticas; colisão e renderização honram.
+- `yggdrasil_core::games::tetris::TetrisOptions { sprint_lines }` + `YggTetris::with_options` — variante `tetris/sprint-40` encerra a mão ao limpar N linhas (`sprint_limit` checado em `clear_lines`).
+- `yggdrasil_core::games::invaders::InvadersOptions { lives }` + `YggInvaders::with_options` — variante `invaders/swarm` inicia com `lives=1`.
+- `yggdrasil_core::games::poker_lobby::PokerLobby::with_max_seats(id, name, max_seats)` — mesa de tamanho customizável; `max_seats` é serializado no JSON. Variante `poker/heads-up` cria mesa de 2 assentos; mínimo de 2 enforced.
+- `PokerState::new` agora provisiona 3 mesas: "Mesa Carvalho" + "Mesa Olmo" (cash game, 6 seats) + "Heads-Up Carvalho" (heads-up, 2 seats).
+- `yggdrasil_web::games::common::VariantQuery { variant: Option<String> }` — extractor de `?variant=<slug>` compartilhado entre rotas.
+- Snake/Tetris/Invaders rotas `start` aceitam `?variant=<slug>` e mapeiam para `SnakeOptions`/`TetrisOptions`/`InvadersOptions`; slug desconhecido → comportamento root (compat retroativa).
+- 8 novos testes cobrem cada variante + regressão de cada root. 175 testes no total.
+
 ### Added (universes node-graph)
 - `yggdrasil_core::universes::{UniverseNode, UniverseRegistry, UniverseKind, ApiContract, UniverseGraph, UniverseEdge}` — modelo recursivo de universos como grafo. Cada nó é Root / Variant / Composition. Variantes não estendem o root — instanciam o engine raiz com overrides de parâmetros (composição sobre herança).
 - `default_registry()` semeia 4 roots (snake/tetris/invaders/poker) + 8 variantes de exemplo: `snake/classic`, `snake/walls`, `tetris/classic`, `tetris/sprint-40`, `invaders/classic`, `invaders/swarm`, `poker/cash-game`, `poker/heads-up`. Cada variante leva parâmetros documentados (ex: `lines_to_clear: 40`, `lives: 1`, `max_seats: 2`).

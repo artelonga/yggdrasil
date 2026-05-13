@@ -5,7 +5,7 @@ use std::{
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -14,9 +14,10 @@ use game_core::{
     games::GameAction,
 };
 use nanoid::nanoid;
+use yggdrasil_core::games::invaders::InvadersOptions;
 use yggdrasil_core::games::{YggGame, YggInvaders};
 
-use super::common::{self, InputRequest, StartResponse, TickResponse, map_to_value};
+use super::common::{self, InputRequest, StartResponse, TickResponse, VariantQuery, map_to_value};
 
 pub struct InvadersState {
     sessions: Mutex<HashMap<String, YggInvaders>>,
@@ -41,10 +42,15 @@ fn parse_input(s: &str) -> Input {
     }
 }
 
-/// `GET /api/v1/games/invaders/start` — cria sessão e retorna estado inicial.
-pub async fn start_game(State(state): State<Arc<InvadersState>>) -> impl IntoResponse {
+/// `GET /api/v1/games/invaders/start[?variant=<slug>]` — cria sessão e retorna estado inicial.
+/// Variantes suportadas: `invaders/swarm` reduz vidas para 1 (YG-37).
+pub async fn start_game(
+    State(state): State<Arc<InvadersState>>,
+    Query(q): Query<VariantQuery>,
+) -> impl IntoResponse {
     let universe = Universe::invaders();
-    let game = YggInvaders::new(universe);
+    let opts = invaders_opts_for_variant(q.variant.as_deref());
+    let game = YggInvaders::with_options(universe, opts);
     let state_val = map_to_value(&game.render_json());
     let id = nanoid!();
     state.sessions.lock().unwrap().insert(id.clone(), game);
@@ -53,6 +59,13 @@ pub async fn start_game(State(state): State<Arc<InvadersState>>) -> impl IntoRes
         state: state_val,
         score: 0,
     })
+}
+
+fn invaders_opts_for_variant(variant: Option<&str>) -> InvadersOptions {
+    match variant {
+        Some("invaders/swarm") => InvadersOptions { lives: Some(1) },
+        _ => InvadersOptions::default(),
+    }
 }
 
 /// `POST /api/v1/games/invaders/:id/input` — avança um tick com o input recebido.
@@ -114,6 +127,54 @@ mod tests {
             .route("/api/v1/games/invaders/start", get(start_game))
             .route("/api/v1/games/invaders/{id}/input", post(send_input))
             .with_state(state)
+    }
+
+    #[tokio::test]
+    async fn variant_swarm_inicia_com_uma_vida() {
+        // YG-37: ?variant=invaders/swarm deve produzir lives=1.
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("t.db").to_string_lossy().to_string();
+        let app = make_app(&db);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/games/invaders/start?variant=invaders/swarm")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v["state"]["lives"], 1);
+    }
+
+    #[tokio::test]
+    async fn root_invaders_inicia_com_tres_vidas() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("t.db").to_string_lossy().to_string();
+        let app = make_app(&db);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/games/invaders/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v["state"]["lives"], 3);
     }
 
     #[tokio::test]
