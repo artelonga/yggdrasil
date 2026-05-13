@@ -4,6 +4,11 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed (auth, email-signup via CO)
+- Yggdrasil `/login` email-código agora roteia para os endpoints `/api/v1/auth/onboard-with-email[/verify]` do CO via CORS (origem `yggdrasil-artelonga.fly.dev` autorizada). Após `verify`, o cliente navega para `https://co.artelonga.com.br/auth/co-handover?return_to=<ygg>/auth/co-handover-receive` — CO assina co_token ES256 e redireciona de volta; receiver existente valida via JWKS e mintar JWT local.
+- Mesmo padrão de quilomboaraucaria: usuário ganha uma conta CO ao se cadastrar via email no Yggdrasil. Identidade unificada entre todas as propriedades artelonga.
+- Yggdrasil não precisa mais de SMTP — CO entrega os emails. As rotas locais `POST /api/v1/auth/code` e `POST /api/v1/auth/verify` permanecem (dead code, podem ser removidas em refactor futuro) mas frontend não as usa mais.
+
 ### Added (universes, YG-37 — variantes parametrizam engines)
 - `yggdrasil_core::games::snake::SnakeOptions { walls }` + `YggSnake::with_options` + `YggSnake::walls_pattern` — variante `snake/walls` adiciona paredes internas em 3 colunas determinísticas; colisão e renderização honram.
 - `yggdrasil_core::games::tetris::TetrisOptions { sprint_lines }` + `YggTetris::with_options` — variante `tetris/sprint-40` encerra a mão ao limpar N linhas (`sprint_limit` checado em `clear_lines`).
