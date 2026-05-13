@@ -4,6 +4,17 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (universes node-graph)
+- `yggdrasil_core::universes::{UniverseNode, UniverseRegistry, UniverseKind, ApiContract, UniverseGraph, UniverseEdge}` — modelo recursivo de universos como grafo. Cada nó é Root / Variant / Composition. Variantes não estendem o root — instanciam o engine raiz com overrides de parâmetros (composição sobre herança).
+- `default_registry()` semeia 4 roots (snake/tetris/invaders/poker) + 8 variantes de exemplo: `snake/classic`, `snake/walls`, `tetris/classic`, `tetris/sprint-40`, `invaders/classic`, `invaders/swarm`, `poker/cash-game`, `poker/heads-up`. Cada variante leva parâmetros documentados (ex: `lines_to_clear: 40`, `lives: 1`, `max_seats: 2`).
+- `yggdrasil-web/src/api/universes.rs` — endpoints públicos (sem auth):
+  - `GET /api/v1/universes` — todos os nós em ordem de slug.
+  - `GET /api/v1/universes/{*slug}` — um nó individual (slug pode conter `/`).
+  - `GET /api/v1/universes/graph` — `{nodes, edges}` para visualizadores.
+- Cada nó expõe `ApiContract { start, input, page }` — variantes apontam para a rota da raiz com query string `?variant=<slug>` (parameterização real fica para o próximo task).
+- `docs/ARQUITETURA-UNIVERSOS.md` — nova seção "Grafo de universos" com modelo, contrato HTTP, mapeamento futuro para Godot scenes (YG-31..YG-35), exemplo da árvore atual, e regra de quando promover uma variante a root.
+- 13 testes unitários de registry + 5 de routes; 167 testes no total.
+
 ### Changed (auth, signup via Google)
 - Botão de login agora aponta para `https://co.artelonga.com.br/api/v1/auth/google/start` (Google OAuth start), em vez de `/auth/co-handover` que exigia auth prévia no CO. Espelha o padrão de `quilomboaraucaria/web/src/routes/cadastro/+page.svelte`: usuário entra direto via Google, conta CO é criada/atualizada automaticamente, retorna ao Yggdrasil com sessão local.
 - Texto do botão: "Entrar com CO" → "Continuar com Google" (com logo Google SVG, fundo branco — mesmo estilo do quilombo).

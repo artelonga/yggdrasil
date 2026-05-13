@@ -162,6 +162,102 @@ que existe um conceito que pertence ao lobby ou ao módulo de sementes.
 Rotas são tradutoras: deserializam JSON, chamam a camada de domínio,
 serializam a resposta. Toda a regra mora em `yggdrasil-core/src/games/`.
 
+## Grafo de universos — composição sobre herança
+
+> Adicionado na rota do node-graph (YG-N). Cada universo é um **nó** num
+> grafo recursivo: roots, variantes e composições, formando uma árvore
+> queryable via `GET /api/v1/universes`.
+
+### Modelo
+
+```
+Root        →  define o engine (`tetris`, `snake`, `invaders`, `poker`)
+Variant     →  mesmo engine + parâmetros diferentes (`tetris/sprint-40`)
+Composition →  combina universos (`tetris/duel` = dois `tetris/classic`)
+```
+
+Variantes **não estendem** o root — instanciam o engine raiz com overrides
+de parâmetros. Não há herança de código: `snake/walls` reusa a mesma rota
+`POST /api/v1/games/snake/...` do `snake`, mas o servidor lê o parâmetro
+`map=walled` da variante e inicia com obstáculos.
+
+### Forma do nó
+
+```rust
+struct UniverseNode {
+    slug: String,                 // "tetris/sprint-40"
+    parent: Option<String>,       // "tetris" (None para roots)
+    children: Vec<String>,        // sub-universos diretos
+    kind: UniverseKind,           // Root | Variant | Composition
+    title: String,                // "Tetris Sprint 40"
+    description: String,          // PT-BR
+    parameters: BTreeMap<String, Value>, // {"lines_to_clear": 40, "mode": "sprint"}
+    api: ApiContract,             // { start, input, page }
+}
+```
+
+### Contrato HTTP
+
+```
+GET /api/v1/universes              → todos os nós (lista plana)
+GET /api/v1/universes/{slug}       → um nó com pai + filhos
+GET /api/v1/universes/graph        → { nodes, edges } para visualizadores
+```
+
+Todos públicos (sem auth). O slug pode conter `/` — endpoint usa
+wildcard `{*slug}` no Axum.
+
+### Forward-compat com Godot (YG-31..YG-35)
+
+A árvore de universos corresponde literalmente a uma árvore de **Godot
+scenes**:
+
+| Yggdrasil hoje (Rust)      | Godot amanhã (POC YG-31..YG-35) |
+|---|---|
+| `UniverseNode { kind: Root }` | `Tetris.tscn` — scene principal |
+| `UniverseNode { kind: Variant }` | `TetrisSprint40.tscn` — sub-scene que `.instance()` da root e seta props |
+| `UniverseNode { kind: Composition }` | `TetrisDuel.tscn` — scene que instancia dois `TetrisClassic.tscn` lado a lado |
+| `parameters` (JSON) | `@export` props do Godot |
+| Edges `parent → child` | `PackedScene.instantiate()` calls em tempo de boot |
+
+A API HTTP `/api/v1/universes` permanece — clientes web (canvas) e Godot
+consomem o mesmo grafo. Quando a POC Godot fechar a decisão, a registry
+em `yggdrasil_core::universes` se mantém como source-of-truth do shape.
+
+### Exemplo: árvore atual
+
+```
+snake
+├── snake/classic       (Variant, difficulty=medium)
+└── snake/walls         (Variant, map=walls, difficulty=hard)
+tetris
+├── tetris/classic      (Variant, mode=marathon)
+└── tetris/sprint-40    (Variant, mode=sprint, lines_to_clear=40)
+invaders
+├── invaders/classic    (Variant, difficulty=medium)
+└── invaders/swarm      (Variant, difficulty=hard, lives=1)
+poker
+├── poker/cash-game     (Variant, buy_in=1000, max_seats=6)
+└── poker/heads-up      (Variant, max_seats=2)
+```
+
+Adicionar um universo novo é instanciar `UniverseNode` no
+`yggdrasil_core::universes::default_registry()` — uma linha por nó. Sem
+necessidade de criar arquivos novos por variante: o engine raiz lê a
+parameterização em runtime.
+
+### Quando promover uma variante a root?
+
+Quando a variante diverge tanto que **reutilizar o engine raiz custa mais
+que reescrever**. Exemplos:
+
+- ✅ Variante: `tetris/sprint-40` (apenas parâmetro `lines_to_clear`).
+- ⚠️ Limite: `tetris/4-player-versus` (lógica de turno + chat — talvez root próprio).
+- ❌ Root próprio: `chess` (engine sem qualquer overlap com tetris).
+
+A regra: se ≥ 80% do código do engine é reusado, mantenha como variante.
+Caso contrário, novo root + caminho `/api/v1/games/<novo-slug>/...`.
+
 ## Inventário atual
 
 | Universo | Domínio | HTTP | Frontend | Status |

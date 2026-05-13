@@ -87,6 +87,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/scores/recent", get(api::scores::get_recent))
         .with_state(scores_state);
 
+    // Universe graph — registro estático de universos com variantes e composições.
+    let universes_state = Arc::new(api::universes::UniversesState {
+        registry: Arc::new(yggdrasil_core::universes::default_registry()),
+    });
+    let universes_router = Router::new()
+        .route("/api/v1/universes", get(api::universes::list_universes))
+        .route("/api/v1/universes/graph", get(api::universes::get_graph))
+        .route(
+            "/api/v1/universes/{*slug}",
+            get(api::universes::get_universe),
+        )
+        .with_state(universes_state);
+
     let co_handover_state = Arc::new(CoHandoverState {
         jwt_secret: auth_state.jwt_secret.clone(),
         jwks: Arc::new(auth_co::JwksCache::new()),
@@ -156,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(co_handover_router)
         .merge(me_router)
         .merge(scores_router)
+        .merge(universes_router)
         .merge(snake_router)
         .merge(tetris_router)
         .merge(invaders_router)
