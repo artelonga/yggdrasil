@@ -3,6 +3,12 @@
 const STORAGE_KEY = 'yggdrasil-jwt';
 const EMAIL_KEY = 'yggdrasil-email';
 
+// O fluxo de email-código é roteado pelo CO (mesma origem de quilombo e
+// outros universos artelonga). O backend Yggdrasil só vê o JWT final via
+// handover ES256. CO tem SMTP configurado; Yggdrasil não precisa.
+const CO_BASE = 'https://co.artelonga.com.br';
+const YGG_RECEIVER = window.location.origin + '/auth/co-handover-receive';
+
 const formEmail = document.getElementById('form-email');
 const formCodigo = document.getElementById('form-codigo');
 const inputEmail = document.getElementById('email');
@@ -29,7 +35,7 @@ function redirectTarget() {
   return '/lobby';
 }
 
-// Propagate ?next= to the "Entrar com CO" button so post-login redirect
+// Propagate ?next= to the "Continuar com Google" button so post-login redirect
 // matches the email-code flow.
 {
   const params = new URLSearchParams(location.search);
@@ -44,6 +50,20 @@ function redirectTarget() {
   }
 }
 
+/**
+ * URL para o handover final do CO. CO assina ES256 e redireciona para
+ * `/auth/co-handover-receive?co_token=...&next=...`. Aceita `next` opcional
+ * (rota local pós-login).
+ */
+function coHandoverUrl() {
+  const params = new URLSearchParams(location.search);
+  const next = params.get('next');
+  const receiver = next && next.startsWith('/')
+    ? `${YGG_RECEIVER}?next=${encodeURIComponent(next)}`
+    : YGG_RECEIVER;
+  return `${CO_BASE}/auth/co-handover?return_to=${encodeURIComponent(receiver)}`;
+}
+
 formEmail.addEventListener('submit', async (e) => {
   e.preventDefault();
   erroEmail.textContent = '';
@@ -51,19 +71,28 @@ formEmail.addEventListener('submit', async (e) => {
   emailAtual = inputEmail.value.trim().toLowerCase();
 
   try {
-    const res = await fetch('/api/v1/auth/code', {
+    const res = await fetch(`${CO_BASE}/api/v1/auth/onboard-with-email`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailAtual }),
+      body: JSON.stringify({
+        email: emailAtual,
+        return_to: YGG_RECEIVER,
+        intent: 'login_or_signup',
+      }),
     });
-    if (!res.ok) throw new Error('falha');
+    if (!res.ok && res.status !== 202) {
+      let msg = 'Não foi possível enviar o código.';
+      try { const j = await res.json(); if (j && j.message) msg = j.message; } catch (_) {}
+      throw new Error(msg);
+    }
     localStorage.setItem(EMAIL_KEY, emailAtual);
     emailConfirmado.textContent = emailAtual;
     formEmail.classList.add('hidden');
     formCodigo.classList.remove('hidden');
     inputCodigo.focus();
   } catch (err) {
-    erroEmail.textContent = 'Não foi possível enviar o código. Tente novamente.';
+    erroEmail.textContent = err.message || 'Não foi possível enviar o código. Tente novamente.';
   } finally {
     btnEmail.disabled = false;
   }
@@ -76,13 +105,16 @@ formCodigo.addEventListener('submit', async (e) => {
   const codigo = inputCodigo.value.trim();
 
   try {
-    const res = await fetch('/api/v1/auth/verify', {
+    const res = await fetch(`${CO_BASE}/api/v1/auth/onboard-with-email/verify`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: emailAtual, code: codigo }),
     });
-    if (res.status === 422) {
-      erroCodigo.textContent = 'Código incorreto. Tente de novo.';
+    if (res.status === 422 || res.status === 400) {
+      let msg = 'Código incorreto. Tente de novo.';
+      try { const j = await res.json(); if (j && j.message) msg = j.message; } catch (_) {}
+      erroCodigo.textContent = msg;
       btnCodigo.disabled = false;
       return;
     }
@@ -91,12 +123,16 @@ formCodigo.addEventListener('submit', async (e) => {
       btnCodigo.disabled = false;
       return;
     }
-    if (!res.ok) throw new Error('falha');
-    const { token } = await res.json();
-    localStorage.setItem(STORAGE_KEY, token);
-    location.assign(redirectTarget());
+    if (!res.ok) {
+      let msg = 'Erro inesperado. Tente novamente.';
+      try { const j = await res.json(); if (j && j.message) msg = j.message; } catch (_) {}
+      throw new Error(msg);
+    }
+    // CO setou o cookie de sessão. Agora navegamos para o /auth/co-handover do CO
+    // que vai assinar um co_token e redirecionar de volta para nós.
+    location.assign(coHandoverUrl());
   } catch (err) {
-    erroCodigo.textContent = 'Erro inesperado. Tente novamente.';
+    erroCodigo.textContent = err.message || 'Erro inesperado. Tente novamente.';
     btnCodigo.disabled = false;
   }
 });

@@ -44,6 +44,14 @@ struct InvadersRender {
     won: bool,
 }
 
+/// Opções de inicialização que vêm de uma variante do registro de universos.
+/// `None` = comportamento padrão (root). YG-37.
+#[derive(Default, Debug, Clone)]
+pub struct InvadersOptions {
+    /// Override do número inicial de vidas. Default: 3.
+    pub lives: Option<u32>,
+}
+
 /// Yggdrasil adapter wrapping [`game_core::InvadersGame`].
 ///
 /// Implements a 4×10 alien grid with movement, alien shooting, player bullet
@@ -65,6 +73,10 @@ pub struct YggInvaders {
 
 impl YggInvaders {
     pub fn new(universe: Universe) -> Self {
+        Self::with_options(universe, InvadersOptions::default())
+    }
+
+    pub fn with_options(universe: Universe, opts: InvadersOptions) -> Self {
         let mut game = Self {
             inner: InvadersGame::new(universe),
             player_x: W / 2 - PLAYER_W / 2,
@@ -74,7 +86,7 @@ impl YggInvaders {
             alien_ticks: 0,
             alien_shoot_ticks: 0,
             score: 0,
-            lives: 3,
+            lives: opts.lives.unwrap_or(3),
             game_over: false,
             won: false,
             rng_state: 42,

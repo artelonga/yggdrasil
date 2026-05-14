@@ -4,6 +4,63 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (poker, YG-29 — persistência em SQLite)
+- `yggdrasil_core::games::poker_game::PokerTableSnapshot { lobby, stacks }` — formato serde-friendly que captura o estado persistível de uma mesa: seating + chip-stacks por usuário (humano ou bot). Mãos em curso (`PokerGame`) NÃO entram no snapshot — um restart no meio de uma mão é forfeit, mas seats e chips sobrevivem. Escolha pragmática: o engine `PokerGame` do `co/game-core` não é serde-friendly, e o custo de uma mão perdida (≤ poucas dezenas de sementes) é muito menor que o custo de perder buy-ins (1k+ sementes).
+- `PokerTable::to_snapshot()` / `PokerTable::from_snapshot(snap)` — serialização round-trip. `to_snapshot` chama `snapshot_stacks_from_game` antes para garantir que os chips do engine refletem em `stacks`.
+- `SeatOccupant` e `PokerLobby` agora derivam `Deserialize` além de `Serialize`.
+- `yggdrasil_web::games::poker_persistence` — novo módulo com:
+  - `init_poker_db(path)` — abre conexão SQLite e cria tabela `poker_lobbies (id TEXT PRIMARY KEY, name TEXT, state TEXT)` se ausente. Idempotente.
+  - `save_lobby(conn, snap)` — UPSERT do snapshot serializado em JSON.
+  - `load_all(conn)` / `load_tables(conn)` — leitura ordenada por id; `load_tables` já materializa como `PokerTable`.
+- `PokerState::with_persistence(secret, sementes, db_path)` — novo construtor. No primeiro boot, semeia 3 mesas defaults (Carvalho, Olmo, Heads-Up) e persiste. Em boots subsequentes, restaura mesas persistidas. Falhas de SQLite são logadas mas não abortam o boot — degrada para in-memory.
+- `PokerState::new(secret, sementes)` permanece como alias in-memory (sem persistência) para testes legados.
+- `main.rs` agora usa `PokerState::with_persistence` apontando para o mesmo `YGGDRASIL_DB` controlado pelas demais rotas (snake/tetris/invaders/scores). Sem nova env var.
+- Persistência é acionada após cada `sit_with_sementes`, `stand_with_sementes` e `act` bem-sucedido. Cada save abre/fecha sua própria conexão — locking SQLite (WAL) faz o serializing.
+- 8 novos testes (3 em `poker_game.rs`, 4 em `poker_persistence.rs`, 2 em `poker_routes.rs`): round-trip de snapshot, persistência através de reconexão SQLite (simula kill -9), UPSERT, primeiro boot semeia 3 mesas, restart preserva seat e stack. 183 testes no total.
+
+### Added (Godot POC, YG-31)
+- `yggdrasil-godot/` — diretório paralelo de POC Godot 4.5 que avalia scene tree + signals + lazy spawn + multiplayer-native como substrato dos universos do Yggdrasil. Trilho B do epic YG-22, abre a sequência YG-31..YG-35. Não modifica `yggdrasil-core` nem `yggdrasil-web`.
+- `yggdrasil-godot/project.godot` — projeto Godot 4.5 com `config/features=("4.5", "Forward Plus")`; renderer `gl_compatibility` para web e mobile; cena principal `res://scenes/HelloUniverso.tscn`.
+- `yggdrasil-godot/scenes/HelloUniverso.tscn` + `scripts/hello_universo.gd` — Node2D com `Label "Olá universo"` e script que imprime `hello from server` ou `hello from client` conforme `multiplayer.is_server()`. Sanity-check da toolchain; sem lógica de jogo.
+- `yggdrasil-godot/export_presets.cfg` — dois export presets:
+  - **Web** (HTML5/wasm) — `variant/thread_support=true`, compressão de textura mobile+desktop, target `out/web/index.html`.
+  - **Linux/X11** — `dedicated_server=true`, `custom_features="headless"`, target `out/headless/yggdrasil-godot`.
+- `yggdrasil-godot/scripts/build.sh` — detecta `godot` ou `godot4` no `$PATH` e falha cedo com mensagem PT-BR clara se ausente; suporta targets `web`, `headless` ou `all` (default); usa `--headless --path` para não exigir GPU.
+- `yggdrasil-godot/Dockerfile` — multi-stage: stage 1 (`debian:trixie-slim`) baixa Godot 4.5 + export templates, roda `build.sh`; stage 2 (`debian:trixie-slim`) copia headless binary + assets web, roda como user `godot`, expõe porta `3031` (separada da `:3030` do Rust).
+- `yggdrasil-godot/.gitignore` — `.godot/`, `*.tmp.tscn`, `out/`, `.import/`, `*.bak`, OS cruft.
+- `yggdrasil-godot/icon.svg` — ícone placeholder do projeto (gold + green sobre fundo `#0d0d12`, paleta do lobby).
+- `yggdrasil-godot/README.md` — pré-requisitos (Godot 4.5 + export templates), como abrir no editor, buildar os dois targets, rodar headless localmente, servir build web com COOP/COEP, e build Docker. Documenta os 4 pilares avaliados (scene tree, signals, lazy spawn, multiplayer nativo) e os não-objetivos desta tarefa.
+
+## [0.8.0] — 2026-05-13
+
+Pôquer multiplayer ponta-a-ponta + universos como grafo + SSO via CO. Fecha o epic YG-22.
+
+### Changed (auth, email-signup via CO)
+- Yggdrasil `/login` email-código agora roteia para os endpoints `/api/v1/auth/onboard-with-email[/verify]` do CO via CORS (origem `yggdrasil-artelonga.fly.dev` autorizada). Após `verify`, o cliente navega para `https://co.artelonga.com.br/auth/co-handover?return_to=<ygg>/auth/co-handover-receive` — CO assina co_token ES256 e redireciona de volta; receiver existente valida via JWKS e mintar JWT local.
+- Mesmo padrão de quilomboaraucaria: usuário ganha uma conta CO ao se cadastrar via email no Yggdrasil. Identidade unificada entre todas as propriedades artelonga.
+- Yggdrasil não precisa mais de SMTP — CO entrega os emails. As rotas locais `POST /api/v1/auth/code` e `POST /api/v1/auth/verify` permanecem (dead code, podem ser removidas em refactor futuro) mas frontend não as usa mais.
+
+### Added (universes, YG-37 — variantes parametrizam engines)
+- `yggdrasil_core::games::snake::SnakeOptions { walls }` + `YggSnake::with_options` + `YggSnake::walls_pattern` — variante `snake/walls` adiciona paredes internas em 3 colunas determinísticas; colisão e renderização honram.
+- `yggdrasil_core::games::tetris::TetrisOptions { sprint_lines }` + `YggTetris::with_options` — variante `tetris/sprint-40` encerra a mão ao limpar N linhas (`sprint_limit` checado em `clear_lines`).
+- `yggdrasil_core::games::invaders::InvadersOptions { lives }` + `YggInvaders::with_options` — variante `invaders/swarm` inicia com `lives=1`.
+- `yggdrasil_core::games::poker_lobby::PokerLobby::with_max_seats(id, name, max_seats)` — mesa de tamanho customizável; `max_seats` é serializado no JSON. Variante `poker/heads-up` cria mesa de 2 assentos; mínimo de 2 enforced.
+- `PokerState::new` agora provisiona 3 mesas: "Mesa Carvalho" + "Mesa Olmo" (cash game, 6 seats) + "Heads-Up Carvalho" (heads-up, 2 seats).
+- `yggdrasil_web::games::common::VariantQuery { variant: Option<String> }` — extractor de `?variant=<slug>` compartilhado entre rotas.
+- Snake/Tetris/Invaders rotas `start` aceitam `?variant=<slug>` e mapeiam para `SnakeOptions`/`TetrisOptions`/`InvadersOptions`; slug desconhecido → comportamento root (compat retroativa).
+- 8 novos testes cobrem cada variante + regressão de cada root. 175 testes no total.
+
+### Added (universes node-graph)
+- `yggdrasil_core::universes::{UniverseNode, UniverseRegistry, UniverseKind, ApiContract, UniverseGraph, UniverseEdge}` — modelo recursivo de universos como grafo. Cada nó é Root / Variant / Composition. Variantes não estendem o root — instanciam o engine raiz com overrides de parâmetros (composição sobre herança).
+- `default_registry()` semeia 4 roots (snake/tetris/invaders/poker) + 8 variantes de exemplo: `snake/classic`, `snake/walls`, `tetris/classic`, `tetris/sprint-40`, `invaders/classic`, `invaders/swarm`, `poker/cash-game`, `poker/heads-up`. Cada variante leva parâmetros documentados (ex: `lines_to_clear: 40`, `lives: 1`, `max_seats: 2`).
+- `yggdrasil-web/src/api/universes.rs` — endpoints públicos (sem auth):
+  - `GET /api/v1/universes` — todos os nós em ordem de slug.
+  - `GET /api/v1/universes/{*slug}` — um nó individual (slug pode conter `/`).
+  - `GET /api/v1/universes/graph` — `{nodes, edges}` para visualizadores.
+- Cada nó expõe `ApiContract { start, input, page }` — variantes apontam para a rota da raiz com query string `?variant=<slug>` (parameterização real fica para o próximo task).
+- `docs/ARQUITETURA-UNIVERSOS.md` — nova seção "Grafo de universos" com modelo, contrato HTTP, mapeamento futuro para Godot scenes (YG-31..YG-35), exemplo da árvore atual, e regra de quando promover uma variante a root.
+- 13 testes unitários de registry + 5 de routes; 167 testes no total.
+
 ### Changed (auth, signup via Google)
 - Botão de login agora aponta para `https://co.artelonga.com.br/api/v1/auth/google/start` (Google OAuth start), em vez de `/auth/co-handover` que exigia auth prévia no CO. Espelha o padrão de `quilomboaraucaria/web/src/routes/cadastro/+page.svelte`: usuário entra direto via Google, conta CO é criada/atualizada automaticamente, retorna ao Yggdrasil com sessão local.
 - Texto do botão: "Entrar com CO" → "Continuar com Google" (com logo Google SVG, fundo branco — mesmo estilo do quilombo).

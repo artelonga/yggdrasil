@@ -10,13 +10,16 @@
 //! - 2+ humans → no bots (multiplayer encouraged)
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const SEATS_PER_LOBBY: usize = 6;
 pub const BOT_USER_ID: &str = "bot:carvalho";
 pub const BOT_DISPLAY_NAME: &str = "Bot Carvalho";
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+/// Variantes de tamanho de mesa (YG-37). 6 = cash game padrão; 2 = heads-up.
+/// Outros valores são aceitos para futuras configurações.
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeatOccupant {
     Empty,
@@ -27,11 +30,14 @@ pub enum SeatOccupant {
     Bot,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PokerLobby {
     pub id: String,
     pub name: String,
     pub seats: Vec<SeatOccupant>,
+    /// Capacidade máxima — `Vec::len(seats)`. Mantida pública para serialização
+    /// no JSON do lobby. YG-37: variantes podem reduzir (heads-up = 2).
+    pub max_seats: usize,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -48,10 +54,22 @@ pub enum LobbyError {
 
 impl PokerLobby {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self::with_max_seats(id, name, SEATS_PER_LOBBY)
+    }
+
+    /// Construtor com tamanho de mesa customizado (YG-37). Usado para
+    /// variantes como `poker/heads-up` (max_seats = 2).
+    pub fn with_max_seats(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        max_seats: usize,
+    ) -> Self {
+        let max = max_seats.max(2); // mínimo 2 — pôquer precisa de oponente
         Self {
             id: id.into(),
             name: name.into(),
-            seats: vec![SeatOccupant::Empty; SEATS_PER_LOBBY],
+            seats: vec![SeatOccupant::Empty; max],
+            max_seats: max,
         }
     }
 
@@ -77,7 +95,7 @@ impl PokerLobby {
     }
 
     pub fn sit(&mut self, seat: usize, user_id: &str) -> Result<(), LobbyError> {
-        if seat >= SEATS_PER_LOBBY {
+        if seat >= self.max_seats {
             return Err(LobbyError::InvalidSeat(seat));
         }
         if self.human_seat(user_id).is_some() {
@@ -225,5 +243,25 @@ mod tests {
         let mut l = PokerLobby::new("t1", "Mesa Carvalho");
         let err = l.sit(99, "user-a").unwrap_err();
         assert!(matches!(err, LobbyError::InvalidSeat(_)));
+    }
+
+    #[test]
+    fn heads_up_lobby_recusa_assento_3() {
+        // YG-37: variante poker/heads-up usa with_max_seats(2). Assento 2+ inválido.
+        let mut l = PokerLobby::with_max_seats("hu", "Heads-Up", 2);
+        assert_eq!(l.seats.len(), 2);
+        assert_eq!(l.max_seats, 2);
+        l.sit(0, "alice").unwrap();
+        l.sit(1, "bob").unwrap();
+        let err = l.sit(2, "clara").unwrap_err();
+        assert!(matches!(err, LobbyError::InvalidSeat(2)));
+    }
+
+    #[test]
+    fn with_max_seats_clamps_to_minimum_2() {
+        // Não faz sentido mesa de pôquer com 0 ou 1 assento.
+        let l = PokerLobby::with_max_seats("hu", "Heads-Up", 1);
+        assert_eq!(l.seats.len(), 2);
+        assert_eq!(l.max_seats, 2);
     }
 }

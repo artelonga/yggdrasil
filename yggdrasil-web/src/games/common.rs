@@ -3,6 +3,13 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+/// Query string `?variant=<slug>` para rotas de início de jogo (YG-37).
+/// Slug `None` ou desconhecido → root default.
+#[derive(Deserialize, Default)]
+pub struct VariantQuery {
+    pub variant: Option<String>,
+}
+
 pub fn init_db(db_path: &str) -> rusqlite::Result<Connection> {
     let conn = Connection::open(db_path)?;
     conn.execute_batch(

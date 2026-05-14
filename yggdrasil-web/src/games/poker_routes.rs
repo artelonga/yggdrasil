@@ -3,6 +3,7 @@
 //! Seating (Layer 1, YG-23) + gameplay (Layer 2, YG-25):
 //! dealing, betting rounds (pre-flop → showdown), ações call/check/fold/raise.
 
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -21,22 +22,102 @@ use yggdrasil_core::games::poker_lobby::{LobbyError, PokerLobby};
 use yggdrasil_core::sementes::{Sementes, SementesError};
 
 use crate::auth::verify_jwt;
+use crate::games::poker_persistence;
 
 pub struct PokerState {
     pub jwt_secret: String,
     pub tables: Mutex<Vec<PokerTable>>,
     pub sementes: Arc<Sementes>,
+    /// Caminho do SQLite onde mesas são persistidas (YG-29).
+    /// `None` desativa persistência — usado em testes que querem o
+    /// comportamento puramente em memória.
+    pub db_path: Option<PathBuf>,
 }
 
 impl PokerState {
+    /// Default seeds: 3 mesas (Carvalho, Olmo, Heads-Up Carvalho).
+    /// Aplicado apenas no primeiro boot — em boots subsequentes, mesas
+    /// persistidas substituem.
+    fn seed_tables() -> Vec<PokerTable> {
+        vec![
+            PokerTable::new(PokerLobby::new("carvalho", "Mesa Carvalho")),
+            PokerTable::new(PokerLobby::new("olmo", "Mesa Olmo")),
+            // YG-37 variante `poker/heads-up`: mesa 2-seats para duelos.
+            PokerTable::new(PokerLobby::with_max_seats(
+                "heads-up",
+                "Heads-Up Carvalho",
+                2,
+            )),
+        ]
+    }
+
+    /// Boot in-memory (sem persistência) — usado em testes que não precisam
+    /// validar restart, e como fallback se o DB falhar.
+    #[allow(dead_code)]
     pub fn new(jwt_secret: String, sementes: Arc<Sementes>) -> Self {
         Self {
             jwt_secret,
-            tables: Mutex::new(vec![
-                PokerTable::new(PokerLobby::new("carvalho", "Mesa Carvalho")),
-                PokerTable::new(PokerLobby::new("olmo", "Mesa Olmo")),
-            ]),
+            tables: Mutex::new(Self::seed_tables()),
             sementes,
+            db_path: None,
+        }
+    }
+
+    /// Boot com persistência em SQLite (YG-29). No primeiro run, semeia
+    /// 3 mesas defaults e grava no DB. Em boots subsequentes, restaura as
+    /// mesas persistidas — seating e chip-stacks sobrevivem ao restart;
+    /// mãos em curso são forfeit.
+    ///
+    /// Falhas de SQLite são logadas mas não abortam o boot — degrada
+    /// graciosamente para o comportamento in-memory.
+    pub fn with_persistence(jwt_secret: String, sementes: Arc<Sementes>, db_path: &FsPath) -> Self {
+        let tables = match poker_persistence::init_poker_db(db_path) {
+            Ok(conn) => match poker_persistence::load_tables(&conn) {
+                Ok(loaded) if !loaded.is_empty() => loaded,
+                Ok(_) => {
+                    // Vazio — semeia e persiste defaults.
+                    let mut seeds = Self::seed_tables();
+                    for t in seeds.iter_mut() {
+                        if let Err(e) = poker_persistence::save_lobby(&conn, &t.to_snapshot()) {
+                            tracing::warn!("poker_persistence seed save falhou: {e}");
+                        }
+                    }
+                    seeds
+                }
+                Err(e) => {
+                    tracing::warn!("poker_persistence load falhou: {e} — usando seeds em memória");
+                    Self::seed_tables()
+                }
+            },
+            Err(e) => {
+                tracing::warn!("poker_persistence init falhou: {e} — usando seeds em memória");
+                Self::seed_tables()
+            }
+        };
+        Self {
+            jwt_secret,
+            tables: Mutex::new(tables),
+            sementes,
+            db_path: Some(db_path.to_path_buf()),
+        }
+    }
+
+    /// Persiste o snapshot de uma mesa. Idempotente. Falhas viram warning
+    /// — não há rollback de mutação no estado em memória (a aceitação é
+    /// que o user observa o seat / stack atualizado; um crash entre a
+    /// mutação e o save é aceitável dentro do escopo de YG-29).
+    fn persist_table(&self, table: &mut PokerTable) {
+        let Some(ref path) = self.db_path else {
+            return;
+        };
+        let snap = table.to_snapshot();
+        match poker_persistence::init_poker_db(path) {
+            Ok(conn) => {
+                if let Err(e) = poker_persistence::save_lobby(&conn, &snap) {
+                    tracing::warn!("poker_persistence save falhou: {e}");
+                }
+            }
+            Err(e) => tracing::warn!("poker_persistence open falhou: {e}"),
         }
     }
 }
@@ -186,7 +267,10 @@ pub async fn sit(
         None => return lobby_not_found(),
     };
     match table.sit_with_sementes(req.seat, &user_id, &state.sementes) {
-        Ok(()) => (StatusCode::OK, Json(table.lobby.clone())).into_response(),
+        Ok(()) => {
+            state.persist_table(table);
+            (StatusCode::OK, Json(table.lobby.clone())).into_response()
+        }
         Err(e) => sit_error(e),
     }
 }
@@ -206,7 +290,10 @@ pub async fn stand(
         None => return lobby_not_found(),
     };
     match table.stand_with_sementes(&user_id, &state.sementes) {
-        Ok(()) => (StatusCode::OK, Json(table.lobby.clone())).into_response(),
+        Ok(()) => {
+            state.persist_table(table);
+            (StatusCode::OK, Json(table.lobby.clone())).into_response()
+        }
         Err(e) => stand_error(e),
     }
 }
@@ -305,6 +392,9 @@ pub async fn post_action(
     match table.act(&user_id, poker_action) {
         Ok(()) => {
             auto_step_bots(table);
+            // Persiste após cada ação: stacks mudam constantemente durante
+            // a mão (apostas, ganhos), então cada ação válida vira commit.
+            state.persist_table(table);
             match table.hand_state() {
                 Some(s) => (StatusCode::OK, Json(s)).into_response(),
                 None => (StatusCode::OK, Json(waiting_state())).into_response(),
@@ -408,7 +498,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_com_auth_retorna_duas_mesas() {
+    async fn list_com_auth_retorna_mesas_seed() {
+        // Cash game (carvalho, olmo) + heads-up — YG-37 variant.
         let (app, _, _dir) = make_app("s");
         let token = sign_jwt("user-a", "a@test.com", "s").unwrap();
         let resp = app
@@ -424,9 +515,12 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let v = parse_body(resp).await;
         let lobbies = v["lobbies"].as_array().unwrap();
-        assert_eq!(lobbies.len(), 2);
-        assert_eq!(lobbies[0]["id"], "carvalho");
-        assert_eq!(lobbies[1]["id"], "olmo");
+        assert_eq!(lobbies.len(), 3);
+        let ids: Vec<&str> = lobbies.iter().map(|l| l["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["carvalho", "olmo", "heads-up"]);
+        // Heads-up mesa tem max_seats=2.
+        assert_eq!(lobbies[2]["max_seats"], 2);
+        assert_eq!(lobbies[2]["seats"].as_array().unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -758,6 +852,100 @@ mod tests {
             }
         }
         assert!(game_over, "mão humano vs bot deveria completar");
+    }
+
+    // ── YG-29: persistência em SQLite (restart sobrevive) ────────────────
+
+    /// Helper: cria PokerState COM persistência apontando para um path,
+    /// reutilizando uma TempDir externa para que possamos recriar o state
+    /// no mesmo DB.
+    fn make_app_persistente(
+        secret: &str,
+        dir: &TempDir,
+    ) -> (Router, Arc<PokerState>, std::path::PathBuf) {
+        let sementes_path = dir.path().join("sementes.db");
+        let poker_path = dir.path().join("poker.db");
+        let storage = Arc::new(Storage::open(&sementes_path).unwrap());
+        let sementes = Arc::new(Sementes::new(storage));
+        sementes.creditar("user-a", 100_000).unwrap();
+        sementes.creditar("user-b", 100_000).unwrap();
+        let state = Arc::new(PokerState::with_persistence(
+            secret.to_string(),
+            sementes,
+            &poker_path,
+        ));
+        let app = Router::new()
+            .route("/api/v1/poker/lobbies", get(list_lobbies))
+            .route("/api/v1/poker/lobbies/{id}", get(get_lobby))
+            .route("/api/v1/poker/lobbies/{id}/sit", post(sit))
+            .route("/api/v1/poker/lobbies/{id}/stand", post(stand))
+            .route("/api/v1/poker/lobbies/{id}/hand", get(get_hand))
+            .route("/api/v1/poker/lobbies/{id}/hole-cards", get(get_hole_cards))
+            .route("/api/v1/poker/lobbies/{id}/action", post(post_action))
+            .with_state(state.clone());
+        (app, state, poker_path)
+    }
+
+    #[tokio::test]
+    async fn restart_preserva_seat_e_stack() {
+        // Simula crash-restart: sit, drop state, recria state apontando para
+        // o mesmo DB, e verifica que o seat e o stack sobreviveram.
+        let dir = tempfile::tempdir().unwrap();
+        let secret = "s";
+        let token = sign_jwt("user-a", "a@test.com", secret).unwrap();
+
+        // Primeiro boot: senta user-a.
+        let (app, state1, poker_path) = make_app_persistente(secret, &dir);
+        let resp = app.oneshot(sit_req(2, &token)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        // Stack persistido no estado em memória.
+        {
+            let tables = state1.tables.lock().unwrap();
+            let t = tables.iter().find(|t| t.lobby.id == "carvalho").unwrap();
+            assert_eq!(t.stack_of("user-a"), 1_000);
+        }
+        drop(state1);
+
+        // Segundo boot — mesmo DB, novo PokerState.
+        let sementes_path = dir.path().join("sementes.db");
+        let storage = Arc::new(Storage::open(&sementes_path).unwrap());
+        let sementes = Arc::new(Sementes::new(storage));
+        let state2 = Arc::new(PokerState::with_persistence(
+            secret.to_string(),
+            sementes,
+            &poker_path,
+        ));
+
+        let tables = state2.tables.lock().unwrap();
+        let carvalho = tables.iter().find(|t| t.lobby.id == "carvalho").unwrap();
+        // Seat 2 ainda ocupado por user-a.
+        assert!(matches!(
+            &carvalho.lobby.seats[2],
+            yggdrasil_core::games::poker_lobby::SeatOccupant::Human { user_id, .. }
+                if user_id == "user-a"
+        ));
+        // Stack sobreviveu.
+        assert_eq!(carvalho.stack_of("user-a"), 1_000);
+        // Mas a mão em curso (se houver) foi forfeit — game é None.
+        assert!(carvalho.game.is_none());
+
+        // As três mesas defaults ainda lá.
+        assert_eq!(tables.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn primeiro_boot_seeda_tres_mesas_no_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_app, _state, poker_path) = make_app_persistente("s", &dir);
+
+        // Abre uma conexão fresca e verifica que as 3 mesas foram persistidas.
+        let conn = crate::games::poker_persistence::init_poker_db(&poker_path).unwrap();
+        let snaps = crate::games::poker_persistence::load_all(&conn).unwrap();
+        assert_eq!(snaps.len(), 3);
+        let ids: Vec<&str> = snaps.iter().map(|s| s.lobby.id.as_str()).collect();
+        assert!(ids.contains(&"carvalho"));
+        assert!(ids.contains(&"olmo"));
+        assert!(ids.contains(&"heads-up"));
     }
 
     #[tokio::test]

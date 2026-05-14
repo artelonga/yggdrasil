@@ -5,7 +5,7 @@ use std::{
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -14,9 +14,10 @@ use game_core::{
     games::GameAction,
 };
 use nanoid::nanoid;
+use yggdrasil_core::games::tetris::TetrisOptions;
 use yggdrasil_core::games::{YggGame, YggTetris};
 
-use super::common::{self, InputRequest, StartResponse, TickResponse, map_to_value};
+use super::common::{self, InputRequest, StartResponse, TickResponse, VariantQuery, map_to_value};
 
 pub struct TetrisState {
     sessions: Mutex<HashMap<String, YggTetris>>,
@@ -43,10 +44,15 @@ fn parse_direction(s: &str) -> Input {
     }
 }
 
-/// `GET /api/v1/games/tetris/start` — cria sessão e retorna estado inicial.
-pub async fn start_game(State(state): State<Arc<TetrisState>>) -> impl IntoResponse {
+/// `GET /api/v1/games/tetris/start[?variant=<slug>]` — cria sessão e retorna estado inicial.
+/// Variantes suportadas: `tetris/sprint-40` encerra ao limpar 40 linhas (YG-37).
+pub async fn start_game(
+    State(state): State<Arc<TetrisState>>,
+    Query(q): Query<VariantQuery>,
+) -> impl IntoResponse {
     let universe = Universe::tetris();
-    let game = YggTetris::new(universe);
+    let opts = tetris_opts_for_variant(q.variant.as_deref());
+    let game = YggTetris::with_options(universe, opts);
     let state_val = map_to_value(&game.render_json());
     let id = nanoid!();
 
@@ -57,6 +63,15 @@ pub async fn start_game(State(state): State<Arc<TetrisState>>) -> impl IntoRespo
         state: state_val,
         score: 0,
     })
+}
+
+fn tetris_opts_for_variant(variant: Option<&str>) -> TetrisOptions {
+    match variant {
+        Some("tetris/sprint-40") => TetrisOptions {
+            sprint_lines: Some(40),
+        },
+        _ => TetrisOptions::default(),
+    }
 }
 
 /// `POST /api/v1/games/tetris/:id/input` — avança um tick com o input recebido.

@@ -87,6 +87,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/scores/recent", get(api::scores::get_recent))
         .with_state(scores_state);
 
+    // Universe graph — registro estático de universos com variantes e composições.
+    let universes_state = Arc::new(api::universes::UniversesState {
+        registry: Arc::new(yggdrasil_core::universes::default_registry()),
+    });
+    let universes_router = Router::new()
+        .route("/api/v1/universes", get(api::universes::list_universes))
+        .route("/api/v1/universes/graph", get(api::universes::get_graph))
+        .route(
+            "/api/v1/universes/{*slug}",
+            get(api::universes::get_universe),
+        )
+        .with_state(universes_state);
+
     let co_handover_state = Arc::new(CoHandoverState {
         jwt_secret: auth_state.jwt_secret.clone(),
         jwks: Arc::new(auth_co::JwksCache::new()),
@@ -96,9 +109,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/co-login", get(redirect_to_co_login))
         .with_state(co_handover_state);
 
-    let poker_state = Arc::new(PokerState::new(
+    // YG-29: poker persiste seating + stacks na mesma SQLite controlada por
+    // `YGGDRASIL_DB`. Restart do servidor mantém quem está sentado e quanto
+    // tem em chips; mãos em curso são forfeit.
+    let poker_state = Arc::new(PokerState::with_persistence(
         auth_state.jwt_secret.clone(),
         sementes.clone(),
+        std::path::Path::new(&db_path),
     ));
 
     let auth_router = Router::new()
@@ -156,6 +173,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(co_handover_router)
         .merge(me_router)
         .merge(scores_router)
+        .merge(universes_router)
         .merge(snake_router)
         .merge(tetris_router)
         .merge(invaders_router)
