@@ -9,12 +9,15 @@ const state = {
   lobbies: [],
   activeLobby: null,
   pollTimer: null,
+  listPollTimer: null, // refresh dos cards do selector enquanto na lista
   meSeated: false,
   lastRound: null,
   // Caches para evitar rebuild de cartas (flicker durante polling 2s).
   lastCommunityKey: null,
   lastHoleKey: null,
 };
+
+const LIST_POLL_MS = 4000;
 
 const el = {
   ctaLogin:       document.getElementById('cta-login'),
@@ -80,6 +83,34 @@ async function api(path, options = {}) {
 
 function setStatus(msg) { el.status.textContent = msg; }
 
+async function saveFavoriteHand() {
+  if (!state.activeLobby) return;
+  const btn = document.getElementById('btn-favorite-hand');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+  }
+  try {
+    const res = await api(`/api/v1/me/favorites/hands/${state.activeLobby}`, {
+      method: 'POST',
+    });
+    if (res.ok) {
+      if (btn) btn.textContent = '✓ Salva! Veja em /favoritos';
+    } else {
+      const data = await res.json().catch(() => ({}));
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = `Erro: ${data.erro || res.status}`;
+      }
+    }
+  } catch (e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Tentar novamente';
+    }
+  }
+}
+
 async function refreshSaldo() {
   try {
     const res = await api('/api/v1/me/sementes');
@@ -111,22 +142,37 @@ async function loadLobbies() {
   setStatus('');
 }
 
+function startListPolling() {
+  stopListPolling();
+  state.listPollTimer = setInterval(loadLobbies, LIST_POLL_MS);
+}
+function stopListPolling() {
+  if (state.listPollTimer) {
+    clearInterval(state.listPollTimer);
+    state.listPollTimer = null;
+  }
+}
+
 function renderLobbyList() {
   el.ctaLogin.style.display = 'none';
   el.tableView.classList.remove('active');
   el.lobbyList.classList.remove('hidden');
+  startListPolling();
   el.lobbyList.innerHTML = `
     <div class="lobbies">
       ${state.lobbies.map((l) => {
         const humans = l.seats.filter((s) => s.kind === 'human').length;
         const bots = l.seats.filter((s) => s.kind === 'bot').length;
+        const total = l.seats.length; // honra max_seats variável (2 em heads-up, 6 em cash)
+        const vagas = total - humans - bots;
         return `
           <div class="lobby-card" data-id="${l.id}">
             <h3>${l.name}</h3>
             <p class="meta">
               <strong>${humans}</strong> humano${humans === 1 ? '' : 's'} sentado${humans === 1 ? '' : 's'},
               ${bots > 0 ? `<strong>${bots}</strong> bot` : 'sem bots'},
-              ${6 - humans - bots} assento${6 - humans - bots === 1 ? '' : 's'} vago${6 - humans - bots === 1 ? '' : 's'}
+              ${vagas} assento${vagas === 1 ? '' : 's'} vago${vagas === 1 ? '' : 's'}
+              <span style="opacity:0.4">(${total} max)</span>
             </p>
           </div>
         `;
@@ -142,6 +188,7 @@ async function enterLobby(id) {
   state.activeLobby = id;
   el.lobbyList.classList.add('hidden');
   el.tableView.classList.add('active');
+  stopListPolling(); // troca para polling da mesa
   await refreshLobby();
   startPolling();
 }
@@ -339,14 +386,16 @@ function renderGame(hand, holeCards) {
     state.lastHoleKey = null;
   }
 
-  // Winner banner
+  // Winner banner com botão "Salvar mão"
   if (hand.game_over && hand.winner_message) {
-    el.winnerBanner.textContent = hand.winner_message;
+    el.winnerBanner.innerHTML = `
+      <div>${hand.winner_message}</div>
+      <button id="btn-favorite-hand" class="btn-favorite">★ Salvar esta mão</button>
+    `;
     el.winnerBanner.style.display = 'block';
     el.actionBar.style.display = 'none';
     el.suaVezBanner.style.display = 'none';
-    // Pot foi creditado ao chip stack do vencedor — saldo só muda no cash-out (stand).
-    // Mas atualizar saldo aqui é um no-op informativo barato.
+    document.getElementById('btn-favorite-hand').onclick = saveFavoriteHand;
     if (!state.handEndedAcked) {
       state.handEndedAcked = true;
       refreshSaldo();

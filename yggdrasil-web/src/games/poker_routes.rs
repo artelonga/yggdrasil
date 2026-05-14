@@ -22,6 +22,7 @@ use yggdrasil_core::games::poker_lobby::{LobbyError, PokerLobby};
 use yggdrasil_core::sementes::{Sementes, SementesError};
 
 use crate::auth::verify_jwt;
+use crate::games::poker_favorites::{self, CardJson, HandSnapshot, PlayerSnapshot};
 use crate::games::poker_persistence;
 
 pub struct PokerState {
@@ -400,12 +401,179 @@ pub async fn post_action(
             // Persiste após cada ação: stacks mudam constantemente durante
             // a mão (apostas, ganhos), então cada ação válida vira commit.
             state.persist_table(table);
+            // Se a mão acabou de terminar, captura o snapshot para a fila
+            // de "favoritos pending" (TTL 1h ou favoritar explícito).
+            if table.game.as_ref().is_some_and(|g| g.game_over) {
+                capture_hand_snapshot(&state, table);
+            }
             match table.hand_state() {
                 Some(s) => (StatusCode::OK, Json(s)).into_response(),
                 None => (StatusCode::OK, Json(waiting_state())).into_response(),
             }
         }
         Err(e) => table_error(e),
+    }
+}
+
+/// Persiste o snapshot final da mão atual em `poker_recent_hands`. Idempotente
+/// (UPSERT por hand_id). Falhas são logadas mas não afetam o fluxo de jogo.
+fn capture_hand_snapshot(state: &PokerState, table: &PokerTable) {
+    let Some(ref db_path) = state.db_path else {
+        return;
+    };
+    let Some(game) = table.game.as_ref() else {
+        return;
+    };
+    let players: Vec<PlayerSnapshot> = game
+        .players
+        .iter()
+        .enumerate()
+        .map(|(i, p)| PlayerSnapshot {
+            user_id: table
+                .player_map
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| format!("seat-{i}")),
+            chips: p.chips,
+            folded: matches!(p.status, game_core::games::poker::PlayerStatus::Folded),
+            hole_cards: p.hole_cards.map(|[c0, c1]| {
+                [
+                    CardJson {
+                        rank: c0.rank.symbol().to_string(),
+                        suit: format!("{:?}", c0.suit).to_lowercase(),
+                    },
+                    CardJson {
+                        rank: c1.rank.symbol().to_string(),
+                        suit: format!("{:?}", c1.suit).to_lowercase(),
+                    },
+                ]
+            }),
+        })
+        .collect();
+    let community_cards: Vec<CardJson> = game
+        .table
+        .community_cards
+        .iter()
+        .map(|c| CardJson {
+            rank: c.rank.symbol().to_string(),
+            suit: format!("{:?}", c.suit).to_lowercase(),
+        })
+        .collect();
+    let snap = HandSnapshot {
+        hand_id: table.current_hand_id.clone(),
+        table_id: table.lobby.id.clone(),
+        ended_at: chrono::Utc::now().timestamp(),
+        winner_message: game.winner_message.clone(),
+        community_cards,
+        players,
+        pot: game.table.pot,
+    };
+    match poker_favorites::init_favorites_db(db_path) {
+        Ok(conn) => {
+            if let Err(e) = poker_favorites::save_recent(&conn, &snap) {
+                tracing::warn!("favorites save_recent falhou: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("favorites init falhou: {e}"),
+    }
+}
+
+/// `POST /api/v1/me/favorites/hands/{table_id}` — marca a última mão dessa
+/// mesa como favorita do usuário autenticado.
+pub async fn favorite_last_hand(
+    State(state): State<Arc<PokerState>>,
+    Path(table_id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let user_id = match require_user(&headers, &state.jwt_secret) {
+        Ok(uid) => uid,
+        Err(r) => return r,
+    };
+    let Some(ref db_path) = state.db_path else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"erro": "favorites_disabled"})),
+        )
+            .into_response();
+    };
+    let conn = match poker_favorites::init_favorites_db(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("favorites init falhou: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"erro": "db_unavailable"})),
+            )
+                .into_response();
+        }
+    };
+    let snap = match poker_favorites::latest_for_table(&conn, &table_id) {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"erro": "nenhuma_mao_recente"})),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("favorites latest_for_table: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"erro": "lookup_falhou"})),
+            )
+                .into_response();
+        }
+    };
+    if let Err(e) = poker_favorites::favorite(&conn, &user_id, &snap) {
+        tracing::error!("favorites favorite: {e}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"erro": "save_falhou"})),
+        )
+            .into_response();
+    }
+    tracing::info!("favorited hand_id={} user_id={user_id}", snap.hand_id);
+    (StatusCode::OK, Json(snap)).into_response()
+}
+
+/// `GET /api/v1/me/favorites/hands` — lista mãos favoritadas do usuário.
+pub async fn list_favorite_hands(
+    State(state): State<Arc<PokerState>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let user_id = match require_user(&headers, &state.jwt_secret) {
+        Ok(uid) => uid,
+        Err(r) => return r,
+    };
+    let Some(ref db_path) = state.db_path else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"erro": "favorites_disabled"})),
+        )
+            .into_response();
+    };
+    let conn = match poker_favorites::init_favorites_db(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("favorites init: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"erro": "db_unavailable"})),
+            )
+                .into_response();
+        }
+    };
+    match poker_favorites::list_favorites(&conn, &user_id) {
+        Ok(hands) => (StatusCode::OK, Json(serde_json::json!({"hands": hands}))).into_response(),
+        Err(e) => {
+            tracing::error!("favorites list: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"erro": "list_falhou"})),
+            )
+                .into_response()
+        }
     }
 }
 

@@ -4,6 +4,20 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (poker, favoritos)
+- `yggdrasil_web::games::poker_favorites` — módulo novo com schema SQLite (`poker_recent_hands` TTL 1h + `poker_favorite_hands` permanente), funções `save_recent`, `latest_for_table`, `favorite`, `list_favorites`. 4 testes cobrem round-trip, idempotência, isolamento por usuário, TTL.
+- `PokerTable.current_hand_id` — ID único por mão (`{table_id}-{millis}`), regenerado em `start_hand`.
+- `capture_hand_snapshot()` em `poker_routes` — chamado após cada `act` que termina mão. Captura community cards, pot, players (com hole cards revelados), winner_message no `poker_recent_hands`.
+- `POST /api/v1/me/favorites/hands/{table_id}` — marca a última mão dessa mesa como favorita do usuário autenticado.
+- `GET /api/v1/me/favorites/hands` — lista mãos favoritadas (até 50, ordem decrescente).
+- `GET /favoritos` — página de visualização: lista mãos salvas com community cards + jogadores + hole cards revelados. Acessível para usuário autenticado.
+- Botão "★ Salvar esta mão" no winner banner do `/universos/poker` após cada showdown.
+
+### Fixed (lobby selector)
+- **Contagem de assentos não atualizava** quando outros browsers sentavam/levantavam: lista de mesas só era recarregada via `loadLobbies` na primeira visita. Agora `startListPolling` (4s) roda enquanto na vista de seleção; `stopListPolling` quando o usuário entra numa mesa.
+- **Bug do `6 -` hardcoded**: cálculo de vagas usava `6 - humans - bots`, errado para heads-up (mesa de 2 seats mostrava número negativo). Agora usa `l.seats.length`.
+- Display "(N max)" ajuda a distinguir mesas Carvalho/Olmo (6) de Heads-Up (2).
+
 ### Fixed (poker)
 - **Showdown não saía do lugar**: `get_hand` só chamava `start_hand` quando `table.game.is_none()`. Após o fim de uma mão, `game.game_over=true` mantinha a mesma mão para sempre. Agora `PokerTable` registra `hand_ended_at`; passados `HAND_END_RESTART_DELAY_SECS` (5s), o route handler substitui o game por uma nova mão. Usuários veem o vencedor por 5s e a próxima mão começa automaticamente.
 - **Cartas piscando** durante polling: o `renderGame` zerava `innerHTML` das `community_cards` / `hole_cards` a cada poll (2s), criando flicker visual. Agora caches `lastCommunityKey` e `lastHoleKey` evitam rebuild quando o conteúdo não mudou.

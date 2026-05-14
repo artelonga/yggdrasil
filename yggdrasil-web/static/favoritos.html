@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mãos favoritas — Yggdrasil</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d12;
+      color: #e8e3d3;
+      font-family: system-ui, monospace;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+    .container { max-width: 56rem; margin: 0 auto; }
+    h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.6rem; margin-bottom: 0.4rem; }
+    .subtitulo { opacity: 0.5; font-size: 0.85rem; margin-bottom: 2rem; }
+    .link-volta a { color: #d4af37; text-decoration: none; border-bottom: 1px solid currentColor; font-size: 0.85rem; }
+    .empty {
+      text-align: center;
+      padding: 4rem 1rem;
+      opacity: 0.5;
+    }
+    .hand-card {
+      border: 1px solid #2a2a3e;
+      background: #14141e;
+      padding: 1.5rem;
+      margin-bottom: 1.2rem;
+    }
+    .hand-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+      opacity: 0.7;
+    }
+    .hand-meta .table-id { color: #d4af37; }
+    .winner {
+      color: #d4af37;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+    .section-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      opacity: 0.5;
+      margin-bottom: 0.4rem;
+    }
+    .cards-row {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .playing-card {
+      width: 2.4rem;
+      height: 3.4rem;
+      background: #fff;
+      color: #000;
+      border-radius: 0.3rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    .playing-card.red { color: #c00; }
+    .card-suit { font-size: 1.1rem; line-height: 1; }
+    .players-list { font-size: 0.85rem; }
+    .player-row {
+      padding: 0.3rem 0;
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+    }
+    .player-row.folded { opacity: 0.4; text-decoration: line-through; }
+    .player-row .uid { flex: 1; opacity: 0.85; word-break: break-all; }
+    .player-row .chips { color: #d4af37; }
+    .player-row .mini-card {
+      width: 1.4rem;
+      height: 2rem;
+      background: #fff;
+      color: #000;
+      border-radius: 0.2rem;
+      font-size: 0.65rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .player-row .mini-card.red { color: #c00; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>★ MÃOS FAVORITAS</h1>
+    <p class="subtitulo">Mãos que você salvou de partidas anteriores. Útil para mostrar para amigos ou revisar momentos memoráveis.</p>
+    <p class="link-volta" style="margin-bottom: 2rem;"><a href="/lobby">← Voltar ao lobby</a></p>
+
+    <div id="content" class="empty">Carregando…</div>
+  </div>
+
+  <script>
+    'use strict';
+
+    const SUITS = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
+    const RED = new Set(['hearts', 'diamonds']);
+
+    function cardEl(c, mini) {
+      const div = document.createElement('div');
+      div.className = (mini ? 'mini-card' : 'playing-card') + (RED.has(c.suit) ? ' red' : '');
+      div.innerHTML = `<span>${c.rank}</span><span class="card-suit">${SUITS[c.suit] || c.suit}</span>`;
+      return div;
+    }
+
+    function fmtTime(epoch) {
+      const d = new Date(epoch * 1000);
+      return d.toLocaleString('pt-BR');
+    }
+
+    async function load() {
+      const token = localStorage.getItem('yggdrasil-jwt');
+      if (!token) {
+        document.getElementById('content').innerHTML =
+          '<p>Você precisa estar logado. <a href="/login?next=/favoritos" style="color:#d4af37">Entrar</a></p>';
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/me/favorites/hands', {
+          headers: { Authorization: 'Bearer ' + token },
+        });
+        if (res.status === 401) {
+          document.getElementById('content').innerHTML =
+            '<p>Sessão expirada. <a href="/login?next=/favoritos" style="color:#d4af37">Entrar novamente</a></p>';
+          return;
+        }
+        if (!res.ok) throw new Error('falha');
+        const { hands } = await res.json();
+        render(hands);
+      } catch (e) {
+        document.getElementById('content').innerHTML =
+          `<p style="color:#ff6b6b">Erro ao carregar: ${e.message}</p>`;
+      }
+    }
+
+    function render(hands) {
+      const root = document.getElementById('content');
+      if (!hands || hands.length === 0) {
+        root.innerHTML = `
+          <p>Você ainda não salvou nenhuma mão.</p>
+          <p style="margin-top:0.8rem;font-size:0.85rem;">
+            Jogue pôquer em <a href="/universos/poker" style="color:#d4af37">/universos/poker</a> e
+            clique em "★ Salvar esta mão" após cada showdown.
+          </p>
+        `;
+        return;
+      }
+      root.classList.remove('empty');
+      root.innerHTML = '';
+      for (const h of hands) {
+        const card = document.createElement('div');
+        card.className = 'hand-card';
+        card.innerHTML = `
+          <div class="hand-meta">
+            <span><span class="table-id">${h.table_id}</span> · ${fmtTime(h.ended_at)}</span>
+            <span>pot ${h.pot}</span>
+          </div>
+          ${h.winner_message ? `<div class="winner">${h.winner_message}</div>` : ''}
+          <div class="section-label">COMMUNITY</div>
+          <div class="cards-row" data-community></div>
+          <div class="section-label">PLAYERS</div>
+          <div class="players-list" data-players></div>
+        `;
+        const community = card.querySelector('[data-community]');
+        for (const c of h.community_cards) community.appendChild(cardEl(c));
+        const players = card.querySelector('[data-players]');
+        for (const p of h.players) {
+          const row = document.createElement('div');
+          row.className = 'player-row' + (p.folded ? ' folded' : '');
+          row.innerHTML = `
+            <span class="uid">${p.user_id}</span>
+            <span class="chips">${p.chips}</span>
+          `;
+          if (p.hole_cards) {
+            const c0 = cardEl(p.hole_cards[0], true);
+            const c1 = cardEl(p.hole_cards[1], true);
+            row.appendChild(c0);
+            row.appendChild(c1);
+          }
+          players.appendChild(row);
+        }
+        root.appendChild(card);
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

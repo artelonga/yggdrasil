@@ -77,7 +77,7 @@ pub struct PokerTable {
     pub lobby: PokerLobby,
     pub game: Option<PokerGame>,
     pub current_actor: Option<String>,
-    player_map: Vec<String>,
+    pub player_map: Vec<String>,
     /// Chip stack persistido entre mãos. Chave = user_id (humano ou `BOT_USER_ID`).
     /// Buy-in entra aqui no `sit_with_sementes` (YG-27), atualizado após cada mão.
     pub stacks: HashMap<String, u32>,
@@ -85,6 +85,9 @@ pub struct PokerTable {
     /// para auto-restart após delay — sem isso, o showdown ficava preso
     /// indefinidamente porque `start_hand` só era chamado quando `game.is_none()`.
     pub hand_ended_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// ID único da mão atual — `{table_id}-{millis}`. Usado por favoritos para
+    /// indexar snapshots de showdown. Regenerado em `start_hand`.
+    pub current_hand_id: String,
 }
 
 /// Segundos entre o fim de uma mão e o auto-start da próxima. Curto o
@@ -114,6 +117,7 @@ impl PokerTable {
             player_map: vec![],
             stacks: HashMap::new(),
             hand_ended_at: None,
+            current_hand_id: String::new(),
         }
     }
 
@@ -151,6 +155,7 @@ impl PokerTable {
             player_map: vec![],
             stacks: snap.stacks,
             hand_ended_at: None,
+            current_hand_id: String::new(),
         }
     }
 
@@ -211,6 +216,12 @@ impl PokerTable {
         self.current_actor = self.player_map.get(action_pos).cloned();
         self.game = Some(game);
         self.hand_ended_at = None;
+        // ID único da mão para indexar snapshots de favorito.
+        self.current_hand_id = format!(
+            "{}-{}",
+            self.lobby.id,
+            chrono::Utc::now().timestamp_millis()
+        );
         Ok(())
     }
 

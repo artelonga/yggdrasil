@@ -19,8 +19,9 @@ use games::invaders_routes::{
     make_invaders_state, send_input as invaders_input, start_game as invaders_start,
 };
 use games::poker_routes::{
-    PokerState, get_hand as poker_get_hand, get_hole_cards as poker_hole_cards,
-    get_lobby as poker_get_lobby, list_lobbies as poker_list_lobbies,
+    PokerState, favorite_last_hand as poker_favorite_last, get_hand as poker_get_hand,
+    get_hole_cards as poker_hole_cards, get_lobby as poker_get_lobby,
+    list_favorite_hands as poker_list_favorites, list_lobbies as poker_list_lobbies,
     post_action as poker_post_action, sit as poker_sit, stand as poker_stand,
 };
 use games::snake_routes::{make_snake_state, send_input as snake_input, start_game as snake_start};
@@ -175,12 +176,18 @@ async fn main() -> anyhow::Result<()> {
             get(poker_hole_cards),
         )
         .route("/api/v1/poker/lobbies/{id}/action", post(poker_post_action))
+        .route("/api/v1/me/favorites/hands", get(poker_list_favorites))
+        .route(
+            "/api/v1/me/favorites/hands/{table_id}",
+            post(poker_favorite_last),
+        )
         .with_state(poker_state);
 
     let app = Router::new()
         .route("/", get(root))
         .route("/lobby", get(serve_lobby))
         .route("/login", get(serve_login))
+        .route("/favoritos", get(serve_favoritos))
         .route("/universos/snake", get(serve_snake))
         .route("/universos/tetris", get(serve_tetris))
         .route("/universos/invaders", get(serve_invaders))
@@ -225,6 +232,10 @@ async fn serve_lobby() -> impl IntoResponse {
 
 async fn serve_login() -> impl IntoResponse {
     Html(include_str!("../static/login.html"))
+}
+
+async fn serve_favoritos() -> impl IntoResponse {
+    Html(include_str!("../static/favoritos.html"))
 }
 
 async fn serve_snake() -> impl IntoResponse {
