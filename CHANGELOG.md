@@ -4,6 +4,12 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (leaderboard usernames)
+- `yggdrasil_web::api::user_profiles` — schema SQLite `user_profiles(user_id, email, username, updated_at)` populado automaticamente em cada `/auth/co-handover-receive`. Username é slug do email (`yuri@artelonga.com.br` → `yuri`).
+- Endpoints de scores (`/api/v1/scores/top` + `/api/v1/scores/recent`) agora retornam `username` em cada row via `LEFT JOIN user_profiles` + `COALESCE(username, user_id)`. Frontend `lobby.js` renderiza `s.username || s.user_id` no painel de high scores e atividade recente.
+- `GET /api/v1/me` retorna `{user_id, email, username}` (era apenas user_id + email).
+- Cobertura: 3 testes unitários do módulo `user_profiles`.
+
 ### Added (poker, favoritos)
 - `yggdrasil_web::games::poker_favorites` — módulo novo com schema SQLite (`poker_recent_hands` TTL 1h + `poker_favorite_hands` permanente), funções `save_recent`, `latest_for_table`, `favorite`, `list_favorites`. 4 testes cobrem round-trip, idempotência, isolamento por usuário, TTL.
 - `PokerTable.current_hand_id` — ID único por mão (`{table_id}-{millis}`), regenerado em `start_hand`.

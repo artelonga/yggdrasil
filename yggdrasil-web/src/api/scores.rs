@@ -22,6 +22,9 @@ pub struct ScoresState {
 #[derive(Serialize)]
 pub struct ScoreRow {
     pub user_id: String,
+    /// Username slugificado do email (preenchido por `api::user_profiles`).
+    /// Quando ausente, igual a `user_id` — frontend pode renderizar diretamente.
+    pub username: String,
     pub game: String,
     pub score: u32,
     pub ts: String,
@@ -45,9 +48,15 @@ pub async fn get_top(
 ) -> impl IntoResponse {
     let limit = q.limit.clamp(1, 50);
     let conn = state.db.lock().unwrap();
+    // LEFT JOIN com user_profiles para resolver user_id → username.
+    // COALESCE faz fallback para o próprio user_id quando o perfil não existe
+    // (usuário anônimo, ou ainda não passou pelo handover do CO).
     let mut stmt = match conn.prepare(
-        "SELECT user_id, game, score, ts FROM scores s1
-         WHERE score >= (
+        "SELECT s1.user_id, COALESCE(up.username, s1.user_id) AS username,
+                s1.game, s1.score, s1.ts
+         FROM scores s1
+         LEFT JOIN user_profiles up ON up.user_id = s1.user_id
+         WHERE s1.score >= (
            SELECT score FROM scores s2
            WHERE s2.game = s1.game
            ORDER BY score DESC LIMIT 1 OFFSET ?1
@@ -55,7 +64,7 @@ pub async fn get_top(
          OR (
            SELECT COUNT(*) FROM scores s2 WHERE s2.game = s1.game
          ) <= ?1
-         ORDER BY game, score DESC",
+         ORDER BY s1.game, s1.score DESC",
     ) {
         Ok(s) => s,
         Err(e) => {
@@ -71,9 +80,10 @@ pub async fn get_top(
         .query_map([limit.saturating_sub(1) as i64], |row| {
             Ok(ScoreRow {
                 user_id: row.get(0)?,
-                game: row.get(1)?,
-                score: row.get(2)?,
-                ts: row.get(3)?,
+                username: row.get(1)?,
+                game: row.get(2)?,
+                score: row.get(3)?,
+                ts: row.get(4)?,
             })
         })
         .and_then(|m| m.collect::<Result<Vec<_>, _>>());
@@ -98,9 +108,13 @@ pub async fn get_top(
 /// `GET /api/v1/scores/recent` — últimas 10 entradas (atividade recente).
 pub async fn get_recent(State(state): State<Arc<ScoresState>>) -> impl IntoResponse {
     let conn = state.db.lock().unwrap();
-    let mut stmt = match conn
-        .prepare("SELECT user_id, game, score, ts FROM scores ORDER BY ts DESC LIMIT 10")
-    {
+    let mut stmt = match conn.prepare(
+        "SELECT s.user_id, COALESCE(up.username, s.user_id) AS username,
+                s.game, s.score, s.ts
+         FROM scores s
+         LEFT JOIN user_profiles up ON up.user_id = s.user_id
+         ORDER BY s.ts DESC LIMIT 10",
+    ) {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("scores recent prepare: {e}");
@@ -115,9 +129,10 @@ pub async fn get_recent(State(state): State<Arc<ScoresState>>) -> impl IntoRespo
         .query_map([], |row| {
             Ok(ScoreRow {
                 user_id: row.get(0)?,
-                game: row.get(1)?,
-                score: row.get(2)?,
-                ts: row.get(3)?,
+                username: row.get(1)?,
+                game: row.get(2)?,
+                score: row.get(3)?,
+                ts: row.get(4)?,
             })
         })
         .and_then(|m| m.collect::<Result<Vec<_>, _>>());
@@ -158,7 +173,13 @@ mod tests {
                 game    TEXT NOT NULL,
                 score   INTEGER NOT NULL,
                 ts      TEXT NOT NULL
-            );",
+            );
+             CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id    TEXT PRIMARY KEY,
+                email      TEXT,
+                username   TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+             );",
         )
         .unwrap();
         for (user_id, game, score, ts) in scores {

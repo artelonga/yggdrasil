@@ -15,16 +15,20 @@ use axum::{
 };
 use serde::Serialize;
 
+use crate::api::user_profiles;
 use crate::auth;
 
 pub struct UsersState {
     pub jwt_secret: String,
+    /// Path do SQLite onde `user_profiles` mora. Lido para resolver username.
+    pub db_path: std::path::PathBuf,
 }
 
 #[derive(Serialize)]
 struct MeResponse {
     user_id: String,
     email: String,
+    username: String,
 }
 
 fn extract_bearer(headers: &HeaderMap) -> Option<String> {
@@ -43,7 +47,8 @@ fn unauthorized() -> axum::response::Response {
         .into_response()
 }
 
-/// `GET /api/v1/me` — retorna `{user_id, email}` do JWT. 401 sem auth.
+/// `GET /api/v1/me` — retorna `{user_id, email, username}` do JWT + DB.
+/// 401 sem auth.
 pub async fn get_me(State(state): State<Arc<UsersState>>, headers: HeaderMap) -> impl IntoResponse {
     let token = match extract_bearer(&headers) {
         Some(t) => t,
@@ -60,11 +65,17 @@ pub async fn get_me(State(state): State<Arc<UsersState>>, headers: HeaderMap) ->
         Ok(d) => d,
         Err(_) => return unauthorized(),
     };
+    // Resolve username via DB. Fallback para user_id se sem perfil.
+    let username = match user_profiles::init_db(&state.db_path) {
+        Ok(conn) => user_profiles::username_or_id(&conn, &data.claims.sub),
+        Err(_) => data.claims.sub.clone(),
+    };
     (
         StatusCode::OK,
         Json(MeResponse {
             user_id: data.claims.sub,
             email: data.claims.email,
+            username,
         }),
     )
         .into_response()
@@ -77,10 +88,16 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::auth::sign_jwt;
+    use tempfile::tempdir;
 
     fn make_app(secret: &str) -> Router {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("t.db");
+        let _ = user_profiles::init_db(&db_path).unwrap();
+        std::mem::forget(dir);
         let state = Arc::new(UsersState {
             jwt_secret: secret.to_string(),
+            db_path,
         });
         Router::new()
             .route("/api/v1/me", get(get_me))
@@ -127,6 +144,8 @@ mod tests {
         let v = parse_body(resp).await;
         assert_eq!(v["user_id"], "yuri-123");
         assert_eq!(v["email"], "yuri@artelonga.com.br");
+        // Sem perfil registrado → username = user_id (fallback).
+        assert_eq!(v["username"], "yuri-123");
     }
 
     #[tokio::test]

@@ -67,6 +67,13 @@ async fn main() -> anyhow::Result<()> {
         db: Arc::new(Mutex::new(scores_conn)),
     });
 
+    // user_profiles schema (cria tabela se ausente). Populada pelo
+    // `/auth/co-handover-receive`; lida por scores e poker para mostrar
+    // username ao invés de user_id opaco.
+    if let Err(e) = api::user_profiles::init_db(std::path::Path::new(&db_path)) {
+        tracing::warn!("user_profiles init falhou: {e} — leaderboard mostrará user_id");
+    }
+
     let sementes_db = std::env::var("YGGDRASIL_SEMENTES_DB")
         .unwrap_or_else(|_| "yggdrasil-sementes.db".to_string());
     let sementes_storage = Arc::new(
@@ -88,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
 
     let users_state = Arc::new(api::users::UsersState {
         jwt_secret: auth_state.jwt_secret.clone(),
+        db_path: std::path::PathBuf::from(&db_path),
     });
     let users_router = Router::new()
         .route("/api/v1/me", get(api::users::get_me))
@@ -130,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
     let co_handover_state = Arc::new(CoHandoverState {
         jwt_secret: auth_state.jwt_secret.clone(),
         jwks: Arc::new(auth_co::JwksCache::new()),
+        db_path: std::path::PathBuf::from(&db_path),
     });
     let co_handover_router = Router::new()
         .route("/auth/co-handover-receive", get(receive_co_handover))
@@ -279,6 +288,9 @@ async fn health() -> impl IntoResponse {
 struct CoHandoverState {
     jwt_secret: String,
     jwks: Arc<auth_co::JwksCache>,
+    /// Path do SQLite onde `user_profiles` é mantido. Atualizado em cada
+    /// handover bem-sucedido (upsert por user_id).
+    db_path: std::path::PathBuf,
 }
 
 #[derive(serde::Deserialize)]
@@ -347,6 +359,20 @@ async fn receive_co_handover(
                 .into_response();
         }
     };
+
+    // Atualiza/cria o perfil local (user_id → username slugificado do email).
+    // Falhas viram warning — o login não é abortado.
+    if !claims.email.is_empty()
+        && let Ok(conn) = api::user_profiles::init_db(&state.db_path)
+    {
+        match api::user_profiles::upsert(&conn, &claims.sub, &claims.email) {
+            Ok(username) => tracing::info!(
+                "user_profile upsert: user_id={} username={username}",
+                claims.sub
+            ),
+            Err(e) => tracing::warn!("user_profile upsert falhou: {e}"),
+        }
+    }
     let next = params
         .next
         .as_deref()

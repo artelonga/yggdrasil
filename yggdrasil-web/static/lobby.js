@@ -306,7 +306,7 @@ function renderScores(scores) {
     for (const s of byGame[game]) {
       parts.push(`
         <div class="score-row">
-          <span class="user">${s.user_id}</span>
+          <span class="user">${s.username || s.user_id}</span>
           <span class="score">${s.score}</span>
         </div>
       `);
@@ -347,7 +347,7 @@ function renderActivity(scores) {
   root.innerHTML = scores.map((s) => `
     <div class="score-row">
       <span class="game">${GAME_LABEL[s.game] || s.game}</span>
-      <span class="user">${s.user_id}</span>
+      <span class="user">${s.username || s.user_id}</span>
       <span class="score">${s.score}</span>
       <span class="ts">${shortDate(s.ts)}</span>
     </div>
