@@ -81,7 +81,16 @@ pub struct PokerTable {
     /// Chip stack persistido entre mãos. Chave = user_id (humano ou `BOT_USER_ID`).
     /// Buy-in entra aqui no `sit_with_sementes` (YG-27), atualizado após cada mão.
     pub stacks: HashMap<String, u32>,
+    /// Quando a mão entrou em `game_over = true`. Usado pelo route handler
+    /// para auto-restart após delay — sem isso, o showdown ficava preso
+    /// indefinidamente porque `start_hand` só era chamado quando `game.is_none()`.
+    pub hand_ended_at: Option<chrono::DateTime<chrono::Utc>>,
 }
+
+/// Segundos entre o fim de uma mão e o auto-start da próxima. Curto o
+/// suficiente para o jogo fluir, longo o suficiente para o vencedor ser
+/// visível.
+pub const HAND_END_RESTART_DELAY_SECS: i64 = 5;
 
 /// Snapshot serializável de uma `PokerTable` para persistência em SQLite
 /// (YG-29). Persiste apenas `lobby` (seating) + `stacks` (chips entre mãos).
@@ -104,7 +113,18 @@ impl PokerTable {
             current_actor: None,
             player_map: vec![],
             stacks: HashMap::new(),
+            hand_ended_at: None,
         }
+    }
+
+    /// `true` se a mão atual terminou há ≥ `HAND_END_RESTART_DELAY_SECS`.
+    /// Route handlers usam isso para decidir quando substituir o `game` por uma
+    /// nova mão automaticamente.
+    pub fn should_auto_restart(&self) -> bool {
+        let Some(t) = self.hand_ended_at else {
+            return false;
+        };
+        (chrono::Utc::now() - t).num_seconds() >= HAND_END_RESTART_DELAY_SECS
     }
 
     /// Serializa a mesa para persistência (YG-29). Captura `lobby` + `stacks`;
@@ -130,6 +150,7 @@ impl PokerTable {
             current_actor: None,
             player_map: vec![],
             stacks: snap.stacks,
+            hand_ended_at: None,
         }
     }
 
@@ -189,6 +210,7 @@ impl PokerTable {
         self.player_map = active.into_iter().map(|(uid, _)| uid).collect();
         self.current_actor = self.player_map.get(action_pos).cloned();
         self.game = Some(game);
+        self.hand_ended_at = None;
         Ok(())
     }
 
@@ -290,6 +312,11 @@ impl PokerTable {
 
         if game.game_over {
             self.current_actor = None;
+            // Marca o instante do fim da mão se ainda não foi marcado. O route
+            // handler usa isso para auto-restart após delay.
+            if self.hand_ended_at.is_none() {
+                self.hand_ended_at = Some(chrono::Utc::now());
+            }
         } else {
             let action_pos = game.table.action_position;
             self.current_actor = self.player_map.get(action_pos).cloned();

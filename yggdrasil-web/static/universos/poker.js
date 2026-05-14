@@ -11,6 +11,9 @@ const state = {
   pollTimer: null,
   meSeated: false,
   lastRound: null,
+  // Caches para evitar rebuild de cartas (flicker durante polling 2s).
+  lastCommunityKey: null,
+  lastHoleKey: null,
 };
 
 const el = {
@@ -147,6 +150,8 @@ function leaveLobby() {
   state.activeLobby = null;
   state.meSeated = false;
   state.lastRound = null;
+  state.lastCommunityKey = null;
+  state.lastHoleKey = null;
   stopPolling();
   hideGameArea();
   loadLobbies();
@@ -303,25 +308,35 @@ function renderGame(hand, holeCards) {
   el.potValue.textContent = hand.pot;
   el.betValue.textContent = hand.current_bet;
 
-  // Community cards — animate new ones
-  const newRound = hand.round !== state.lastRound;
-  state.lastRound = hand.round;
-  el.communityCards.innerHTML = '';
-  const numBack = Math.max(0, 5 - hand.community_cards.length);
-  hand.community_cards.forEach((c) => {
-    const ce = cardEl(c);
-    if (newRound) ce.style.animation = 'card-flip 0.3s ease-out';
-    el.communityCards.appendChild(ce);
-  });
-  for (let i = 0; i < numBack; i++) el.communityCards.appendChild(cardBackEl());
+  // Community cards — só rebuild quando o conteúdo muda (evita flicker no
+  // polling de 2s). A "chave" das cartas é a concatenação rank+suit.
+  const communityKey = hand.community_cards.map((c) => `${c.rank}${c.suit}`).join(',');
+  if (communityKey !== state.lastCommunityKey) {
+    const newRound = hand.round !== state.lastRound;
+    state.lastRound = hand.round;
+    state.lastCommunityKey = communityKey;
+    el.communityCards.innerHTML = '';
+    const numBack = Math.max(0, 5 - hand.community_cards.length);
+    hand.community_cards.forEach((c) => {
+      const ce = cardEl(c);
+      if (newRound) ce.style.animation = 'card-flip 0.3s ease-out';
+      el.communityCards.appendChild(ce);
+    });
+    for (let i = 0; i < numBack; i++) el.communityCards.appendChild(cardBackEl());
+  }
 
-  // Hole cards
+  // Hole cards — mesma regra: só rebuild quando muda.
   if (holeCards && holeCards.length === 2) {
     el.holeCardsArea.style.display = 'block';
-    el.holeCards.innerHTML = '';
-    holeCards.forEach((c) => el.holeCards.appendChild(cardEl(c)));
+    const holeKey = holeCards.map((c) => `${c.rank}${c.suit}`).join(',');
+    if (holeKey !== state.lastHoleKey) {
+      state.lastHoleKey = holeKey;
+      el.holeCards.innerHTML = '';
+      holeCards.forEach((c) => el.holeCards.appendChild(cardEl(c)));
+    }
   } else {
     el.holeCardsArea.style.display = 'none';
+    state.lastHoleKey = null;
   }
 
   // Winner banner

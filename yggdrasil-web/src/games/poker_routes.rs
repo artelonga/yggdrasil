@@ -315,7 +315,12 @@ pub async fn get_hand(
         Some(t) => t,
         None => return lobby_not_found(),
     };
-    if table.game.is_none() {
+    // Start a new hand on first visit, OR replace the finished game once
+    // HAND_END_RESTART_DELAY_SECS has passed so showdown doesn't get stuck.
+    let needs_new_hand = table.game.is_none()
+        || (table.game.as_ref().map(|g| g.game_over).unwrap_or(false)
+            && table.should_auto_restart());
+    if needs_new_hand {
         let _ = table.start_hand();
     }
     auto_step_bots(table);

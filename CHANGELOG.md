@@ -4,6 +4,10 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Fixed (poker)
+- **Showdown não saía do lugar**: `get_hand` só chamava `start_hand` quando `table.game.is_none()`. Após o fim de uma mão, `game.game_over=true` mantinha a mesma mão para sempre. Agora `PokerTable` registra `hand_ended_at`; passados `HAND_END_RESTART_DELAY_SECS` (5s), o route handler substitui o game por uma nova mão. Usuários veem o vencedor por 5s e a próxima mão começa automaticamente.
+- **Cartas piscando** durante polling: o `renderGame` zerava `innerHTML` das `community_cards` / `hole_cards` a cada poll (2s), criando flicker visual. Agora caches `lastCommunityKey` e `lastHoleKey` evitam rebuild quando o conteúdo não mudou.
+
 ### Added (poker, YG-29 — persistência em SQLite)
 - `yggdrasil_core::games::poker_game::PokerTableSnapshot { lobby, stacks }` — formato serde-friendly que captura o estado persistível de uma mesa: seating + chip-stacks por usuário (humano ou bot). Mãos em curso (`PokerGame`) NÃO entram no snapshot — um restart no meio de uma mão é forfeit, mas seats e chips sobrevivem. Escolha pragmática: o engine `PokerGame` do `co/game-core` não é serde-friendly, e o custo de uma mão perdida (≤ poucas dezenas de sementes) é muito menor que o custo de perder buy-ins (1k+ sementes).
 - `PokerTable::to_snapshot()` / `PokerTable::from_snapshot(snap)` — serialização round-trip. `to_snapshot` chama `snapshot_stacks_from_game` antes para garantir que os chips do engine refletem em `stacks`.
