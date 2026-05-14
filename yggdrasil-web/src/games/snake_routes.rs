@@ -6,7 +6,7 @@ use std::{
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use game_core::{
@@ -22,13 +22,15 @@ use super::common::{self, InputRequest, StartResponse, TickResponse, VariantQuer
 pub struct SnakeState {
     sessions: Mutex<HashMap<String, YggSnake>>,
     db: Mutex<rusqlite::Connection>,
+    jwt_secret: String,
 }
 
-pub fn make_snake_state(db_path: &str) -> rusqlite::Result<Arc<SnakeState>> {
+pub fn make_snake_state(db_path: &str, jwt_secret: String) -> rusqlite::Result<Arc<SnakeState>> {
     let conn = common::init_db(db_path)?;
     Ok(Arc::new(SnakeState {
         sessions: Mutex::new(HashMap::new()),
         db: Mutex::new(conn),
+        jwt_secret,
     }))
 }
 
@@ -81,12 +83,16 @@ fn snake_opts_for_variant(variant: Option<&str>, width: usize, height: usize) ->
 }
 
 /// `POST /api/v1/games/snake/:id/input` — avança um tick com o input recebido.
+/// `user_id` para o score vem do JWT (Bearer header); ausência ou JWT inválido
+/// = "anonymous".
 pub async fn send_input(
     Path(id): Path<String>,
     State(state): State<Arc<SnakeState>>,
+    headers: HeaderMap,
     Json(body): Json<InputRequest>,
 ) -> impl IntoResponse {
     let input = parse_direction(&body.direction);
+    let user_id = common::user_id_from_jwt(&headers, &state.jwt_secret);
 
     let (action, state_val, score) = {
         let mut sessions = state.sessions.lock().unwrap();
@@ -109,7 +115,7 @@ pub async fn send_input(
     let action_str = if action == GameAction::Continue {
         "continue"
     } else {
-        common::save_score_locked(&state.db, &body.user_id, "snake", score);
+        common::save_score_locked(&state.db, &user_id, "snake", score);
         "quit"
     };
 
@@ -134,7 +140,7 @@ mod tests {
     use tower::ServiceExt;
 
     fn make_app(db_path: &str) -> Router {
-        let state = make_snake_state(db_path).unwrap();
+        let state = make_snake_state(db_path, "t".to_string()).unwrap();
         Router::new()
             .route("/api/v1/games/snake/start", get(start_game))
             .route("/api/v1/games/snake/{id}/input", post(send_input))
@@ -172,7 +178,7 @@ mod tests {
     async fn send_input_right_returns_continue() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let state = make_snake_state(&db).unwrap();
+        let state = make_snake_state(&db, "t".to_string()).unwrap();
         let app = Router::new()
             .route("/api/v1/games/snake/start", get(start_game))
             .route("/api/v1/games/snake/{id}/input", post(send_input))
@@ -221,7 +227,7 @@ mod tests {
     async fn send_quit_saves_score_and_returns_quit() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let state = make_snake_state(&db).unwrap();
+        let state = make_snake_state(&db, "t".to_string()).unwrap();
         let app = Router::new()
             .route("/api/v1/games/snake/start", get(start_game))
             .route("/api/v1/games/snake/{id}/input", post(send_input))

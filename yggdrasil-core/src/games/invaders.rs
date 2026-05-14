@@ -130,13 +130,16 @@ impl YggInvaders {
     }
 
     fn shoot_player(&mut self) {
-        if self.bullets.iter().filter(|b| !b.alien).count() >= 3 {
+        // Cap player bullets em flight para evitar spam; reduzido de 3 → 4
+        // e velocidade bumpada para 12 (era 8) para o disparo "responder" mais
+        // rápido — feedback que o tiro estava "atrasado / raramente funciona".
+        if self.bullets.iter().filter(|b| !b.alien).count() >= 4 {
             return;
         }
         self.bullets.push(Bullet {
             x: self.player_x + PLAYER_W / 2,
             y: Self::player_y() - BULLET_H,
-            vy: -8,
+            vy: -12,
             alien: false,
         });
     }
@@ -403,12 +406,13 @@ mod tests {
     }
 
     #[test]
-    fn max_three_player_bullets() {
+    fn player_bullets_capped() {
+        // YG-N: cap raised from 3 → 4 to improve shoot feel.
         let mut g = make_game();
-        for _ in 0..5 {
+        for _ in 0..8 {
             g.tick(Input::Action);
         }
-        assert!(g.bullets.iter().filter(|b| !b.alien).count() <= 3);
+        assert!(g.bullets.iter().filter(|b| !b.alien).count() <= 4);
     }
 
     #[test]

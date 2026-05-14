@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use axum::http::HeaderMap;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +9,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Default)]
 pub struct VariantQuery {
     pub variant: Option<String>,
+}
+
+/// Extrai `user_id` da Authorization Bearer JWT, ou `"anonymous"` se ausente/inválido.
+/// Permite que jogadores anônimos joguem (sem persistir score em conta), mas registra
+/// scores em conta quando autenticado.
+pub fn user_id_from_jwt(headers: &HeaderMap, jwt_secret: &str) -> String {
+    headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .and_then(|t| crate::auth::verify_jwt(t, jwt_secret).ok())
+        .unwrap_or_else(|| "anonymous".to_string())
 }
 
 pub fn init_db(db_path: &str) -> rusqlite::Result<Connection> {
@@ -37,15 +50,12 @@ pub fn save_score_locked(db: &Mutex<Connection>, user_id: &str, game: &str, scor
     save_score(&conn, user_id, game, score);
 }
 
-fn default_user_id() -> String {
-    "anonymous".to_string()
-}
-
 #[derive(Deserialize)]
 pub struct InputRequest {
     pub direction: String,
-    #[serde(default = "default_user_id")]
-    pub user_id: String,
+    // YG-N: user_id removed from body — now read from JWT Authorization header
+    // via `user_id_from_jwt`. Old clients sending `user_id` are silently ignored
+    // (serde default behavior for unknown fields).
 }
 
 pub fn map_to_value(json: &str) -> serde_json::Value {

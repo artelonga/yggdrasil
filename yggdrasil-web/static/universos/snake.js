@@ -92,9 +92,12 @@ async function tick() {
   if (state.over || !state.gameId) return;
 
   try {
+    const jwt = localStorage.getItem('yggdrasil-jwt');
+    const headers = { 'Content-Type': 'application/json' };
+    if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
     const res = await fetch(`/api/v1/games/snake/${state.gameId}/input`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ direction: state.direction }),
     });
     if (!res.ok) return;

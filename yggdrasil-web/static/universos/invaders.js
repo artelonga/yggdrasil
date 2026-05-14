@@ -86,9 +86,12 @@ async function sendInput(direction) {
     state.busy = true;
 
     try {
+        const jwt = localStorage.getItem('yggdrasil-jwt');
+        const headers = { 'Content-Type': 'application/json' };
+        if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
         const res = await fetch(`/api/v1/games/invaders/${state.gameId}/input`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ direction }),
         });
         if (!res.ok) return;
@@ -120,7 +123,10 @@ async function sendInput(direction) {
 }
 
 function gameLoop() {
-    if (!state.gameOver && !state.won) {
+    // Bail antes de tocar `pendingShoot` se houver request em curso — antes
+    // o flag era consumido mesmo quando `state.busy` rejeitava o envio, então
+    // o tiro "sumia". Agora pendingShoot fica armado até o próximo frame livre.
+    if (!state.gameOver && !state.won && !state.busy) {
         let input;
         if (pendingShoot) {
             input = 'Shoot';

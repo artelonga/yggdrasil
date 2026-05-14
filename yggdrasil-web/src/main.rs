@@ -53,9 +53,12 @@ async fn main() -> anyhow::Result<()> {
         jwt_secret,
     });
 
-    let snake_state = make_snake_state(&db_path).expect("sqlite init (snake)");
-    let tetris_state = make_tetris_state(&db_path).expect("sqlite init (tetris)");
-    let invaders_state = make_invaders_state(&db_path).expect("sqlite init (invaders)");
+    let snake_state =
+        make_snake_state(&db_path, auth_state.jwt_secret.clone()).expect("sqlite init (snake)");
+    let tetris_state =
+        make_tetris_state(&db_path, auth_state.jwt_secret.clone()).expect("sqlite init (tetris)");
+    let invaders_state = make_invaders_state(&db_path, auth_state.jwt_secret.clone())
+        .expect("sqlite init (invaders)");
 
     // Scores DB compartilhada (mesma tabela `scores` que snake/tetris/invaders gravam).
     let scores_conn = rusqlite::Connection::open(&db_path)?;
@@ -81,6 +84,29 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::get(api::me::get_sementes),
         )
         .with_state(me_state);
+
+    let users_state = Arc::new(api::users::UsersState {
+        jwt_secret: auth_state.jwt_secret.clone(),
+    });
+    let users_router = Router::new()
+        .route("/api/v1/me", get(api::users::get_me))
+        .with_state(users_state);
+
+    // Admin endpoints — opt-in via YGGDRASIL_ADMIN_TOKEN. Sem a env var,
+    // os endpoints retornam 503 (admin_disabled).
+    let admin_token = std::env::var("YGGDRASIL_ADMIN_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty());
+    let admin_state = Arc::new(api::admin::AdminState {
+        admin_token: admin_token.clone(),
+        sementes: sementes.clone(),
+    });
+    let admin_router = Router::new()
+        .route(
+            "/api/v1/admin/sementes/credit",
+            post(api::admin::post_credit),
+        )
+        .with_state(admin_state);
 
     let scores_router = Router::new()
         .route("/api/v1/scores/top", get(api::scores::get_top))
@@ -172,6 +198,8 @@ async fn main() -> anyhow::Result<()> {
         .merge(auth_router)
         .merge(co_handover_router)
         .merge(me_router)
+        .merge(users_router)
+        .merge(admin_router)
         .merge(scores_router)
         .merge(universes_router)
         .merge(snake_router)

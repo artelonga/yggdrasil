@@ -6,7 +6,7 @@ use std::{
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use game_core::{
@@ -22,13 +22,15 @@ use super::common::{self, InputRequest, StartResponse, TickResponse, VariantQuer
 pub struct TetrisState {
     sessions: Mutex<HashMap<String, YggTetris>>,
     db: Mutex<rusqlite::Connection>,
+    jwt_secret: String,
 }
 
-pub fn make_tetris_state(db_path: &str) -> rusqlite::Result<Arc<TetrisState>> {
+pub fn make_tetris_state(db_path: &str, jwt_secret: String) -> rusqlite::Result<Arc<TetrisState>> {
     let conn = common::init_db(db_path)?;
     Ok(Arc::new(TetrisState {
         sessions: Mutex::new(HashMap::new()),
         db: Mutex::new(conn),
+        jwt_secret,
     }))
 }
 
@@ -75,12 +77,16 @@ fn tetris_opts_for_variant(variant: Option<&str>) -> TetrisOptions {
 }
 
 /// `POST /api/v1/games/tetris/:id/input` — avança um tick com o input recebido.
+/// `user_id` para o score vem do JWT (Bearer header); ausência ou JWT inválido
+/// = "anonymous".
 pub async fn send_input(
     Path(id): Path<String>,
     State(state): State<Arc<TetrisState>>,
+    headers: HeaderMap,
     Json(body): Json<InputRequest>,
 ) -> impl IntoResponse {
     let input = parse_direction(&body.direction);
+    let user_id = common::user_id_from_jwt(&headers, &state.jwt_secret);
 
     let (action, state_val, score) = {
         let mut sessions = state.sessions.lock().unwrap();
@@ -103,7 +109,7 @@ pub async fn send_input(
     let action_str = if action == GameAction::Continue {
         "continue"
     } else {
-        common::save_score_locked(&state.db, &body.user_id, "tetris", score);
+        common::save_score_locked(&state.db, &user_id, "tetris", score);
         "quit"
     };
 
@@ -128,7 +134,7 @@ mod tests {
     use tower::ServiceExt;
 
     fn make_app(db_path: &str) -> Router {
-        let state = make_tetris_state(db_path).unwrap();
+        let state = make_tetris_state(db_path, "t".to_string()).unwrap();
         Router::new()
             .route("/api/v1/games/tetris/start", get(start_game))
             .route("/api/v1/games/tetris/{id}/input", post(send_input))
@@ -166,7 +172,7 @@ mod tests {
     async fn drop_input_returns_continue() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let state = make_tetris_state(&db).unwrap();
+        let state = make_tetris_state(&db, "t".to_string()).unwrap();
         let app = Router::new()
             .route("/api/v1/games/tetris/start", get(start_game))
             .route("/api/v1/games/tetris/{id}/input", post(send_input))
@@ -215,7 +221,7 @@ mod tests {
     async fn quit_saves_score_and_returns_quit() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let state = make_tetris_state(&db).unwrap();
+        let state = make_tetris_state(&db, "t".to_string()).unwrap();
         let app = Router::new()
             .route("/api/v1/games/tetris/start", get(start_game))
             .route("/api/v1/games/tetris/{id}/input", post(send_input))

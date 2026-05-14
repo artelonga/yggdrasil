@@ -131,9 +131,12 @@ async function sendInput(direction) {
   state.busy = true;
 
   try {
+    const jwt = localStorage.getItem('yggdrasil-jwt');
+    const headers = { 'Content-Type': 'application/json' };
+    if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
     const res = await fetch(`/api/v1/games/tetris/${state.gameId}/input`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ direction }),
     });
     if (!res.ok) return;
