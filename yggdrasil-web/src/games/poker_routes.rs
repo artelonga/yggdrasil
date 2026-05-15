@@ -21,9 +21,45 @@ use yggdrasil_core::games::poker_game::{
 use yggdrasil_core::games::poker_lobby::{LobbyError, PokerLobby};
 use yggdrasil_core::sementes::{Sementes, SementesError};
 
+use crate::api::user_profiles;
 use crate::auth::verify_jwt;
 use crate::games::poker_favorites::{self, CardJson, HandSnapshot, PlayerSnapshot};
 use crate::games::poker_persistence;
+
+/// Substitui `username` em cada player pelo lookup em `user_profiles`. Falhas
+/// de DB são engolidas — frontend faz fallback para `user_id` via `||`.
+fn enrich_usernames(state: &PokerState, hand: &mut yggdrasil_core::games::poker_game::HandState) {
+    let Some(ref db_path) = state.db_path else {
+        return;
+    };
+    let Ok(conn) = user_profiles::init_db(db_path) else {
+        return;
+    };
+    for p in hand.players.iter_mut() {
+        p.username = user_profiles::username_or_id(&conn, &p.user_id);
+    }
+}
+
+/// Constrói o mapa `{user_id: username}` para todos os humanos sentados nas
+/// mesas. Retorna `{}` se DB indisponível — frontend faz fallback para user_id.
+fn lobby_usernames(state: &PokerState, lobbies: &[&PokerLobby]) -> serde_json::Value {
+    let Some(ref db_path) = state.db_path else {
+        return serde_json::json!({});
+    };
+    let Ok(conn) = user_profiles::init_db(db_path) else {
+        return serde_json::json!({});
+    };
+    let mut map = serde_json::Map::new();
+    for l in lobbies {
+        for seat in &l.seats {
+            if let yggdrasil_core::games::poker_lobby::SeatOccupant::Human { user_id, .. } = seat {
+                let name = user_profiles::username_or_id(&conn, user_id);
+                map.insert(user_id.clone(), serde_json::Value::String(name));
+            }
+        }
+    }
+    serde_json::Value::Object(map)
+}
 
 pub struct PokerState {
     pub jwt_secret: String,
@@ -225,9 +261,10 @@ pub async fn list_lobbies(
     }
     let tables = state.tables.lock().unwrap();
     let lobbies: Vec<&PokerLobby> = tables.iter().map(|t| &t.lobby).collect();
+    let usernames = lobby_usernames(&state, &lobbies);
     (
         StatusCode::OK,
-        Json(serde_json::json!({ "lobbies": lobbies })),
+        Json(serde_json::json!({ "lobbies": lobbies, "usernames": usernames })),
     )
         .into_response()
 }
@@ -242,7 +279,15 @@ pub async fn get_lobby(
     }
     let tables = state.tables.lock().unwrap();
     match tables.iter().find(|t| t.lobby.id == id) {
-        Some(t) => (StatusCode::OK, Json(t.lobby.clone())).into_response(),
+        Some(t) => {
+            let lobby_ref = vec![&t.lobby];
+            let usernames = lobby_usernames(&state, &lobby_ref);
+            let mut obj = serde_json::to_value(&t.lobby).unwrap_or_default();
+            if let Some(map) = obj.as_object_mut() {
+                map.insert("usernames".to_string(), usernames);
+            }
+            (StatusCode::OK, Json(obj)).into_response()
+        }
         None => lobby_not_found(),
     }
 }
@@ -326,7 +371,10 @@ pub async fn get_hand(
     }
     auto_step_bots(table);
     match table.hand_state() {
-        Some(s) => (StatusCode::OK, Json(s)).into_response(),
+        Some(mut s) => {
+            enrich_usernames(&state, &mut s);
+            (StatusCode::OK, Json(s)).into_response()
+        }
         None => (StatusCode::OK, Json(waiting_state())).into_response(),
     }
 }
@@ -407,7 +455,10 @@ pub async fn post_action(
                 capture_hand_snapshot(&state, table);
             }
             match table.hand_state() {
-                Some(s) => (StatusCode::OK, Json(s)).into_response(),
+                Some(mut s) => {
+                    enrich_usernames(&state, &mut s);
+                    (StatusCode::OK, Json(s)).into_response()
+                }
                 None => (StatusCode::OK, Json(waiting_state())).into_response(),
             }
         }

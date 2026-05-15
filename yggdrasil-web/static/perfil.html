@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Perfil — Yggdrasil</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d12; color: #e8e3d3; font-family: system-ui, monospace;
+      min-height: 100vh; padding: 2rem 1rem;
+    }
+    .container { max-width: 56rem; margin: 0 auto; }
+    h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.6rem; margin-bottom: 0.4rem; }
+    .subtitulo { opacity: 0.5; font-size: 0.85rem; margin-bottom: 2rem; }
+    .link-volta a { color: #d4af37; text-decoration: none; border-bottom: 1px solid currentColor; font-size: 0.85rem; }
+    .panel { border: 1px solid #2a2a3e; background: #14141e; padding: 1.2rem; margin-bottom: 1.2rem; }
+    .panel h2 { font-size: 0.8rem; font-weight: 400; letter-spacing: 0.2em; color: #d4af37; margin-bottom: 0.8rem; border-bottom: 1px solid #2a2a3e; padding-bottom: 0.5rem; }
+    .score-row { display: flex; gap: 0.6rem; padding: 0.4rem 0; font-size: 0.95rem; }
+    .score-row .game { width: 8rem; opacity: 0.7; }
+    .score-row .score { color: #d4af37; font-weight: 500; }
+    .empty { font-size: 0.85rem; opacity: 0.5; padding: 0.5rem 0; }
+    .hand-card { border: 1px solid #2a2a3e; padding: 1rem; margin-bottom: 0.8rem; }
+    .hand-meta { font-size: 0.8rem; opacity: 0.65; margin-bottom: 0.6rem; }
+    .cards-row { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+    .playing-card { width: 2rem; height: 2.8rem; background: #fff; color: #000; border-radius: 0.25rem; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 600; }
+    .playing-card.red { color: #c00; }
+    .winner { color: #d4af37; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <p class="link-volta" style="margin-bottom: 1rem;"><a href="/lobby">← Voltar ao lobby</a></p>
+    <h1 id="title">Perfil</h1>
+    <p class="subtitulo" id="subtitle">Carregando…</p>
+    <div id="content"></div>
+  </div>
+
+  <script>
+    'use strict';
+    const SUITS = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
+    const RED = new Set(['hearts', 'diamonds']);
+    function cardEl(c) {
+      const d = document.createElement('div');
+      d.className = 'playing-card' + (RED.has(c.suit) ? ' red' : '');
+      d.innerHTML = `<span>${c.rank}</span><span>${SUITS[c.suit] || c.suit}</span>`;
+      return d;
+    }
+    function fmtTs(iso) { try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; } }
+    function fmtEpoch(e) { try { return new Date(e * 1000).toLocaleString('pt-BR'); } catch { return ''; } }
+
+    const username = decodeURIComponent(location.pathname.split('/').pop() || '');
+    document.getElementById('title').textContent = '★ ' + username.toUpperCase();
+    document.getElementById('subtitle').textContent = 'Perfil público de ' + username;
+
+    async function load() {
+      try {
+        const res = await fetch('/api/v1/users/' + encodeURIComponent(username));
+        if (res.status === 404) {
+          document.getElementById('content').innerHTML =
+            `<p class="empty">Usuário "${username}" não encontrado.</p>`;
+          return;
+        }
+        if (!res.ok) throw new Error('falha');
+        const p = await res.json();
+        render(p);
+      } catch (e) {
+        document.getElementById('content').innerHTML =
+          `<p style="color:#ff6b6b">Erro: ${e.message}</p>`;
+      }
+    }
+
+    function render(p) {
+      const root = document.getElementById('content');
+      root.innerHTML = '';
+
+      // Scores
+      const scoresPanel = document.createElement('section');
+      scoresPanel.className = 'panel';
+      let scoresHtml = '<h2>HIGH SCORES</h2>';
+      if (!p.scores || p.scores.length === 0) {
+        scoresHtml += '<p class="empty">Sem pontuações registradas ainda.</p>';
+      } else {
+        for (const s of p.scores) {
+          scoresHtml += `<div class="score-row">
+            <span class="game">${s.game}</span>
+            <span class="score">${s.score}</span>
+            <span style="opacity:0.4; margin-left:auto">${fmtTs(s.ts)}</span>
+          </div>`;
+        }
+      }
+      scoresPanel.innerHTML = scoresHtml;
+      root.appendChild(scoresPanel);
+
+      // Favorite hands
+      const handsPanel = document.createElement('section');
+      handsPanel.className = 'panel';
+      let handsHtml = '<h2>MÃOS FAVORITAS</h2>';
+      handsPanel.innerHTML = handsHtml;
+      if (!p.favorite_hands || p.favorite_hands.length === 0) {
+        handsPanel.innerHTML += '<p class="empty">Nenhuma mão salva.</p>';
+      } else {
+        for (const h of p.favorite_hands) {
+          const card = document.createElement('div');
+          card.className = 'hand-card';
+          card.innerHTML = `
+            <div class="hand-meta">${h.table_id || '?'} · ${fmtEpoch(h.ended_at)} · pot ${h.pot || 0}</div>
+            ${h.winner_message ? `<div class="winner">${h.winner_message}</div>` : ''}
+            <div class="cards-row" data-community></div>
+          `;
+          const community = card.querySelector('[data-community]');
+          for (const c of (h.community_cards || [])) community.appendChild(cardEl(c));
+          handsPanel.appendChild(card);
+        }
+      }
+      root.appendChild(handsPanel);
+    }
+
+    load();
+  </script>
+</body>
+</html>

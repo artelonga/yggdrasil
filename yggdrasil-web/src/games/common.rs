@@ -11,16 +11,40 @@ pub struct VariantQuery {
     pub variant: Option<String>,
 }
 
-/// Extrai `user_id` da Authorization Bearer JWT, ou `"anonymous"` se ausente/inválido.
-/// Permite que jogadores anônimos joguem (sem persistir score em conta), mas registra
-/// scores em conta quando autenticado.
-pub fn user_id_from_jwt(headers: &HeaderMap, jwt_secret: &str) -> String {
-    headers
+/// Extrai `(user_id, email)` do JWT. Email vazio quando JWT ausente/inválido ou
+/// claim sem email. Útil para lazy-upsert de `user_profiles` quando o usuário
+/// ainda não passou por um novo `/auth/co-handover-receive` depois do deploy
+/// que introduziu a tabela.
+pub fn user_info_from_jwt(headers: &HeaderMap, jwt_secret: &str) -> (String, String) {
+    let Some(token) = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .and_then(|t| crate::auth::verify_jwt(t, jwt_secret).ok())
-        .unwrap_or_else(|| "anonymous".to_string())
+    else {
+        return ("anonymous".to_string(), String::new());
+    };
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+    validation.validate_exp = true;
+    match jsonwebtoken::decode::<crate::auth::Claims>(
+        token,
+        &jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes()),
+        &validation,
+    ) {
+        Ok(data) => (data.claims.sub, data.claims.email),
+        Err(_) => ("anonymous".to_string(), String::new()),
+    }
+}
+
+/// Cria/atualiza o perfil do usuário no DB se temos email. No-op se anonymous
+/// ou sem email. Falhas são logadas mas não afetam o fluxo.
+pub fn lazy_upsert_profile(conn: &Mutex<Connection>, user_id: &str, email: &str) {
+    if user_id == "anonymous" || email.is_empty() {
+        return;
+    }
+    let c = conn.lock().unwrap();
+    if let Err(e) = crate::api::user_profiles::upsert(&c, user_id, email) {
+        tracing::warn!("lazy_upsert_profile: {e}");
+    }
 }
 
 pub fn init_db(db_path: &str) -> rusqlite::Result<Connection> {

@@ -86,7 +86,8 @@ pub async fn send_input(
     Json(body): Json<InputRequest>,
 ) -> impl IntoResponse {
     let input = parse_direction(&body.direction);
-    let user_id = common::user_id_from_jwt(&headers, &state.jwt_secret);
+    let (user_id, email) = common::user_info_from_jwt(&headers, &state.jwt_secret);
+    common::lazy_upsert_profile(&state.db, &user_id, &email);
 
     let (action, state_val, score) = {
         let mut sessions = state.sessions.lock().unwrap();

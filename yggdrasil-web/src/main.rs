@@ -101,6 +101,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/me", get(api::users::get_me))
         .with_state(users_state);
 
+    let profiles_state = Arc::new(api::profiles::ProfilesState {
+        db_path: std::path::PathBuf::from(&db_path),
+    });
+    let profiles_router = Router::new()
+        .route("/api/v1/users/{username}", get(api::profiles::get_profile))
+        .with_state(profiles_state);
+
     // Admin endpoints — opt-in via YGGDRASIL_ADMIN_TOKEN. Sem a env var,
     // os endpoints retornam 503 (admin_disabled).
     let admin_token = std::env::var("YGGDRASIL_ADMIN_TOKEN")
@@ -197,6 +204,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/lobby", get(serve_lobby))
         .route("/login", get(serve_login))
         .route("/favoritos", get(serve_favoritos))
+        .route("/sobre", get(serve_sobre))
+        .route("/perfil/{username}", get(serve_perfil))
         .route("/universos/snake", get(serve_snake))
         .route("/universos/tetris", get(serve_tetris))
         .route("/universos/invaders", get(serve_invaders))
@@ -215,6 +224,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(co_handover_router)
         .merge(me_router)
         .merge(users_router)
+        .merge(profiles_router)
         .merge(admin_router)
         .merge(scores_router)
         .merge(universes_router)
@@ -245,6 +255,14 @@ async fn serve_login() -> impl IntoResponse {
 
 async fn serve_favoritos() -> impl IntoResponse {
     Html(include_str!("../static/favoritos.html"))
+}
+
+async fn serve_sobre() -> impl IntoResponse {
+    Html(include_str!("../static/sobre.html"))
+}
+
+async fn serve_perfil() -> impl IntoResponse {
+    Html(include_str!("../static/perfil.html"))
 }
 
 async fn serve_snake() -> impl IntoResponse {

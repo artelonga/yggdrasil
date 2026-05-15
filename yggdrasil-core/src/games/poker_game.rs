@@ -55,6 +55,11 @@ pub struct CardView {
 #[derive(Serialize, Clone)]
 pub struct PublicPlayer {
     pub user_id: String,
+    /// Username resolvido pelo route handler via `user_profiles`. Igual a
+    /// `user_id` quando o perfil não existe (anonymous, bot, ou usuário sem
+    /// login recente). Frontend faz `p.username || p.user_id`.
+    #[serde(default)]
+    pub username: String,
     pub chips: u32,
     pub current_bet: u32,
     pub is_dealer: bool,
@@ -361,12 +366,16 @@ impl PokerTable {
             .players
             .iter()
             .enumerate()
-            .map(|(i, p)| PublicPlayer {
-                user_id: self.player_map.get(i).cloned().unwrap_or_default(),
-                chips: p.chips,
-                current_bet: p.current_bet,
-                is_dealer: p.is_dealer,
-                folded: matches!(p.status, PlayerStatus::Folded),
+            .map(|(i, p)| {
+                let uid = self.player_map.get(i).cloned().unwrap_or_default();
+                PublicPlayer {
+                    username: uid.clone(), // default; route handler sobrescreve com lookup
+                    user_id: uid,
+                    chips: p.chips,
+                    current_bet: p.current_bet,
+                    is_dealer: p.is_dealer,
+                    folded: matches!(p.status, PlayerStatus::Folded),
+                }
             })
             .collect();
 

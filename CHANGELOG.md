@@ -4,6 +4,18 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Fixed (usernames in scores)
+- **Novos scores ainda apareciam como `user_id`**: o user_profiles upsert só rodava no `/auth/co-handover-receive`, então usuários com JWT antigo (anterior ao deploy) nunca tinham perfil criado. Agora cada `send_input` de snake/tetris/invaders faz lazy-upsert via `common::user_info_from_jwt` + `common::lazy_upsert_profile` — qualquer ação autenticada cria/atualiza o perfil.
+- **Poker seats mostravam user_id opaco**: `PublicPlayer` ganha campo `username` resolvido em `enrich_usernames`. Lobby endpoints retornam `usernames` map (user_id → username) para popular os assentos no selector.
+
+### Added (perfis públicos)
+- `yggdrasil_web::api::profiles` — novo módulo com `GET /api/v1/users/{username}` retornando perfil público: high scores (top por jogo) + mãos favoritas. Email não é exposto. 2 testes (perfil existente, 404 para usuário inexistente).
+- `/perfil/{username}` — página HTML renderizando o perfil. Linkada a partir do lobby (high scores e atividade recente — clique no nome para abrir o perfil).
+- Resolução `username → user_id` via index existente em `user_profiles.username`.
+
+### Added (sobre)
+- `/sobre` — página pública com README do projeto: visão geral, universos disponíveis, arquitetura (grafo + 3 camadas), sementes, identidade unificada via CO, API pública, link para repositório. Em PT-BR, sem framework.
+
 ### Added (leaderboard usernames)
 - `yggdrasil_web::api::user_profiles` — schema SQLite `user_profiles(user_id, email, username, updated_at)` populado automaticamente em cada `/auth/co-handover-receive`. Username é slug do email (`yuri@artelonga.com.br` → `yuri`).
 - Endpoints de scores (`/api/v1/scores/top` + `/api/v1/scores/recent`) agora retornam `username` em cada row via `LEFT JOIN user_profiles` + `COALESCE(username, user_id)`. Frontend `lobby.js` renderiza `s.username || s.user_id` no painel de high scores e atividade recente.

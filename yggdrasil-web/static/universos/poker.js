@@ -276,7 +276,9 @@ function renderTable(lobby) {
       } else {
         cls += ' human';
         if (s.user_id === state.userId) cls += ' self';
-        label = s.user_id;
+        // lobby.usernames[s.user_id] vem do server (LEFT JOIN user_profiles).
+        // Fallback para o próprio user_id se não houver perfil.
+        label = (lobby.usernames && lobby.usernames[s.user_id]) || s.user_id;
       }
       return `
         <div class="${cls}" data-seat="${i}">
@@ -433,7 +435,8 @@ function renderGame(hand, holeCards) {
     const dealer = p.is_dealer ? '<span class="dealer-chip">★</span>' : '';
     const foldedCls = p.folded ? ' folded' : '';
     const isActor = !hand.game_over && p.user_id === hand.current_actor ? ' →' : '';
-    return `<div class="player-row${foldedCls}">${dealer} ${p.user_id}${isActor} — ${p.chips} fichas (bet: ${p.current_bet})</div>`;
+    const name = p.username || p.user_id;
+    return `<div class="player-row${foldedCls}">${dealer} ${name}${isActor} — ${p.chips} fichas (bet: ${p.current_bet})</div>`;
   }).join('');
 }
 

@@ -278,6 +278,17 @@ const GAME_LABEL = {
   poker: '🃏 Poker',
 };
 
+/// Renderiza nome do usuário com link para `/perfil/{username}` quando há
+/// username de verdade (não anonymous, não user_id raw). Caso contrário
+/// renderiza texto plano.
+function linkifyUser(s) {
+  const name = s.username || s.user_id;
+  if (!name || name === 'anonymous' || name === s.user_id) {
+    return name || '?';
+  }
+  return `<a href="/perfil/${encodeURIComponent(name)}" style="color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor">${name}</a>`;
+}
+
 async function loadScores() {
   try {
     const res = await fetch('/api/v1/scores/top?limit=3');
@@ -306,7 +317,7 @@ function renderScores(scores) {
     for (const s of byGame[game]) {
       parts.push(`
         <div class="score-row">
-          <span class="user">${s.username || s.user_id}</span>
+          <span class="user">${linkifyUser(s)}</span>
           <span class="score">${s.score}</span>
         </div>
       `);
@@ -347,7 +358,7 @@ function renderActivity(scores) {
   root.innerHTML = scores.map((s) => `
     <div class="score-row">
       <span class="game">${GAME_LABEL[s.game] || s.game}</span>
-      <span class="user">${s.username || s.user_id}</span>
+      <span class="user">${linkifyUser(s)}</span>
       <span class="score">${s.score}</span>
       <span class="ts">${shortDate(s.ts)}</span>
     </div>

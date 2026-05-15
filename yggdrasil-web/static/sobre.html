@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sobre — Yggdrasil</title>
+  <meta name="description" content="Yggdrasil — plataforma viva de criação, organização e conexão de universos digitais. Snake, Tetris, Invaders, Pôquer e mais.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d12;
+      color: #e8e3d3;
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      line-height: 1.6;
+    }
+    .container { max-width: 44rem; margin: 0 auto; }
+    h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 2rem; margin-bottom: 0.6rem; }
+    h2 { font-weight: 400; letter-spacing: 0.15em; font-size: 1.1rem; color: #d4af37; margin-top: 2.5rem; margin-bottom: 0.8rem; }
+    h3 { font-weight: 500; font-size: 0.95rem; margin-top: 1.5rem; margin-bottom: 0.4rem; }
+    p { margin-bottom: 1rem; opacity: 0.85; }
+    ul { padding-left: 1.4rem; margin-bottom: 1rem; }
+    li { margin-bottom: 0.4rem; opacity: 0.85; }
+    a { color: #d4af37; text-decoration: none; border-bottom: 1px solid currentColor; }
+    a:hover { opacity: 0.85; }
+    code {
+      background: #1a1a2e;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.2rem;
+      font-family: monospace;
+      font-size: 0.9em;
+      color: #d4af37;
+    }
+    .subtitulo {
+      opacity: 0.5;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      margin-bottom: 2.5rem;
+    }
+    .epigrafe {
+      border-left: 2px solid #d4af37;
+      padding-left: 1rem;
+      margin: 2rem 0;
+      font-style: italic;
+      opacity: 0.7;
+    }
+    .universos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      gap: 0.8rem;
+      margin: 1rem 0;
+    }
+    .universo-card {
+      border: 1px solid #2a2a3e;
+      padding: 0.8rem 1rem;
+      background: #14141e;
+    }
+    .universo-card strong { color: #d4af37; }
+    .universo-card .desc { font-size: 0.8rem; opacity: 0.7; margin-top: 0.3rem; }
+    .link-volta { margin-top: 3rem; opacity: 0.7; font-size: 0.9rem; }
+    .footer-meta {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #2a2a3e;
+      font-size: 0.8rem;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>YGGDRASIL</h1>
+    <p class="subtitulo">Conectando ideias. Construindo universos.</p>
+
+    <div class="epigrafe">
+      Cada jogo é um universo. Cada universo é um nó num grafo recursivo —
+      pode ser composto, instanciado, parametrizado. Composição sobre herança,
+      do código ao gameplay.
+    </div>
+
+    <h2>O QUE É</h2>
+    <p>
+      Yggdrasil é uma plataforma viva de criação, organização e conexão de
+      universos digitais. Cada universo é um espaço onde elementos crescem
+      como raízes, galhos e folhas — e podem virar mundos jogáveis.
+    </p>
+    <p>
+      A primeira release pública traz quatro universos clássicos
+      reinterpretados, um lobby 2D navegável, autenticação unificada entre
+      as propriedades artelonga, e um modelo de moeda interna chamado
+      <strong>sementes</strong>. Toda a arquitetura é desenhada para escalar:
+      novos universos plugam no grafo existente sem reescrever nada.
+    </p>
+
+    <h2>UNIVERSOS</h2>
+    <div class="universos-grid">
+      <div class="universo-card">
+        <strong>🐍 Snake</strong>
+        <div class="desc">Coma maçãs, evite sua cauda. Variante com paredes internas.</div>
+      </div>
+      <div class="universo-card">
+        <strong>🟦 Tetris</strong>
+        <div class="desc">Encaixe peças em linhas. Modo sprint: 40 linhas o mais rápido possível.</div>
+      </div>
+      <div class="universo-card">
+        <strong>👾 Invaders</strong>
+        <div class="desc">Defenda a Terra. Variante swarm: mais aliens, 1 vida.</div>
+      </div>
+      <div class="universo-card">
+        <strong>🃏 Pôquer</strong>
+        <div class="desc">Texas Hold'em multiplayer. Cash game e heads-up duelo.</div>
+      </div>
+    </div>
+
+    <h2>SEMENTES</h2>
+    <p>
+      Moeda interna do Yggdrasil. Você ganha ao vencer mãos de pôquer, ganhar
+      torneios, completar desafios. Pode gastar para entrar em mesas privadas,
+      personalizar avatares e — eventualmente — criar seu próprio universo.
+    </p>
+    <p>
+      Saldos são por usuário, persistidos em wallet própria, auditados em log
+      transacional.
+    </p>
+
+    <h2>IDENTIDADE UNIFICADA</h2>
+    <p>
+      Uma conta serve todas as propriedades artelonga:
+      <a href="https://co.artelonga.com.br">co.artelonga.com.br</a>,
+      <a href="https://quilomboaraucaria.org">quilomboaraucaria.org</a>,
+      Yggdrasil e futuras. Login via Google ou email-código — em ambos os
+      casos, o servidor do <strong>CO</strong> é a autoridade. Yggdrasil
+      recebe sua sessão via JWT ES256 verificado por JWKS, sem segredo
+      compartilhado.
+    </p>
+
+    <h2>GRAFO DE UNIVERSOS</h2>
+    <p>
+      Cada universo é um <strong>nó</strong> no grafo público em
+      <a href="/api/v1/universes">/api/v1/universes</a>. Há três tipos:
+    </p>
+    <ul>
+      <li><code>Root</code> — define o engine (Snake, Tetris, etc).</li>
+      <li><code>Variant</code> — instancia o engine raiz com overrides de parâmetros (snake/walls, tetris/sprint-40).</li>
+      <li><code>Composition</code> — combina múltiplos universos (em desenvolvimento — tetris/duel).</li>
+    </ul>
+    <p>
+      Variantes não estendem o root — instanciam. Composição sobre herança,
+      conceito tomado emprestado do Godot Engine. A árvore é forward-compat
+      com a POC Godot em curso: o mesmo grafo vira uma árvore de
+      <code>.tscn</code> scenes quando o substrato migrar.
+    </p>
+
+    <h2>ARQUITETURA</h2>
+    <p>
+      Backend em <strong>Rust + Axum</strong>, reaproveitando o engine 2D do
+      projeto irmão <code>co/game-core</code>. Persistência em SQLite (via
+      <code>rusqlite</code>), deploy em Fly.io com volume montado em
+      <code>/data</code>. Frontend é HTML5 <code>&lt;canvas&gt;</code> +
+      JavaScript vanilla — sem framework pesado.
+    </p>
+    <p>
+      Cada universo respeita um contrato de 3 camadas:
+    </p>
+    <ul>
+      <li><strong>Domínio</strong> — estado, regras, transições (<code>yggdrasil-core/games/&lt;slug&gt;.rs</code>).</li>
+      <li><strong>HTTP</strong> — endpoints Axum, auth, persistência (<code>yggdrasil-web/games/&lt;slug&gt;_routes.rs</code>).</li>
+      <li><strong>Frontend</strong> — UI canvas/DOM (<code>static/universos/&lt;slug&gt;.{html,js}</code>).</li>
+    </ul>
+    <p>
+      Universos não importam outros universos. O lobby é o único despachador.
+      Detalhes em <code>docs/ARQUITETURA-UNIVERSOS.md</code> no repositório.
+    </p>
+
+    <h2>POKER MULTIPLAYER</h2>
+    <p>
+      Texas Hold'em real entre humanos, com bot de fallback quando solo. Três
+      mesas: Mesa Carvalho (6 seats, cash game), Mesa Olmo (6 seats, cash
+      game), Heads-Up Carvalho (2 seats, duelo). Buy-in: 1.000 sementes.
+    </p>
+    <p>
+      Cartas, apostas, pots e showdown são autoritativos no servidor. Estado
+      sobrevive a deploys via snapshot em SQLite. Mãos memoráveis podem ser
+      salvas em <a href="/favoritos">/favoritos</a> e revistas a qualquer momento.
+    </p>
+
+    <h2>API PÚBLICA</h2>
+    <p>
+      Documentação completa da API HTTP em <code>docs/API.md</code> no
+      repositório. Endpoints principais:
+    </p>
+    <ul>
+      <li><a href="/api/v1/universes"><code>GET /api/v1/universes</code></a> — grafo de universos</li>
+      <li><a href="/api/v1/scores/top"><code>GET /api/v1/scores/top</code></a> — top 3 por jogo</li>
+      <li><code>GET /api/v1/users/{username}</code> — perfil público</li>
+      <li><code>POST /api/v1/auth/google/start</code> — login (delegado ao CO)</li>
+    </ul>
+
+    <h2>OPEN-SOURCE</h2>
+    <p>
+      Código em <a href="https://github.com/artelonga/yggdrasil">github.com/artelonga/yggdrasil</a>,
+      licença MIT. Engine compartilhado em
+      <a href="https://github.com/artelonga/co">github.com/artelonga/co</a>.
+      PRs e issues bem-vindos.
+    </p>
+
+    <h2>QUEM</h2>
+    <p>
+      Projeto de <a href="https://artelonga.com.br">ArteLonga</a>. Pesquisa
+      contínua em sistemas distribuídos, jogos como linguagem, e infraestrutura
+      cultural digital. Construído em parceria com agentes Claude.
+    </p>
+
+    <p class="link-volta">
+      <a href="/lobby">← Voltar ao lobby</a> &nbsp; · &nbsp;
+      <a href="/favoritos">Minhas mãos favoritas</a> &nbsp; · &nbsp;
+      <a href="https://github.com/artelonga/yggdrasil">Código no GitHub</a>
+    </p>
+
+    <p class="footer-meta">
+      Versão atual: <code>v0.8.0+</code> · Última atualização desta página: 2026-05-15
+    </p>
+  </div>
+</body>
+</html>
