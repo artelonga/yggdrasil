@@ -15,6 +15,7 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ### Added (sobre)
 - `/sobre` — página pública com README do projeto: visão geral, universos disponíveis, arquitetura (grafo + 3 camadas), sementes, identidade unificada via CO, API pública, link para repositório. Em PT-BR, sem framework.
+- Mapa do site em `/sobre`: tabela com todas as URLs públicas agrupadas (páginas, universos, perfil/histórico, API de dados, API autenticada, jogos, auth, operacional). Substitui a lista resumida de API endpoints. Não há link no header do lobby — descoberta acontece via `/sobre`.
 
 ### Added (leaderboard usernames)
 - `yggdrasil_web::api::user_profiles` — schema SQLite `user_profiles(user_id, email, username, updated_at)` populado automaticamente em cada `/auth/co-handover-receive`. Username é slug do email (`yuri@artelonga.com.br` → `yuri`).

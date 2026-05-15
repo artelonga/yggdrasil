@@ -66,6 +66,34 @@
       font-size: 0.8rem;
       opacity: 0.5;
     }
+    .sitemap {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.6rem 0 1.2rem;
+      font-size: 0.9rem;
+    }
+    .sitemap td {
+      padding: 0.35rem 0.6rem;
+      border-bottom: 1px solid #1a1a2e;
+      vertical-align: top;
+    }
+    .sitemap td:first-child {
+      width: 16rem;
+      white-space: nowrap;
+    }
+    .sitemap td:first-child code {
+      background: none;
+      padding: 0;
+      color: #d4af37;
+    }
+    .sitemap tr:hover { background: rgba(212, 175, 55, 0.04); }
+    .sitemap .group-header td {
+      padding-top: 1rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      opacity: 0.5;
+      border-bottom: 1px solid #2a2a3e;
+    }
   </style>
 </head>
 <body>
@@ -185,17 +213,139 @@
       salvas em <a href="/favoritos">/favoritos</a> e revistas a qualquer momento.
     </p>
 
-    <h2>API PÚBLICA</h2>
+    <h2>MAPA DO SITE</h2>
     <p>
-      Documentação completa da API HTTP em <code>docs/API.md</code> no
-      repositório. Endpoints principais:
+      Todas as URLs públicas da plataforma. Páginas HTML são pra usar no
+      navegador; endpoints da API são pra consumir programaticamente
+      (vide <code>docs/API.md</code> no repositório para o contrato completo).
     </p>
-    <ul>
-      <li><a href="/api/v1/universes"><code>GET /api/v1/universes</code></a> — grafo de universos</li>
-      <li><a href="/api/v1/scores/top"><code>GET /api/v1/scores/top</code></a> — top 3 por jogo</li>
-      <li><code>GET /api/v1/users/{username}</code> — perfil público</li>
-      <li><code>POST /api/v1/auth/google/start</code> — login (delegado ao CO)</li>
-    </ul>
+    <table class="sitemap">
+      <tbody>
+        <tr class="group-header"><td colspan="2">PÁGINAS</td></tr>
+        <tr>
+          <td><a href="/lobby"><code>/lobby</code></a></td>
+          <td>Lobby principal com canvas + sidebar (high scores, atividade, reviews)</td>
+        </tr>
+        <tr>
+          <td><a href="/login"><code>/login</code></a></td>
+          <td>Tela de entrada (Google ou email-código)</td>
+        </tr>
+        <tr>
+          <td><a href="/sobre"><code>/sobre</code></a></td>
+          <td>Esta página</td>
+        </tr>
+
+        <tr class="group-header"><td colspan="2">UNIVERSOS</td></tr>
+        <tr>
+          <td><a href="/universos/snake"><code>/universos/snake</code></a></td>
+          <td>🐍 Snake. Variante: <code>?variant=snake/walls</code></td>
+        </tr>
+        <tr>
+          <td><a href="/universos/tetris"><code>/universos/tetris</code></a></td>
+          <td>🟦 Tetris. Variante: <code>?variant=tetris/sprint-40</code></td>
+        </tr>
+        <tr>
+          <td><a href="/universos/invaders"><code>/universos/invaders</code></a></td>
+          <td>👾 Invaders. Variante: <code>?variant=invaders/swarm</code></td>
+        </tr>
+        <tr>
+          <td><a href="/universos/poker"><code>/universos/poker</code></a></td>
+          <td>🃏 Pôquer multiplayer (Mesa Carvalho / Olmo / Heads-Up)</td>
+        </tr>
+
+        <tr class="group-header"><td colspan="2">PERFIL E HISTÓRICO</td></tr>
+        <tr>
+          <td><code>/perfil/{username}</code></td>
+          <td>Perfil público — high scores + mãos favoritas do usuário</td>
+        </tr>
+        <tr>
+          <td><a href="/favoritos"><code>/favoritos</code></a></td>
+          <td>Suas mãos de pôquer salvas (requer login)</td>
+        </tr>
+
+        <tr class="group-header"><td colspan="2">API — DADOS PÚBLICOS</td></tr>
+        <tr>
+          <td><a href="/api/v1/universes"><code>GET /api/v1/universes</code></a></td>
+          <td>Grafo completo de universos (4 roots + 8 variantes)</td>
+        </tr>
+        <tr>
+          <td><code>GET /api/v1/universes/{slug}</code></td>
+          <td>Um nó individual com pais, filhos e parâmetros</td>
+        </tr>
+        <tr>
+          <td><a href="/api/v1/universes/graph"><code>GET /api/v1/universes/graph</code></a></td>
+          <td>Nodes + edges para visualizadores</td>
+        </tr>
+        <tr>
+          <td><a href="/api/v1/scores/top"><code>GET /api/v1/scores/top</code></a></td>
+          <td>Top 3 por universo (com username via LEFT JOIN)</td>
+        </tr>
+        <tr>
+          <td><a href="/api/v1/scores/recent"><code>GET /api/v1/scores/recent</code></a></td>
+          <td>Últimas 10 partidas em qualquer universo</td>
+        </tr>
+        <tr>
+          <td><code>GET /api/v1/users/{username}</code></td>
+          <td>Perfil público (scores + mãos favoritas)</td>
+        </tr>
+
+        <tr class="group-header"><td colspan="2">API — USUÁRIO AUTENTICADO</td></tr>
+        <tr>
+          <td><code>GET /api/v1/me</code></td>
+          <td>Sua identidade: <code>{user_id, email, username}</code></td>
+        </tr>
+        <tr>
+          <td><code>GET /api/v1/me/sementes</code></td>
+          <td>Seu saldo de sementes</td>
+        </tr>
+        <tr>
+          <td><code>GET /api/v1/me/favorites/hands</code></td>
+          <td>Suas mãos salvas</td>
+        </tr>
+        <tr>
+          <td><code>POST /api/v1/me/favorites/hands/{table_id}</code></td>
+          <td>Favoritar a última mão de uma mesa</td>
+        </tr>
+
+        <tr class="group-header"><td colspan="2">API — JOGOS</td></tr>
+        <tr>
+          <td><code>GET /api/v1/games/{slug}/start</code></td>
+          <td>Inicia sessão de Snake/Tetris/Invaders; aceita <code>?variant=</code></td>
+        </tr>
+        <tr>
+          <td><code>POST /api/v1/games/{slug}/{id}/input</code></td>
+          <td>Avança um tick (snake/tetris/invaders)</td>
+        </tr>
+        <tr>
+          <td><code>GET /api/v1/poker/lobbies</code></td>
+          <td>Lista as 3 mesas com ocupação atual</td>
+        </tr>
+        <tr>
+          <td><code>POST /api/v1/poker/lobbies/{id}/sit</code></td>
+          <td>Senta na mesa (buy-in 1000 sementes)</td>
+        </tr>
+        <tr>
+          <td><code>POST /api/v1/poker/lobbies/{id}/action</code></td>
+          <td>Fold / check / call / raise na sua vez</td>
+        </tr>
+
+        <tr class="group-header"><td colspan="2">AUTH (DELEGADO AO CO)</td></tr>
+        <tr>
+          <td><code>GET /auth/co-login?next=/lobby</code></td>
+          <td>Redirect para Google OAuth via CO</td>
+        </tr>
+        <tr>
+          <td><code>GET /auth/co-handover-receive</code></td>
+          <td>Receiver do co_token ES256 — mintar JWT local</td>
+        </tr>
+
+        <tr class="group-header"><td colspan="2">OPERACIONAL</td></tr>
+        <tr>
+          <td><a href="/health"><code>GET /health</code></a></td>
+          <td>Health check (Fly)</td>
+        </tr>
+      </tbody>
+    </table>
 
     <h2>OPEN-SOURCE</h2>
     <p>
