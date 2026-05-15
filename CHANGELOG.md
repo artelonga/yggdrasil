@@ -4,6 +4,13 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added (YG-13: GET /me/universos)
+- `GET /api/v1/me/universos` — lista os universos com que o usuário interagiu (snake/tetris/invaders via scores; pôquer via mãos favoritadas). Resposta: `{universos: [{slug, nome, visibilidade, papel, ultima_visita}], proximo_cursor}`.
+- Filtros: `?visibilidade=publico|privado`, `?papel=criador|jogador`. Hoje todos os universos são públicos e o papel é sempre "jogador" — filtros que pedem o oposto retornam vazio. Quando criação/visibilidade chegar (YG-15+), expandimos.
+- Paginação cursor-based: `?cursor=<slug>&limite=<n>` (limite clamped 1..100, default 50). Ordem estável por slug.
+- Sem N+1: uma única query SQL (UNION ALL entre `scores` agregado por game e `poker_favorite_hands` agregado por usuário). Join com `UniverseRegistry` em memória para resolver `nome` humano.
+- Cobertura: 5 testes (sem auth, lista agregada, sem atividade, filtro privado vazio, paginação multi-página).
+
 ### Fixed (usernames in scores)
 - **Novos scores ainda apareciam como `user_id`**: o user_profiles upsert só rodava no `/auth/co-handover-receive`, então usuários com JWT antigo (anterior ao deploy) nunca tinham perfil criado. Agora cada `send_input` de snake/tetris/invaders faz lazy-upsert via `common::user_info_from_jwt` + `common::lazy_upsert_profile` — qualquer ação autenticada cria/atualiza o perfil.
 - **Poker seats mostravam user_id opaco**: `PublicPlayer` ganha campo `username` resolvido em `enrich_usernames`. Lobby endpoints retornam `usernames` map (user_id → username) para popular os assentos no selector.

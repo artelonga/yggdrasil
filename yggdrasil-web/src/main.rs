@@ -93,6 +93,19 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(me_state);
 
+    // YG-13: GET /me/universos — universos com que o usuário interagiu.
+    let universos_me_state = Arc::new(api::me::UniversosMeState {
+        jwt_secret: auth_state.jwt_secret.clone(),
+        db_path: std::path::PathBuf::from(&db_path),
+        registry: Arc::new(yggdrasil_core::universes::default_registry()),
+    });
+    let me_universos_router = Router::new()
+        .route(
+            "/api/v1/me/universos",
+            axum::routing::get(api::me::get_universos),
+        )
+        .with_state(universos_me_state);
+
     let users_state = Arc::new(api::users::UsersState {
         jwt_secret: auth_state.jwt_secret.clone(),
         db_path: std::path::PathBuf::from(&db_path),
@@ -223,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(auth_router)
         .merge(co_handover_router)
         .merge(me_router)
+        .merge(me_universos_router)
         .merge(users_router)
         .merge(profiles_router)
         .merge(admin_router)
