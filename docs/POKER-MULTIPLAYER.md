@@ -14,6 +14,87 @@ universo", veja [`docs/ARQUITETURA-UNIVERSOS.md`](ARQUITETURA-UNIVERSOS.md).
 
 ---
 
+## Onde está a lógica do jogo?
+
+**Resposta curta**: em **dois lugares**, em repos diferentes.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ REPO `co` (../co/game-core/)                                        │
+│                                                                     │
+│   game_core::PokerGame   ← a engine. Owns:                          │
+│     • deck shuffling                                                │
+│     • dealing hole cards + community cards                          │
+│     • BettingRound state machine (PreFlop→Flop→Turn→River→Showdown) │
+│     • hand evaluator (pair, two pair, …, royal flush)               │
+│     • pot resolution                                                │
+│                                                                     │
+│   game_core::games::poker::{PokerAction, BettingRound, GameConfig,  │
+│                             PlayerStatus, deck::{Card, Suit, Rank}} │
+│                                                                     │
+│   Yggdrasil NÃO modifica nem lê o source deste crate. Importa via   │
+│   `path = "../co/game-core"` (a virar git rev pin em YG-17).        │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │ usado por
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ REPO `yggdrasil` (este repo)                                        │
+│                                                                     │
+│   yggdrasil-core/src/games/poker_lobby.rs                           │
+│     • SeatOccupant { Empty, Human{user_id,sat_at}, Bot }            │
+│     • PokerLobby::sit / stand / human_count / bot_count             │
+│     • Regra de bot-fill (0 humanos → 0 bots; 1 humano → 1 bot;      │
+│       2+ humanos → 0 bots)                                          │
+│                                                                     │
+│   yggdrasil-core/src/games/poker_game.rs                            │
+│     • PokerTable — composição lobby × engine                        │
+│     • sit_with_sementes — debita buy-in da carteira                 │
+│     • stand_with_sementes — credita stack remanescente              │
+│     • start_hand — chama PokerGame::deal, regenera current_hand_id  │
+│     • act — valida current_actor, chama PokerGame::apply_action     │
+│     • hand_state — projeta HandState público (sem hole cards)       │
+│     • hole_cards_for — busca cartas do user_id autenticado          │
+│     • stacks: HashMap<user_id, u32> — chips entre mãos              │
+│                                                                     │
+│   yggdrasil-core/src/games/poker_bot.rs                             │
+│     • auto_step_bots — quando current_actor é bot, escolhe ação    │
+│     • pick_action — política aleatória ponderada (fold/check/call)  │
+│                                                                     │
+│   yggdrasil-web/src/games/poker_routes.rs                           │
+│     • Handlers HTTP que orquestram tudo acima                       │
+│                                                                     │
+│   yggdrasil-web/src/games/poker_persistence.rs                      │
+│     • Snapshot PokerTable → SQLite (apenas lobby + stacks)          │
+│                                                                     │
+│   yggdrasil-web/src/games/poker_favorites.rs                        │
+│     • Snapshot pós-showdown (community + hole + winner)             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Mapa concreto: "se eu quero mexer em X, abro qual arquivo?"
+
+| Quero mexer em… | Arquivo | Posso? |
+|---|---|---|
+| Como cartas são embaralhadas | `co/game-core` (interno) | ❌ Não. Engine fechado. |
+| Ranking de mão (full house > flush) | `co/game-core` (interno) | ❌ Não. Engine fechado. |
+| Quando preflop vira flop | `co/game-core` (interno) | ❌ Não. Engine fechado. |
+| Quem é dealer / blinds | `co/game-core` (interno) | ❌ Não. Engine fechado. |
+| Regra de bot fill (1 humano → 1 bot) | [`poker_lobby.rs`](../yggdrasil-core/src/games/poker_lobby.rs) | ✅ Sim |
+| Buy-in (1000 sementes) | [`poker_game.rs`](../yggdrasil-core/src/games/poker_game.rs#L17) — `BUY_IN_SEMENTES` | ✅ Sim |
+| Auto-restart delay (5s) | [`poker_game.rs`](../yggdrasil-core/src/games/poker_game.rs#L101) — `HAND_END_RESTART_DELAY_SECS` | ✅ Sim |
+| Política do bot (fold/check/call/raise %) | [`poker_bot.rs`](../yggdrasil-core/src/games/poker_bot.rs) | ✅ Sim |
+| Status HTTP de "não é sua vez" | [`poker_routes.rs`](../yggdrasil-web/src/games/poker_routes.rs#L230) — `table_error` | ✅ Sim |
+| Frequência de polling (2s) | [`static/universos/poker/state.js`](../yggdrasil-web/static/universos/poker/state.js) — `POLL_MS` | ✅ Sim |
+| Aparência de uma carta | [`static/universos/poker/cards.js`](../yggdrasil-web/static/universos/poker/cards.js) | ✅ Sim |
+
+> ⚠️ **Há um arquivo legacy** em `yggdrasil-core/src/games/poker.rs`
+> (`YggPoker`, ~323 linhas). É um adapter **single-player** de YG-9, hoje
+> **morto** — só seus próprios testes o usam. O multiplayer real
+> (YG-23/25) é o caminho `PokerLobby → PokerTable` descrito acima.
+> Ignore `poker.rs` ao caçar lógica do jogo.
+
+---
+
 ## TL;DR
 
 - Pôquer multiplayer é um **estado autoritativo no servidor** (Rust) +
@@ -27,7 +108,7 @@ universo", veja [`docs/ARQUITETURA-UNIVERSOS.md`](ARQUITETURA-UNIVERSOS.md).
   HS256 local de curto prazo para uso nas chamadas de poker.
 - **Mensageria de gameplay** é HTTP/JSON direto contra o `yggdrasil-web`.
   O CO não está no caminho quente do jogo — só na autenticação inicial.
-- O cliente é hoje **6 módulos ES** sob [`yggdrasil-web/static/universos/poker/`](../yggdrasil-web/static/universos/poker/),
+- O cliente é hoje **7 módulos ES** sob [`yggdrasil-web/static/universos/poker/`](../yggdrasil-web/static/universos/poker/),
   refatoração descendente do `poker.js` monolítico (549 linhas, agora
   arquivado).
 
@@ -359,7 +440,7 @@ YG-28 substitui isso por WS quando a base de jogadores justificar.
 
 - **`poker.js` 549 linhas**: misturava DOM refs, fetch, JWT decode,
   rendering, polling lifecycle, anti-flicker e composição num único
-  global state. **Agora split em 6 ES modules sob `poker/`** com
+  global state. **Agora split em 7 ES modules sob `poker/`** com
   imports explícitos. Veja [Mapa de módulos do cliente](#mapa-de-módulos-do-cliente).
 
 ### O que ainda deve
@@ -380,29 +461,29 @@ YG-28 substitui isso por WS quando a base de jogadores justificar.
 
 ## Mapa de Módulos do Cliente
 
-Após o split, `static/universos/poker/` tem **seis arquivos pequenos e
+Após o split, `static/universos/poker/` tem **sete arquivos pequenos e
 explícitos**, importados por ES modules nativos (sem build step):
 
 | Módulo | Responsabilidade | Exporta |
 |---|---|---|
 | [`state.js`](../yggdrasil-web/static/universos/poker/state.js) | Singleton `state` + DOM refs `el` + constantes | `state`, `el`, `STORAGE_KEY`, `POLL_MS`, `LIST_POLL_MS`, `BUY_IN_SEMENTES` |
-| [`api.js`](../yggdrasil-web/static/universos/poker/api.js) | Fetch wrapper com auth, decode JWT, 401 → logout | `api`, `decodeJwt`, `authHeaders` |
-| [`cards.js`](../yggdrasil-web/static/universos/poker/cards.js) | Renderização pura de carta (frente/verso) | `cardEl`, `cardBackEl` |
-| [`views.js`](../yggdrasil-web/static/universos/poker/views.js) | Rendering: lobby list, table seats, game state + UI helpers | `renderLobbyList`, `renderTable`, `renderGame`, `hideGameArea`, `showError`, `showLoginCta`, `setStatus`, `startListPolling`, `stopListPolling` |
-| [`actions.js`](../yggdrasil-web/static/universos/poker/actions.js) | Sit/stand/sendAction/loadLobbies/refreshLobby/refreshHand/refreshSaldo + polling da mesa | `sit`, `stand`, `sendAction`, `loadLobbies`, `refreshLobby`, `refreshHand`, `refreshSaldo`, `saveFavoriteHand`, `enterLobby`, `leaveLobby`, `startTablePolling`, `stopTablePolling` |
-| [`main.js`](../yggdrasil-web/static/universos/poker/main.js) | Composition root: boot + event wiring | (entry point, importado pelo `<script type="module">` em `poker.html`) |
+| [`cards.js`](../yggdrasil-web/static/universos/poker/cards.js) | Renderização pura de carta (frente/verso). Zero deps. | `cardEl`, `cardBackEl` |
+| [`ui.js`](../yggdrasil-web/static/universos/poker/ui.js) | Banner de erro, status, CTA de login, hideGameArea | `setStatus`, `showError`, `showLoginCta`, `hideGameArea` |
+| [`api.js`](../yggdrasil-web/static/universos/poker/api.js) | Fetch wrapper com auth, decode JWT, 401 → logout | `api`, `decodeJwt` |
+| [`views.js`](../yggdrasil-web/static/universos/poker/views.js) | Rendering: lobby list, table seats, game state + list polling | `renderLobbyList`, `renderTable`, `renderGame`, `setViewHandlers`, `startListPolling`, `stopListPolling` |
+| [`actions.js`](../yggdrasil-web/static/universos/poker/actions.js) | Comandos + polling da mesa: sit/stand/sendAction/loadLobbies/refreshLobby/refreshHand | `sit`, `stand`, `sendAction`, `loadLobbies`, `enterLobby`, `leaveLobby`, `refreshLobby`, `refreshHand`, `refreshSaldo`, `saveFavoriteHand`, `startTablePolling`, `stopTablePolling` |
+| [`main.js`](../yggdrasil-web/static/universos/poker/main.js) | Composition root: boot + event wiring + injeta callbacks em `views.setViewHandlers` | (entry; importado pelo `<script type="module">` em `poker.html`) |
 
-Grafo de dependências (sem ciclos):
+Grafo de dependências (sem ciclos — callbacks injetados quebram a circularidade entre views↔actions):
 
 ```
-main.js
-  ├── state.js
-  ├── views.js
-  │     └── state.js, cards.js, actions.js (callback enterLobby)
-  ├── actions.js
-  │     └── state.js, api.js, views.js, cards.js
-  └── api.js
-        └── state.js, views.js (showLoginCta on 401)
+main.js (boot)
+  ├── state.js   ← raiz, sem deps
+  ├── ui.js                ← deps: state
+  ├── api.js               ← deps: state, ui
+  ├── cards.js   ← folha, sem deps
+  ├── views.js             ← deps: state, ui, cards.  Recebe callbacks via setViewHandlers().
+  └── actions.js           ← deps: state, ui, api, views, cards
 ```
 
 Cada módulo é importável em isolamento — `cards.js` em particular não
