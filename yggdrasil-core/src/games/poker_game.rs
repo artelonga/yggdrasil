@@ -7,13 +7,13 @@
 //! via `stacks: HashMap<user_id, u32>`. Vide
 //! [`docs/POKER-MULTIPLAYER.md`](../../../../docs/POKER-MULTIPLAYER.md#state-tracking).
 
-use game_core::{
-    PokerGame, create_poker_universe,
-    games::poker::{BettingRound, GameConfig, PlayerStatus, PokerAction, deck::Suit},
-};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::games::poker_engine::{
+    BettingRound, Card, GameConfig, PlayerStatus, PokerAction, PokerGame, Suit,
+    create_poker_universe,
+};
 use crate::games::poker_lobby::{BOT_USER_ID, LobbyError, PokerLobby, SeatOccupant};
 use crate::sementes::{Sementes, SementesError};
 
@@ -405,7 +405,7 @@ impl PokerTable {
     }
 }
 
-fn card_to_view(card: &game_core::games::poker::deck::Card) -> CardView {
+fn card_to_view(card: &Card) -> CardView {
     CardView {
         rank: card.rank.symbol().to_string(),
         suit: match card.suit {

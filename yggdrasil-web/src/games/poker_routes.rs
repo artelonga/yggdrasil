@@ -15,9 +15,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
-use game_core::games::poker::PokerAction;
 use serde::Deserialize;
 use yggdrasil_core::games::poker_bot::auto_step_bots;
+use yggdrasil_core::games::poker_engine::{PlayerStatus, PokerAction};
 use yggdrasil_core::games::poker_game::{
     PokerSitError, PokerStandError, PokerTable, PokerTableError,
 };
@@ -489,7 +489,7 @@ fn capture_hand_snapshot(state: &PokerState, table: &PokerTable) {
                 .cloned()
                 .unwrap_or_else(|| format!("seat-{i}")),
             chips: p.chips,
-            folded: matches!(p.status, game_core::games::poker::PlayerStatus::Folded),
+            folded: matches!(p.status, PlayerStatus::Folded),
             hole_cards: p.hole_cards.map(|[c0, c1]| {
                 [
                     CardJson {

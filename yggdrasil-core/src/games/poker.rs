@@ -1,16 +1,14 @@
 use chrono::Utc;
 use game_core::{
     engine::{Input, Universe},
-    games::{
-        GameAction, PokerGame,
-        poker::{GameConfig, Player, SelectedAction, deck::Card},
-    },
+    games::GameAction,
     storage::{Storage, WalletManager, schema},
 };
 use serde::Serialize;
 use std::sync::Arc;
 
 use super::YggGame;
+use crate::games::poker_engine::{Card, GameConfig, Player, PokerGame, SelectedAction};
 
 /// Saldo inicial de sementes para novos jogadores (alinhado com INITIAL_BALANCE em co-web).
 pub const INITIAL_SEMENTES: u64 = 10_000;
@@ -190,7 +188,8 @@ fn action_name(action: SelectedAction) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::{create_poker_universe, storage::schema};
+    use crate::games::poker_engine::create_poker_universe;
+    use game_core::storage::schema;
     use std::sync::Arc;
     use tempfile::tempdir;
 

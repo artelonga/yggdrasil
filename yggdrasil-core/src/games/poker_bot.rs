@@ -14,9 +14,9 @@
 //! cliente é sempre humano. Vide
 //! [`docs/POKER-MULTIPLAYER.md`](../../../../docs/POKER-MULTIPLAYER.md#bot-auto-step-o-servidor-age-dentro-do-request).
 
-use game_core::games::poker::PokerAction;
 use rand::Rng;
 
+use crate::games::poker_engine::PokerAction;
 use crate::games::poker_game::PokerTable;
 use crate::games::poker_lobby::BOT_USER_ID;
 
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn humano_vs_bot_completa_mao_sem_travar() {
-        use game_core::games::poker::PokerAction;
+        use crate::games::poker_engine::PokerAction;
         let mut table = make_human_vs_bot_table();
         let mut rng = StdRng::seed_from_u64(7);
 

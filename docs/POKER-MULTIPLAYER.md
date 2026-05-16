@@ -40,6 +40,13 @@ universo", veja [`docs/ARQUITETURA-UNIVERSOS.md`](ARQUITETURA-UNIVERSOS.md).
 ┌─────────────────────────────────────────────────────────────────────┐
 │ REPO `yggdrasil` (este repo)                                        │
 │                                                                     │
+│   yggdrasil-core/src/games/poker_engine.rs   ◄── ÚNICA fronteira    │
+│     • pub use PokerGame, PokerAction, BettingRound, GameConfig,     │
+│       PlayerStatus, Player, SelectedAction, Card, Suit,             │
+│       create_poker_universe                                         │
+│     • Todo módulo do subuniverso poker importa DAQUI, nunca         │
+│       direto de game_core::*. Mudança no engine só toca este arq.   │
+│                                                                     │
 │   yggdrasil-core/src/games/poker_lobby.rs                           │
 │     • SeatOccupant { Empty, Human{user_id,sat_at}, Bot }            │
 │     • PokerLobby::sit / stand / human_count / bot_count             │
@@ -139,13 +146,14 @@ universo", veja [`docs/ARQUITETURA-UNIVERSOS.md`](ARQUITETURA-UNIVERSOS.md).
 ┌─────────────────────────────────────────────────────────────────────┐
 │ yggdrasil-core (composição)                                         │
 │ ┌─────────────────────────────────────────────────────────────────┐ │
+│ │ src/games/poker_engine.rs  — fronteira única de import engine   │ │
 │ │ src/games/poker_lobby.rs   — seating, bot-fill rule             │ │
 │ │ src/games/poker_game.rs    — PokerTable: lobby × game + chips   │ │
 │ │ src/games/poker_bot.rs     — auto-step do Bot Carvalho          │ │
 │ │ src/sementes.rs            — buy-in / cash-out (wallet)         │ │
 │ └────────────────────┬────────────────────────────────────────────┘ │
 └──────────────────────┼──────────────────────────────────────────────┘
-                       │ depende de
+                       │ depende de (SÓ via poker_engine.rs)
                        ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │ co/game-core (engine reutilizado)                                   │
@@ -160,12 +168,18 @@ Cada camada tem **uma responsabilidade única**:
 | Camada | Responsabilidade | NÃO sabe sobre |
 |---|---|---|
 | `co/game-core` | Regras do pôquer (rank, suit, evaluate, betting) | Usuários, HTTP, persistência |
+| `yggdrasil-core::poker_engine` | Re-export do engine — único ponto de import | Tudo. É só `pub use`. |
 | `yggdrasil-core::poker_lobby` | Quem está em qual assento | Cartas, apostas, HTTP |
 | `yggdrasil-core::poker_game` | Composição lobby + game; chips entre mãos | HTTP, JWT, SQLite |
 | `yggdrasil-core::poker_bot` | Política de ação do bot | UI, polling |
 | `yggdrasil-web::poker_routes` | Endpoints + autenticação + persistência via callbacks | Regras de pôquer |
 | `yggdrasil-web::poker_persistence` | Snapshot → SQLite + load | Regras, HTTP |
 | `static/universos/poker/*.js` | Renderização + polling + input do usuário | Regras (delega ao server) |
+
+> **Regra de import**: nenhum arquivo da camada `yggdrasil-core::poker_*`
+> ou `yggdrasil-web::poker_routes` deve ter `use game_core::games::poker::*`
+> ou `use game_core::PokerGame`. Tudo passa por `poker_engine.rs`.
+> Verificável com `grep -rn "use game_core::games::poker\|use game_core::PokerGame" yggdrasil-{core,web}/src` — deve retornar vazio.
 
 ---
 

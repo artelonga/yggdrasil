@@ -4,6 +4,12 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed (poker: fronteira única de import do engine)
+- Novo `yggdrasil-core/src/games/poker_engine.rs` re-exporta todo o vocabulário do engine (`PokerGame`, `PokerAction`, `BettingRound`, `GameConfig`, `PlayerStatus`, `Player`, `SelectedAction`, `Card`, `Suit`, `create_poker_universe`).
+- `poker_lobby`, `poker_game`, `poker_bot`, `poker_routes`, `poker.rs` (legacy) agora importam **apenas** de `crate::games::poker_engine` (ou `yggdrasil_core::games::poker_engine` no `yggdrasil-web`). Nenhum `use game_core::games::poker::*` ou `use game_core::PokerGame` fora desse arquivo.
+- Verificação: `grep -rn "use game_core::games::poker\|use game_core::PokerGame" yggdrasil-{core,web}/src` retorna vazio (exceto `poker_engine.rs`).
+- Doc atualizado: nova camada na tabela de responsabilidades + nota explícita da regra de import.
+
 ### Changed (poker: refactor para SRP + docs arquiteturais)
 - `static/universos/poker.js` (549 linhas, monolítico) **substituído** por 7 ES modules sob `static/universos/poker/`:
   - `state.js` — singleton `state` + DOM refs `el` + constantes

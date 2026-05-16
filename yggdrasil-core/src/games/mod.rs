@@ -1,6 +1,7 @@
 pub mod invaders;
 pub mod poker;
 pub mod poker_bot;
+pub mod poker_engine;
 pub mod poker_game;
 pub mod poker_lobby;
 pub mod snake;
