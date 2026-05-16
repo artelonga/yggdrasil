@@ -4,6 +4,20 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed (poker: refactor para SRP + docs arquiteturais)
+- `static/universos/poker.js` (549 linhas, monolítico) **substituído** por 7 ES modules sob `static/universos/poker/`:
+  - `state.js` — singleton `state` + DOM refs `el` + constantes
+  - `api.js` — fetch wrapper autenticado + `decodeJwt`
+  - `cards.js` — renderização pura de carta (frente/verso), sem deps
+  - `ui.js` — banner de erro, status, CTA de login, `hideGameArea`
+  - `views.js` — `renderLobbyList` / `renderTable` / `renderGame` + polling do seletor
+  - `actions.js` — `sit`/`stand`/`sendAction`/`refreshLobby`/`refreshHand` + polling da mesa
+  - `main.js` — composition root: boot + event wiring
+- `poker.html` agora carrega via `<script type="module" src="poker/main.js">`. Cycles entre módulos evitados via callbacks injetados em `views.setViewHandlers`.
+- Adicionado `docs/POKER-MULTIPLAYER.md`: arquitetura completa (camadas, state tracking, polling de tempo real, mensageria via CO/Yggdrasil, mapa de métodos linkado para `file:line`).
+- Doc-comments em `poker_routes.rs`, `poker_lobby.rs`, `poker_game.rs`, `poker_bot.rs`, `poker_persistence.rs`, `poker_favorites.rs` apontam para a seção relevante do doc.
+- Mapa do site em `/sobre` ganha entrada para o novo doc.
+
 ### Added (YG-13: GET /me/universos)
 - `GET /api/v1/me/universos` — lista os universos com que o usuário interagiu (snake/tetris/invaders via scores; pôquer via mãos favoritadas). Resposta: `{universos: [{slug, nome, visibilidade, papel, ultima_visita}], proximo_cursor}`.
 - Filtros: `?visibilidade=publico|privado`, `?papel=criador|jogador`. Hoje todos os universos são públicos e o papel é sempre "jogador" — filtros que pedem o oposto retornam vazio. Quando criação/visibilidade chegar (YG-15+), expandimos.

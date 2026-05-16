@@ -13,6 +13,8 @@
 //! Não modificamos `co/game-core::Storage` — abrimos conexão própria com
 //! rusqlite, espelhando o padrão de `common::init_db` usado por
 //! snake/tetris/invaders.
+//!
+//! Vide [`docs/POKER-MULTIPLAYER.md`](../../../docs/POKER-MULTIPLAYER.md#persistência-snapshots-em-sqlite).
 
 use std::path::Path;
 

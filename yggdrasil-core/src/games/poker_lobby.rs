@@ -8,6 +8,9 @@
 //! - 0 humans → 0 bots (lobby is dormant)
 //! - exactly 1 human → 1 bot fills the first empty seat (always have an opponent)
 //! - 2+ humans → no bots (multiplayer encouraged)
+//!
+//! **Camada**: seating. Não conhece cartas, apostas ou HTTP. Vide
+//! [`docs/POKER-MULTIPLAYER.md`](../../../../docs/POKER-MULTIPLAYER.md#camadas).
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

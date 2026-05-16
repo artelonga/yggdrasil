@@ -10,6 +10,9 @@
 //! disponível por 1 hora ou até ser favoritada explicitamente. Após
 //! favoritar (POST /api/v1/me/favorites/hands/{id}), persiste em SQLite e
 //! sobrevive para sempre.
+//!
+//! Captura via [`capture_hand_snapshot`](super::poker_routes) no fim de cada ação
+//! que termina mão. Vide [`docs/POKER-MULTIPLAYER.md`](../../../docs/POKER-MULTIPLAYER.md#mapa-de-métodos-server-side).
 
 use std::path::Path;
 

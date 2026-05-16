@@ -8,6 +8,11 @@
 //!
 //! Determinismo: `pick_action` recebe um `Rng` injetado, então testes podem
 //! fixar a semente. Em produção usar `rand::thread_rng()`.
+//!
+//! **Auto-step síncrono**: `auto_step_bots` é chamado pelos route handlers
+//! dentro do mesmo request, garantindo que o `current_actor` retornado ao
+//! cliente é sempre humano. Vide
+//! [`docs/POKER-MULTIPLAYER.md`](../../../../docs/POKER-MULTIPLAYER.md#bot-auto-step-o-servidor-age-dentro-do-request).
 
 use game_core::games::poker::PokerAction;
 use rand::Rng;

@@ -2,6 +2,10 @@
 //!
 //! Composição de `PokerLobby` (seating) com `game_core::PokerGame` (engine).
 //! Cada instância gerencia uma mão: deal → pré-flop → flop → turn → river → showdown.
+//!
+//! **Camada**: composição lobby × engine. Chip stacks sobrevivem entre mãos
+//! via `stacks: HashMap<user_id, u32>`. Vide
+//! [`docs/POKER-MULTIPLAYER.md`](../../../../docs/POKER-MULTIPLAYER.md#state-tracking).
 
 use game_core::{
     PokerGame, create_poker_universe,

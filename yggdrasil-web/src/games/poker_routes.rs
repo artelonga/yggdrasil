@@ -2,6 +2,9 @@
 //!
 //! Seating (Layer 1, YG-23) + gameplay (Layer 2, YG-25):
 //! dealing, betting rounds (pre-flop → showdown), ações call/check/fold/raise.
+//!
+//! **Arquitetura completa**: [`docs/POKER-MULTIPLAYER.md`](../../../docs/POKER-MULTIPLAYER.md).
+//! Cada handler aqui está mapeado na seção "Mapa de Métodos" do doc.
 
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::{Arc, Mutex};
