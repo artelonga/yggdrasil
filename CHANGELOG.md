@@ -4,10 +4,19 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
-### Changed (deps, YG-38 — pin game-core + drop fly.toml hack)
-- `game-core` migrado de `path = "../co/game-core"` para `{ git = "https://github.com/artelonga/co", rev = "268ea5484832d630d8ea27539f5bd87a453b32e3" }` — CI agora passa em checkout limpo sem clone adjacente do `co/`.
-- `fly.toml`: removido bloco de comentário que exigia rodar `flyctl deploy` a partir do diretório pai para incluir `co/game-core` no build context.
-- `docs/DEPENDENCIES.md` criado com política de bump do `game-core`: quando e como avançar o pin (bugfix, nova feature, breaking change, rotina trimestral).
+## [0.9.0] — 2026-05-18
+
+### Added (Godot games, YG-51)
+- `yggdrasil-godot/` expandido de 9 para 37 arquivos — lobby 2D com 5 jogos jogáveis.
+- `scripts/autoloads/`: `SignalBus`, `ApiClient`, `SaveManager`, `AudioManager`, `GameManager` — autoloads portados do universos/godot e adaptados para o yggdrasil-web.
+- `ApiClient` aponta para `http://127.0.0.1:3030/api/v1` (porta padrão do yggdrasil-web); expõe `start_game(name)` e `send_game_input(name, session_id, direction)`.
+- Snake, Tetris e Invaders: clientes thin server-driven — chamam `GET /api/v1/games/{game}/start` e `POST /api/v1/games/{game}/{id}/input` a cada tick; pontuação é persistida no SQLite do yggdrasil-web via ação `Quit`.
+- PointSet e Poker: jogos client-side portados diretamente do universos/godot; pontuação salva localmente via `SaveManager`.
+- `scripts/lobby/`: `player.gd`, `arcade_cabinet.gd`, `lobby.gd` — avatar 2D navegável com 5 armários (Tetris, Invaders, Snake, PointSet, Poker).
+- `scripts/games/game_base.gd` — classe base com pause/quit/score partilhada por todos os jogos.
+- `scripts/games/poker/`: `card.gd`, `deck.gd`, `poker_player.gd`, `hand_evaluator.gd`, `poker_ai.gd`, `poker_game.gd` — Texas Hold'em completo (AI estilo tight/loose/aggressive, SRS rotação, showdown).
+- Cenas `.tscn`: `scenes/main.tscn`, `scenes/lobby/{lobby,player,arcade_cabinet}.tscn`, `scenes/games/{snake,tetris,invaders,pointset,poker}/*.tscn`.
+- `project.godot` atualizado: cena principal → `res://scenes/main.tscn`; 5 autoloads registados; viewport 640×360 (janela 1280×720); 7 input actions (WASD+setas, Enter/E, Esc, Q); gravidade 2D = 0; filtro de textura pixel.
 
 ### Added (poker, YG-29 — persistência em SQLite)
 - `yggdrasil_core::games::poker_game::PokerTableSnapshot { lobby, stacks }` — formato serde-friendly que captura o estado persistível de uma mesa: seating + chip-stacks por usuário (humano ou bot). Mãos em curso (`PokerGame`) NÃO entram no snapshot — um restart no meio de uma mão é forfeit, mas seats e chips sobrevivem. Escolha pragmática: o engine `PokerGame` do `co/game-core` não é serde-friendly, e o custo de uma mão perdida (≤ poucas dezenas de sementes) é muito menor que o custo de perder buy-ins (1k+ sementes).
