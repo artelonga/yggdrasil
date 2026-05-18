@@ -1,19 +1,8 @@
 # Fly.io deployment for yggdrasil-web.
-#
-# NOTE: until YG-17 swaps the path dep for a git rev pin, deploys must be run
-# from the PARENT directory of this repo so the build context includes
-# co/game-core:
-#
-#   cd /Users/artelonga/projects
-#   flyctl deploy --config yggdrasil/fly.toml \
-#                 --dockerfile yggdrasil/yggdrasil-web/Dockerfile
 
 app = "yggdrasil-artelonga"
 primary_region = "gru"
 
-# Dockerfile path is resolved relative to THIS fly.toml's directory. The build
-# context (where COPY paths root from) is the positional arg to `flyctl deploy`
-# — pass the parent dir so co/game-core is reachable.
 [build]
   dockerfile = "yggdrasil-web/Dockerfile"
 

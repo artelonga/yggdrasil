@@ -574,6 +574,7 @@ dependencies = [
 [[package]]
 name = "game-core"
 version = "0.1.0"
+source = "git+https://github.com/artelonga/co?rev=268ea5484832d630d8ea27539f5bd87a453b32e3#268ea5484832d630d8ea27539f5bd87a453b32e3"
 dependencies = [
  "argon2",
  "axum",
@@ -2981,7 +2982,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "yggdrasil-core"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2996,7 +2997,7 @@ dependencies = [
 
 [[package]]
 name = "yggdrasil-web"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "argon2",
