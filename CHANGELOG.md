@@ -4,6 +4,11 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed (deps, YG-38 — pin game-core + drop fly.toml hack)
+- `game-core` migrado de `path = "../co/game-core"` para `{ git = "https://github.com/artelonga/co", rev = "268ea5484832d630d8ea27539f5bd87a453b32e3" }` — CI agora passa em checkout limpo sem clone adjacente do `co/`.
+- `fly.toml`: removido bloco de comentário que exigia rodar `flyctl deploy` a partir do diretório pai para incluir `co/game-core` no build context.
+- `docs/DEPENDENCIES.md` criado com política de bump do `game-core`: quando e como avançar o pin (bugfix, nova feature, breaking change, rotina trimestral).
+
 ### Added (poker, YG-29 — persistência em SQLite)
 - `yggdrasil_core::games::poker_game::PokerTableSnapshot { lobby, stacks }` — formato serde-friendly que captura o estado persistível de uma mesa: seating + chip-stacks por usuário (humano ou bot). Mãos em curso (`PokerGame`) NÃO entram no snapshot — um restart no meio de uma mão é forfeit, mas seats e chips sobrevivem. Escolha pragmática: o engine `PokerGame` do `co/game-core` não é serde-friendly, e o custo de uma mão perdida (≤ poucas dezenas de sementes) é muito menor que o custo de perder buy-ins (1k+ sementes).
 - `PokerTable::to_snapshot()` / `PokerTable::from_snapshot(snap)` — serialização round-trip. `to_snapshot` chama `snapshot_stacks_from_game` antes para garantir que os chips do engine refletem em `stacks`.
