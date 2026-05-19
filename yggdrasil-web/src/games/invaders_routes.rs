@@ -17,19 +17,19 @@ use nanoid::nanoid;
 use yggdrasil_core::games::invaders::InvadersOptions;
 use yggdrasil_core::games::{YggGame, YggInvaders};
 
-use super::common::{self, InputRequest, StartResponse, TickResponse, VariantQuery};
+use super::common::{InputRequest, StartResponse, TickResponse, VariantQuery};
+use crate::scores_store::ScoresStore;
 
 pub struct InvadersState {
     sessions: Mutex<HashMap<String, YggInvaders>>,
-    db: Mutex<rusqlite::Connection>,
+    scores: Arc<dyn ScoresStore>,
 }
 
-pub fn make_invaders_state(db_path: &str) -> rusqlite::Result<Arc<InvadersState>> {
-    let conn = common::init_db(db_path)?;
-    Ok(Arc::new(InvadersState {
+pub fn make_invaders_state(scores: Arc<dyn ScoresStore>) -> Arc<InvadersState> {
+    Arc::new(InvadersState {
         sessions: Mutex::new(HashMap::new()),
-        db: Mutex::new(conn),
-    }))
+        scores,
+    })
 }
 
 fn parse_input(s: &str) -> Input {
@@ -97,7 +97,7 @@ pub async fn send_input(
     let action_str = if action == GameAction::Continue {
         "continue"
     } else {
-        common::save_score_locked(&state.db, &body.user_id, "invaders", score);
+        state.scores.save_score(&body.user_id, "invaders", score);
         "quit"
     };
 
@@ -118,11 +118,13 @@ mod tests {
         http::{Request, StatusCode},
         routing::{get, post},
     };
-    use tempfile::tempdir;
     use tower::ServiceExt;
 
-    fn make_app(db_path: &str) -> Router {
-        let state = make_invaders_state(db_path).unwrap();
+    use crate::scores_store::InMemoryScoresStore;
+
+    fn make_app() -> Router {
+        let store: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let state = make_invaders_state(store);
         Router::new()
             .route("/api/v1/games/invaders/start", get(start_game))
             .route("/api/v1/games/invaders/{id}/input", post(send_input))
@@ -132,9 +134,7 @@ mod tests {
     #[tokio::test]
     async fn variant_swarm_inicia_com_uma_vida() {
         // YG-37: ?variant=invaders/swarm deve produzir lives=1.
-        let dir = tempdir().unwrap();
-        let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let app = make_app(&db);
+        let app = make_app();
         let resp = app
             .oneshot(
                 Request::builder()
@@ -156,9 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn root_invaders_inicia_com_tres_vidas() {
-        let dir = tempdir().unwrap();
-        let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let app = make_app(&db);
+        let app = make_app();
         let resp = app
             .oneshot(
                 Request::builder()
@@ -179,9 +177,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_returns_id_and_state() {
-        let dir = tempdir().unwrap();
-        let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let app = make_app(&db);
+        let app = make_app();
 
         let resp = app
             .oneshot(
@@ -206,9 +202,8 @@ mod tests {
 
     #[tokio::test]
     async fn tick_input_returns_continue() {
-        let dir = tempdir().unwrap();
-        let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let state = make_invaders_state(&db).unwrap();
+        let store: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let state = make_invaders_state(store);
         let app = Router::new()
             .route("/api/v1/games/invaders/start", get(start_game))
             .route("/api/v1/games/invaders/{id}/input", post(send_input))
@@ -255,9 +250,8 @@ mod tests {
 
     #[tokio::test]
     async fn quit_saves_score_and_returns_quit() {
-        let dir = tempdir().unwrap();
-        let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let state = make_invaders_state(&db).unwrap();
+        let store: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let state = make_invaders_state(store);
         let app = Router::new()
             .route("/api/v1/games/invaders/start", get(start_game))
             .route("/api/v1/games/invaders/{id}/input", post(send_input))
@@ -299,24 +293,18 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["action"], "quit");
 
-        let count: i64 = state
-            .db
-            .lock()
-            .unwrap()
-            .query_row(
-                "SELECT COUNT(*) FROM scores WHERE game = 'invaders'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let count = state
+            .scores
+            .recent_scores(10)
+            .into_iter()
+            .filter(|r| r.game == "invaders")
+            .count();
         assert_eq!(count, 1);
     }
 
     #[tokio::test]
     async fn unknown_session_returns_404() {
-        let dir = tempdir().unwrap();
-        let db = dir.path().join("t.db").to_string_lossy().to_string();
-        let app = make_app(&db);
+        let app = make_app();
 
         let body = serde_json::json!({ "direction": "Left" }).to_string();
         let resp = app

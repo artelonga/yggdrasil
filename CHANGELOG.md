@@ -13,10 +13,11 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [0.9.3] — 2026-05-19
 
-### Refactored (YG-43)
-- `yggdrasil-core/src/lobby.rs` movido para `lobby/{mod,grid,portals}.rs` — dimensões em `grid.rs`, slugs em `portals.rs`.
-- `yggdrasil-web/src/lobby_routes.rs` movido para `lobby/{mod,routes,html}.rs` — handler HTML (`serve_lobby`) em `html.rs`, rotas JSON em `routes.rs`.
-- `main.rs` chama apenas `lobby::router()` para HTML e JSON; `serve_lobby` removido do entrypoint.
+### Refactored (YG-44)
+- `ScoresStore` trait introduzido em `yggdrasil-web/src/scores_store.rs`; `SqliteScoresStore` usa uma única `Arc<Mutex<Connection>>` compartilhada entre todos os estados de jogo.
+- `SnakeState`, `TetrisState`, `InvadersState` e `ScoresState` recebem `Arc<dyn ScoresStore>` no lugar de conexões SQLite separadas — as 4 `Connection::open` paralelas ao mesmo `yggdrasil.db` foram eliminadas.
+- `InMemoryScoresStore` (SQLite `:memory:`) fornecida como impl de teste; todos os testes de jogo passam a usá-la em vez de `tempfile`.
+- `games/common.rs` limpo de `init_db`, `save_score` e `save_score_locked` (substituídos pelo trait).
 
 ## [0.9.2] — 2026-05-19
 
