@@ -2,11 +2,13 @@ use game_core::{
     engine::{Direction, Entity, EntityType, Input, Map, Tile, Universe},
     games::{Game, GameAction, SnakeGame},
 };
+use serde::Serialize;
 
 /// Trait for Yggdrasil-side game adapters.
 pub trait YggGame {
+    type State: Serialize;
     fn tick(&mut self, input: Input) -> GameAction;
-    fn render_json(&self) -> String;
+    fn render(&self) -> Self::State;
     fn score(&self) -> u32;
     fn is_over(&self) -> bool;
 }
@@ -147,6 +149,12 @@ impl YggSnake {
 }
 
 impl YggGame for YggSnake {
+    type State = Map;
+
+    fn render(&self) -> Map {
+        self.build_map()
+    }
+
     fn tick(&mut self, input: Input) -> GameAction {
         if self.game_over {
             return GameAction::Quit;
@@ -210,11 +218,6 @@ impl YggGame for YggSnake {
         GameAction::Continue
     }
 
-    fn render_json(&self) -> String {
-        let map = self.build_map();
-        serde_json::to_string(&map).unwrap_or_default()
-    }
-
     fn score(&self) -> u32 {
         self.score
     }
@@ -264,10 +267,9 @@ mod tests {
     }
 
     #[test]
-    fn render_json_is_valid_map() {
+    fn render_returns_valid_map() {
         let g = make_game();
-        let json = g.render_json();
-        let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        let v = serde_json::to_value(g.render()).expect("serializable");
         assert_eq!(v["width"], 40);
         assert_eq!(v["height"], 20);
         assert!(v["tiles"].is_array());

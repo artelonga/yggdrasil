@@ -18,30 +18,30 @@ const PLAYER_H: i32 = 10;
 const BULLET_H: i32 = 10;
 
 #[derive(Serialize, Clone)]
-struct Bullet {
-    x: i32,
-    y: i32,
-    vy: i32,
-    alien: bool,
+pub struct Bullet {
+    pub x: i32,
+    pub y: i32,
+    pub vy: i32,
+    pub alien: bool,
 }
 
 #[derive(Serialize, Clone)]
-struct Alien {
-    x: i32,
-    y: i32,
-    alive: bool,
-    row: usize,
+pub struct Alien {
+    pub x: i32,
+    pub y: i32,
+    pub alive: bool,
+    pub row: usize,
 }
 
 #[derive(Serialize)]
-struct InvadersRender {
-    player_x: i32,
-    bullets: Vec<Bullet>,
-    aliens: Vec<Alien>,
-    score: u32,
-    lives: u32,
-    game_over: bool,
-    won: bool,
+pub struct InvadersRender {
+    pub player_x: i32,
+    pub bullets: Vec<Bullet>,
+    pub aliens: Vec<Alien>,
+    pub score: u32,
+    pub lives: u32,
+    pub game_over: bool,
+    pub won: bool,
 }
 
 /// Opções de inicialização que vêm de uma variante do registro de universos.
@@ -264,6 +264,20 @@ impl YggInvaders {
 }
 
 impl YggGame for YggInvaders {
+    type State = InvadersRender;
+
+    fn render(&self) -> InvadersRender {
+        InvadersRender {
+            player_x: self.player_x,
+            bullets: self.bullets.clone(),
+            aliens: self.aliens.clone(),
+            score: self.score,
+            lives: self.lives,
+            game_over: self.game_over,
+            won: self.won,
+        }
+    }
+
     fn tick(&mut self, input: Input) -> GameAction {
         if self.game_over || self.won {
             return GameAction::Quit;
@@ -287,19 +301,6 @@ impl YggGame for YggInvaders {
         }
 
         self.advance_tick()
-    }
-
-    fn render_json(&self) -> String {
-        let render = InvadersRender {
-            player_x: self.player_x,
-            bullets: self.bullets.clone(),
-            aliens: self.aliens.clone(),
-            score: self.score,
-            lives: self.lives,
-            game_over: self.game_over,
-            won: self.won,
-        };
-        serde_json::to_string(&render).unwrap_or_default()
     }
 
     fn score(&self) -> u32 {
@@ -348,10 +349,9 @@ mod tests {
     }
 
     #[test]
-    fn render_json_has_expected_fields() {
+    fn render_has_expected_fields() {
         let g = make_game();
-        let json = g.render_json();
-        let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        let v = serde_json::to_value(g.render()).expect("serializable");
         assert!(v["player_x"].is_number());
         assert!(v["aliens"].is_array());
         assert_eq!(v["aliens"].as_array().unwrap().len(), ROWS * COLS);
