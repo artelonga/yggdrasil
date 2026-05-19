@@ -6,9 +6,12 @@ mod auth_co;
 mod games;
 mod lobby;
 mod mail;
+mod scores_store;
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+
+use scores_store::{ScoresStore, SqliteScoresStore};
 
 use axum::{
     Router,
@@ -55,14 +58,15 @@ async fn main() -> anyhow::Result<()> {
         jwt_secret,
     });
 
-    let snake_state = make_snake_state(&db_path).expect("sqlite init (snake)");
-    let tetris_state = make_tetris_state(&db_path).expect("sqlite init (tetris)");
-    let invaders_state = make_invaders_state(&db_path).expect("sqlite init (invaders)");
+    let scores_store: Arc<dyn ScoresStore> =
+        Arc::new(SqliteScoresStore::open(&db_path).map_err(|e| anyhow::anyhow!("scores db: {e}"))?);
 
-    // Scores DB compartilhada (mesma tabela `scores` que snake/tetris/invaders gravam).
-    let scores_conn = rusqlite::Connection::open(&db_path)?;
+    let snake_state = make_snake_state(scores_store.clone());
+    let tetris_state = make_tetris_state(scores_store.clone());
+    let invaders_state = make_invaders_state(scores_store.clone());
+
     let scores_state = Arc::new(api::scores::ScoresState {
-        db: Arc::new(Mutex::new(scores_conn)),
+        scores: scores_store,
     });
 
     let sementes_db = std::env::var("YGGDRASIL_SEMENTES_DB")

@@ -2,9 +2,9 @@
 //!
 //! Anônimo (sem auth) — high scores são públicos no lobby. Cada universo
 //! que persiste pontuação (snake, tetris, invaders) contribui rows via
-//! `games::common::save_score`. Poker não entra aqui (economia via sementes).
+//! `ScoresStore::save_score`. Poker não entra aqui (economia via sementes).
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use axum::{
     Json,
@@ -12,19 +12,12 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+use crate::scores_store::ScoresStore;
 
 pub struct ScoresState {
-    pub db: Arc<Mutex<Connection>>,
-}
-
-#[derive(Serialize)]
-pub struct ScoreRow {
-    pub user_id: String,
-    pub game: String,
-    pub score: u32,
-    pub ts: String,
+    pub scores: Arc<dyn ScoresStore>,
 }
 
 #[derive(Deserialize)]
@@ -44,133 +37,37 @@ pub async fn get_top(
     Query(q): Query<TopQuery>,
 ) -> impl IntoResponse {
     let limit = q.limit.clamp(1, 50);
-    let conn = state.db.lock().unwrap();
-    let mut stmt = match conn.prepare(
-        "SELECT user_id, game, score, ts FROM scores s1
-         WHERE score >= (
-           SELECT score FROM scores s2
-           WHERE s2.game = s1.game
-           ORDER BY score DESC LIMIT 1 OFFSET ?1
-         )
-         OR (
-           SELECT COUNT(*) FROM scores s2 WHERE s2.game = s1.game
-         ) <= ?1
-         ORDER BY game, score DESC",
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("scores top prepare: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"erro": "Erro ao consultar pontuações"})),
-            )
-                .into_response();
-        }
-    };
-    let rows = stmt
-        .query_map([limit.saturating_sub(1) as i64], |row| {
-            Ok(ScoreRow {
-                user_id: row.get(0)?,
-                game: row.get(1)?,
-                score: row.get(2)?,
-                ts: row.get(3)?,
-            })
-        })
-        .and_then(|m| m.collect::<Result<Vec<_>, _>>());
-
-    match rows {
-        Ok(scores) => (
-            StatusCode::OK,
-            Json(serde_json::json!({ "scores": scores })),
-        )
-            .into_response(),
-        Err(e) => {
-            tracing::error!("scores top query: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"erro": "Erro ao consultar pontuações"})),
-            )
-                .into_response()
-        }
-    }
+    let scores = state.scores.top_scores(limit);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "scores": scores })),
+    )
+        .into_response()
 }
 
 /// `GET /api/v1/scores/recent` — últimas 10 entradas (atividade recente).
 pub async fn get_recent(State(state): State<Arc<ScoresState>>) -> impl IntoResponse {
-    let conn = state.db.lock().unwrap();
-    let mut stmt = match conn
-        .prepare("SELECT user_id, game, score, ts FROM scores ORDER BY ts DESC LIMIT 10")
-    {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("scores recent prepare: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"erro": "Erro ao consultar atividade"})),
-            )
-                .into_response();
-        }
-    };
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(ScoreRow {
-                user_id: row.get(0)?,
-                game: row.get(1)?,
-                score: row.get(2)?,
-                ts: row.get(3)?,
-            })
-        })
-        .and_then(|m| m.collect::<Result<Vec<_>, _>>());
-
-    match rows {
-        Ok(scores) => (
-            StatusCode::OK,
-            Json(serde_json::json!({ "scores": scores })),
-        )
-            .into_response(),
-        Err(e) => {
-            tracing::error!("scores recent query: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"erro": "Erro ao consultar atividade"})),
-            )
-                .into_response()
-        }
-    }
+    let scores = state.scores.recent_scores(10);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "scores": scores })),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::{Router, body::Body, http::Request, routing::get};
-    use rusqlite::Connection;
-    use tempfile::tempdir;
     use tower::ServiceExt;
 
+    use crate::scores_store::InMemoryScoresStore;
+
     fn make_state_with_scores(scores: Vec<(&str, &str, u32, &str)>) -> Arc<ScoresState> {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("test.db");
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS scores (
-                id      INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                game    TEXT NOT NULL,
-                score   INTEGER NOT NULL,
-                ts      TEXT NOT NULL
-            );",
-        )
-        .unwrap();
-        for (user_id, game, score, ts) in scores {
-            conn.execute(
-                "INSERT INTO scores (user_id, game, score, ts) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![user_id, game, score, ts],
-            )
-            .unwrap();
-        }
-        std::mem::forget(dir); // keep tempdir alive for the test
+        let store = InMemoryScoresStore::new();
+        store.seed(&scores);
         Arc::new(ScoresState {
-            db: Arc::new(Mutex::new(conn)),
+            scores: Arc::new(store) as Arc<dyn ScoresStore>,
         })
     }
 
