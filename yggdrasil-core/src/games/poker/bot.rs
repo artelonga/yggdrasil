@@ -12,8 +12,8 @@
 use game_core::games::poker::PokerAction;
 use rand::Rng;
 
-use crate::games::poker_game::PokerTable;
-use crate::games::poker_lobby::BOT_USER_ID;
+use super::game::PokerTable;
+use super::lobby::BOT_USER_ID;
 
 const FOLD_WEIGHT: u32 = 15;
 const CHECK_WEIGHT: u32 = 35;
@@ -94,7 +94,7 @@ pub fn auto_step_bots_with_rng<R: Rng + ?Sized>(table: &mut PokerTable, rng: &mu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::games::poker_lobby::PokerLobby;
+    use crate::games::poker::lobby::PokerLobby;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 

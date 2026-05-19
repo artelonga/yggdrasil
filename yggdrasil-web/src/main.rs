@@ -18,7 +18,7 @@ use axum::{
 use games::invaders_routes::{
     make_invaders_state, send_input as invaders_input, start_game as invaders_start,
 };
-use games::poker_routes::{
+use games::poker::{
     PokerState, get_hand as poker_get_hand, get_hole_cards as poker_hole_cards,
     get_lobby as poker_get_lobby, list_lobbies as poker_list_lobbies,
     post_action as poker_post_action, sit as poker_sit, stand as poker_stand,

@@ -10,7 +10,7 @@ use game_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::games::poker_lobby::{BOT_USER_ID, LobbyError, PokerLobby, SeatOccupant};
+use super::lobby::{BOT_USER_ID, LobbyError, PokerLobby, SeatOccupant};
 use crate::sementes::{Sementes, SementesError};
 
 /// Buy-in fixo por sentar à mesa (YG-27). Em chips 1:1 com sementes.
@@ -370,7 +370,7 @@ fn card_to_view(card: &game_core::games::poker::deck::Card) -> CardView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::games::poker_lobby::PokerLobby;
+    use crate::games::poker::lobby::{PokerLobby, SeatOccupant};
 
     fn make_two_player_table() -> PokerTable {
         let mut table = PokerTable::new(PokerLobby::new("t1", "Mesa Teste"));
@@ -623,13 +623,10 @@ mod tests {
         // Alice no seat 0
         assert!(matches!(
             &restored.lobby.seats[0],
-            crate::games::poker_lobby::SeatOccupant::Human { user_id, .. } if user_id == "alice"
+            SeatOccupant::Human { user_id, .. } if user_id == "alice"
         ));
         // Bot no seat 1 (auto-spawn quando há 1 humano).
-        assert!(matches!(
-            &restored.lobby.seats[1],
-            crate::games::poker_lobby::SeatOccupant::Bot
-        ));
+        assert!(matches!(&restored.lobby.seats[1], SeatOccupant::Bot));
         assert_eq!(restored.stack_of(BOT_USER_ID), BUY_IN_SEMENTES as u32);
     }
 
