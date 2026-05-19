@@ -22,6 +22,7 @@ use games::poker::{
     PokerState, get_hand as poker_get_hand, get_hole_cards as poker_hole_cards,
     get_lobby as poker_get_lobby, list_lobbies as poker_list_lobbies,
     post_action as poker_post_action, sit as poker_sit, stand as poker_stand,
+    ws_handler as poker_ws,
 };
 use games::snake_routes::{make_snake_state, send_input as snake_input, start_game as snake_start};
 use games::tetris_routes::{
@@ -149,6 +150,7 @@ async fn main() -> anyhow::Result<()> {
             get(poker_hole_cards),
         )
         .route("/api/v1/poker/lobbies/{id}/action", post(poker_post_action))
+        .route("/api/v1/poker/lobbies/{id}/ws", get(poker_ws))
         .with_state(poker_state);
 
     let app = Router::new()
