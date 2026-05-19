@@ -11,6 +11,12 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-05-19
+
+### Refactored (YG-40)
+- `yggdrasil-web/src/games/poker_routes.rs` (963 LOC) dividido em `games/poker/{mod,state,routes,chip_flow,serialization,tests}.rs`.
+- `yggdrasil-core/src/games/poker.rs` + siblings movidos para `games/poker/{mod,adapter,bot,game,lobby}.rs`; aliases backward-compat preservam paths externos.
+
 ## [0.9.0] — 2026-05-18
 
 ### Added (Godot games, YG-51)

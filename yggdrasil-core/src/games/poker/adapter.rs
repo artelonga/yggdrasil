@@ -10,7 +10,7 @@ use game_core::{
 use serde::Serialize;
 use std::sync::Arc;
 
-use super::YggGame;
+use crate::games::YggGame;
 
 /// Saldo inicial de sementes para novos jogadores (alinhado com INITIAL_BALANCE em co-web).
 pub const INITIAL_SEMENTES: u64 = 10_000;
