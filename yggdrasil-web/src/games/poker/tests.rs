@@ -562,3 +562,48 @@ async fn acao_desconhecida_retorna_400() {
         .unwrap();
     assert_eq!(resp.status(), axum::http::StatusCode::BAD_REQUEST);
 }
+
+// ── YG-41: event spine — dois clientes recebem HandStarted ───────────────
+
+#[tokio::test]
+async fn dois_clientes_recebem_hand_started_via_broadcast() {
+    use yggdrasil_core::games::poker::events::TableEvent;
+
+    let (app, state, _dir) = make_app("s");
+    let token_a = sign_jwt("user-a", "a@test.com", "s").unwrap();
+    let token_b = sign_jwt("user-b", "b@test.com", "s").unwrap();
+
+    // Subscribe two receivers before seating (simulating two WS clients)
+    let (mut rx_a, mut rx_b) = {
+        let tables = state.tables.lock().unwrap();
+        let t = tables.iter().find(|t| t.lobby.id == "carvalho").unwrap();
+        (t.events.subscribe(), t.events.subscribe())
+    };
+
+    // Seat both players
+    app.clone().oneshot(sit_req(0, &token_a)).await.unwrap();
+    app.clone().oneshot(sit_req(1, &token_b)).await.unwrap();
+
+    // GET /hand triggers start_hand → emits HandStarted
+    app.oneshot(hand_req(&token_a)).await.unwrap();
+
+    // Drain events from both receivers until HandStarted or exhausted
+    fn has_hand_started(rx: &mut tokio::sync::broadcast::Receiver<TableEvent>) -> bool {
+        loop {
+            match rx.try_recv() {
+                Ok(TableEvent::HandStarted { .. }) => return true,
+                Ok(_) => continue,
+                Err(_) => return false,
+            }
+        }
+    }
+
+    assert!(
+        has_hand_started(&mut rx_a),
+        "rx_a deveria receber HandStarted"
+    );
+    assert!(
+        has_hand_started(&mut rx_b),
+        "rx_b deveria receber HandStarted"
+    );
+}

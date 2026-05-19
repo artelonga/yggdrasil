@@ -10,9 +10,11 @@ pub mod chip_flow;
 pub mod routes;
 pub mod serialization;
 pub mod state;
+pub mod ws;
 
 #[cfg(test)]
 mod tests;
 
 pub use routes::{get_hand, get_hole_cards, get_lobby, list_lobbies, post_action, sit, stand};
 pub use state::PokerState;
+pub use ws::ws_handler;

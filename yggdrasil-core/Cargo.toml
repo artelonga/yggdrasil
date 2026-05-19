@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 nanoid = { workspace = true }
 rand = "0.8"
+tokio = { version = "1", features = ["sync"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

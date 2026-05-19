@@ -11,6 +11,8 @@ const state = {
   pollTimer: null,
   meSeated: false,
   lastRound: null,
+  ws: null,
+  wsActive: false,
 };
 
 const el = {
@@ -140,14 +142,14 @@ async function enterLobby(id) {
   el.lobbyList.classList.add('hidden');
   el.tableView.classList.add('active');
   await refreshLobby();
-  startPolling();
+  connectWs(id);
 }
 
 function leaveLobby() {
   state.activeLobby = null;
   state.meSeated = false;
   state.lastRound = null;
-  stopPolling();
+  disconnectWs();
   hideGameArea();
   loadLobbies();
 }
@@ -456,6 +458,32 @@ function startPolling() {
 
 function stopPolling() {
   if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+}
+
+function connectWs(lobbyId) {
+  disconnectWs();
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${location.host}/api/v1/poker/lobbies/${lobbyId}/ws`;
+  try {
+    const ws = new WebSocket(url);
+    ws.onopen = () => { state.wsActive = true; stopPolling(); };
+    ws.onmessage = () => refreshLobby();
+    ws.onerror = () => { state.wsActive = false; startPolling(); };
+    ws.onclose = () => { if (state.wsActive) { state.wsActive = false; startPolling(); } };
+    state.ws = ws;
+  } catch (_) {
+    startPolling();
+  }
+}
+
+function disconnectWs() {
+  if (state.ws) {
+    state.wsActive = false;
+    state.ws.onclose = null;
+    state.ws.close();
+    state.ws = null;
+  }
+  stopPolling();
 }
 
 el.voltar.addEventListener('click', leaveLobby);

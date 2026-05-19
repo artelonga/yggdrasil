@@ -11,6 +11,15 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-19 — Event spine + WebSocket para pôquer (YG-41)
+
+### Added
+
+- `TableEvent` enum estaticamente tipado (`Seated`, `HandStarted`, `ActionTaken`, `HandEnded`) em `yggdrasil-core/src/games/poker/events.rs`.
+- Um `tokio::sync::broadcast::Sender<TableEvent>` por `PokerTable`; emitido a cada mutação (sit, start_hand, act).
+- Rota `GET /api/v1/poker/lobbies/{id}/ws` que faz upgrade para WebSocket e transmite eventos JSON em tempo real.
+- Frontend `poker.js` agora conecta via WebSocket ao entrar em uma mesa; polling HTTP mantido como fallback se WS falhar.
+
 ## [0.9.1] — 2026-05-19
 
 ### Refactored (YG-40)

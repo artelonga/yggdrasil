@@ -9,7 +9,9 @@ use game_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tokio::sync::broadcast;
 
+use super::events::TableEvent;
 use super::lobby::{BOT_USER_ID, LobbyError, PokerLobby, SeatOccupant};
 use crate::sementes::{Sementes, SementesError};
 
@@ -81,6 +83,8 @@ pub struct PokerTable {
     /// Chip stack persistido entre mãos. Chave = user_id (humano ou `BOT_USER_ID`).
     /// Buy-in entra aqui no `sit_with_sementes` (YG-27), atualizado após cada mão.
     pub stacks: HashMap<String, u32>,
+    /// Canal de eventos para notificar subscribers (ex.: WebSocket) sobre mudanças de estado.
+    pub events: broadcast::Sender<TableEvent>,
 }
 
 /// Snapshot serializável de uma `PokerTable` para persistência em SQLite
@@ -98,12 +102,14 @@ pub struct PokerTableSnapshot {
 
 impl PokerTable {
     pub fn new(lobby: PokerLobby) -> Self {
+        let (events, _) = broadcast::channel(64);
         Self {
             lobby,
             game: None,
             current_actor: None,
             player_map: vec![],
             stacks: HashMap::new(),
+            events,
         }
     }
 
@@ -124,12 +130,14 @@ impl PokerTable {
     /// considerada forfeit; a próxima chamada a `start_hand` (acionada por
     /// `GET /hand`) reabre o jogo.
     pub fn from_snapshot(snap: PokerTableSnapshot) -> Self {
+        let (events, _) = broadcast::channel(64);
         Self {
             lobby: snap.lobby,
             game: None,
             current_actor: None,
             player_map: vec![],
             stacks: snap.stacks,
+            events,
         }
     }
 
@@ -188,7 +196,12 @@ impl PokerTable {
         let action_pos = game.table.action_position;
         self.player_map = active.into_iter().map(|(uid, _)| uid).collect();
         self.current_actor = self.player_map.get(action_pos).cloned();
+        let player_count = self.player_map.len();
         self.game = Some(game);
+        let _ = self.events.send(TableEvent::HandStarted {
+            table_id: self.lobby.id.clone(),
+            player_count,
+        });
         Ok(())
     }
 
@@ -211,6 +224,11 @@ impl PokerTable {
         self.stacks
             .insert(user_id.to_string(), BUY_IN_SEMENTES as u32);
         self.sync_bot_stack();
+        let _ = self.events.send(TableEvent::Seated {
+            table_id: self.lobby.id.clone(),
+            user_id: user_id.to_string(),
+            seat,
+        });
         Ok(())
     }
 
@@ -286,6 +304,15 @@ impl PokerTable {
             }
         }
 
+        // Capture action label before execute_action consumes the value.
+        let action_label = match &action {
+            PokerAction::Fold => "fold",
+            PokerAction::Check => "check",
+            PokerAction::Call => "call",
+            PokerAction::Raise(_) => "raise",
+            PokerAction::AllIn => "all_in",
+        };
+
         game.execute_action(action);
 
         if game.game_over {
@@ -297,6 +324,20 @@ impl PokerTable {
         // Snapshot stacks após cada ação para que o saldo flutue corretamente
         // — necessário para YG-27 (cash-out a qualquer momento).
         self.snapshot_stacks_from_game();
+
+        let _ = self.events.send(TableEvent::ActionTaken {
+            table_id: self.lobby.id.clone(),
+            user_id: user_id.to_string(),
+            action: action_label.to_string(),
+        });
+        if let Some(ref g) = self.game
+            && g.game_over
+        {
+            let _ = self.events.send(TableEvent::HandEnded {
+                table_id: self.lobby.id.clone(),
+                winner_message: g.winner_message.clone(),
+            });
+        }
         Ok(())
     }
 
