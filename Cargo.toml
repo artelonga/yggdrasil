@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.8.1"
+version = "0.9.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/artelonga/yggdrasil"
@@ -14,6 +14,7 @@ description = "Yggdrasil — plataforma viva de criação, organização e conex
 publish = false
 
 [workspace.dependencies]
+# Engine importado do co (pinned git rev — YG-38)
 game-core = { git = "https://github.com/artelonga/co", rev = "268ea5484832d630d8ea27539f5bd87a453b32e3" }
 
 # Web
