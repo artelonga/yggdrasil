@@ -9,32 +9,15 @@
 //!
 //! Cada portal usa `Tile::Portal(slug)` onde `slug` é o identificador do
 //! jogo destino. A transição é feita via `Session::teleport_to(slug)`.
-//!
-//! Implementação de YG-2.
+
+pub mod grid;
+pub mod portals;
+
+pub use grid::pos;
+pub use grid::{LOBBY_HEIGHT, LOBBY_WIDTH};
+pub use portals::slug;
 
 use game_core::engine::{Objective, Tile, Universe};
-
-/// Largura do mapa do lobby em tiles.
-pub const LOBBY_WIDTH: usize = 40;
-/// Altura do mapa do lobby em tiles.
-pub const LOBBY_HEIGHT: usize = 20;
-
-/// Slug de cada jogo destino. Mantido como constantes para evitar erros
-/// de digitação em adaptadores (YG-6..YG-9) e em testes.
-pub mod slug {
-    pub const SNAKE: &str = "snake";
-    pub const TETRIS: &str = "tetris";
-    pub const INVADERS: &str = "invaders";
-    pub const POKER: &str = "poker";
-}
-
-/// Posição (x, y) de cada portal no grid.
-pub mod pos {
-    pub const SNAKE: (usize, usize) = (10, 8);
-    pub const TETRIS: (usize, usize) = (30, 8);
-    pub const INVADERS: (usize, usize) = (10, 12);
-    pub const POKER: (usize, usize) = (30, 12);
-}
 
 /// Constrói o universo do lobby Yggdrasil.
 ///

@@ -4,7 +4,7 @@ mod api;
 mod auth;
 mod auth_co;
 mod games;
-mod lobby_routes;
+mod lobby;
 mod mail;
 
 use std::net::SocketAddr;
@@ -28,6 +28,7 @@ use games::snake_routes::{make_snake_state, send_input as snake_input, start_gam
 use games::tetris_routes::{
     make_tetris_state, send_input as tetris_input, start_game as tetris_start,
 };
+use lobby::router as lobby_router;
 use tower_http::services::ServeDir;
 use tracing::info;
 
@@ -155,7 +156,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(root))
-        .route("/lobby", get(serve_lobby))
+        .merge(lobby_router())
         .route("/login", get(serve_login))
         .route("/universos/snake", get(serve_snake))
         .route("/universos/tetris", get(serve_tetris))
@@ -169,8 +170,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/games/invaders", get(redirect_to_universo_invaders))
         .route("/games/poker", get(redirect_to_universo_poker))
         .route("/health", get(health))
-        .route("/api/v1/lobby", get(lobby_routes::get_lobby))
-        .route("/api/v1/lobby/enter", post(lobby_routes::post_enter))
         .merge(auth_router)
         .merge(co_handover_router)
         .merge(me_router)
@@ -191,10 +190,6 @@ async fn main() -> anyhow::Result<()> {
 
 async fn root() -> impl IntoResponse {
     Redirect::to("/lobby")
-}
-
-async fn serve_lobby() -> impl IntoResponse {
-    Html(include_str!("../static/lobby.html"))
 }
 
 async fn serve_login() -> impl IntoResponse {

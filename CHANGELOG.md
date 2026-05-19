@@ -11,6 +11,13 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-05-19
+
+### Refactored (YG-43)
+- `yggdrasil-core/src/lobby.rs` movido para `lobby/{mod,grid,portals}.rs` — dimensões em `grid.rs`, slugs em `portals.rs`.
+- `yggdrasil-web/src/lobby_routes.rs` movido para `lobby/{mod,routes,html}.rs` — handler HTML (`serve_lobby`) em `html.rs`, rotas JSON em `routes.rs`.
+- `main.rs` chama apenas `lobby::router()` para HTML e JSON; `serve_lobby` removido do entrypoint.
+
 ## [0.9.2] — 2026-05-19
 
 ### Refactored (YG-42)
