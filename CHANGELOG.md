@@ -2,6 +2,13 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.8.1] — 2026-05-19 — Reconcilia drift game-core (YG-52)
+
+### Fixed
+
+- Reconciliados os arquivos divergidos entre `universos/core/src/` e `co/game-core/src/`: `49a25f9f/{mod,04f8996d,3549b002,8a6cead4}.rs`, `lib.rs`, `plugin.rs` são agora byte-idênticos. Suporte a `GAME_DB_PATH` restaurado em `storage::db_path()`.
+- `co/game-core` promovido para 0.2.0; `universos/core/src/universo.rs` (cifrado/ilegível) substituído por implementação legível de `Universo` trait + `UniversoLocal`. `diff -rq` entre os dois `src/` retorna apenas `Only in co/game-core/src: mail.rs`.
+
 ## [Unreleased]
 
 ## [0.9.0] — 2026-05-18
