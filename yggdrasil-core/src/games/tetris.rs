@@ -194,23 +194,40 @@ impl YggTetris {
 }
 
 #[derive(Serialize)]
-struct ActivePiece {
-    piece_type: u8,
-    x: i32,
-    y: i32,
-    shape: Vec<Vec<u8>>,
+pub struct ActivePiece {
+    pub piece_type: u8,
+    pub x: i32,
+    pub y: i32,
+    pub shape: Vec<Vec<u8>>,
 }
 
 #[derive(Serialize)]
-struct TetrisRender {
-    board: Vec<Vec<u8>>,
-    piece: ActivePiece,
-    score: u32,
-    level: u32,
-    game_over: bool,
+pub struct TetrisRender {
+    pub board: Vec<Vec<u8>>,
+    pub piece: ActivePiece,
+    pub score: u32,
+    pub level: u32,
+    pub game_over: bool,
 }
 
 impl YggGame for YggTetris {
+    type State = TetrisRender;
+
+    fn render(&self) -> TetrisRender {
+        TetrisRender {
+            board: self.board.clone(),
+            piece: ActivePiece {
+                piece_type: self.piece_type,
+                x: self.piece_x,
+                y: self.piece_y,
+                shape: self.piece_shape.clone(),
+            },
+            score: self.score,
+            level: self.level,
+            game_over: self.game_over,
+        }
+    }
+
     fn tick(&mut self, input: Input) -> GameAction {
         if self.game_over {
             return GameAction::Quit;
@@ -253,22 +270,6 @@ impl YggGame for YggTetris {
             }
             _ => GameAction::Continue,
         }
-    }
-
-    fn render_json(&self) -> String {
-        let render = TetrisRender {
-            board: self.board.clone(),
-            piece: ActivePiece {
-                piece_type: self.piece_type,
-                x: self.piece_x,
-                y: self.piece_y,
-                shape: self.piece_shape.clone(),
-            },
-            score: self.score,
-            level: self.level,
-            game_over: self.game_over,
-        };
-        serde_json::to_string(&render).unwrap_or_default()
     }
 
     fn score(&self) -> u32 {
@@ -353,10 +354,9 @@ mod tests {
     }
 
     #[test]
-    fn render_json_has_expected_fields() {
+    fn render_has_expected_fields() {
         let g = make_game();
-        let json = g.render_json();
-        let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        let v = serde_json::to_value(g.render()).expect("serializable");
         assert!(v["board"].is_array());
         assert_eq!(v["board"].as_array().unwrap().len(), 20);
         assert!(v["piece"]["x"].is_number());

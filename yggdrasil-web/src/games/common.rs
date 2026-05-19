@@ -48,20 +48,16 @@ pub struct InputRequest {
     pub user_id: String,
 }
 
-pub fn map_to_value(json: &str) -> serde_json::Value {
-    serde_json::from_str(json).unwrap_or(serde_json::Value::Null)
-}
-
 #[derive(Serialize)]
-pub struct StartResponse {
+pub struct StartResponse<S> {
     pub id: String,
-    pub state: serde_json::Value,
+    pub state: S,
     pub score: u32,
 }
 
 #[derive(Serialize)]
-pub struct TickResponse {
+pub struct TickResponse<S> {
     pub action: String,
-    pub state: serde_json::Value,
+    pub state: S,
     pub score: u32,
 }

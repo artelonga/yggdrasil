@@ -18,18 +18,18 @@ pub const INITIAL_SEMENTES: u64 = 10_000;
 const DEFAULT_BUY_IN: u32 = 1_000;
 
 #[derive(Serialize)]
-struct PokerRender<'a> {
-    players: &'a [Player],
-    pot: u32,
-    current_bet: u32,
-    community_cards: &'a [Card],
-    round: &'static str,
-    game_over: bool,
-    winner_message: &'a Option<String>,
-    is_local_turn: bool,
-    selected_action: &'static str,
-    raise_amount: u32,
-    sementes: u64,
+pub struct PokerRender {
+    pub players: Vec<Player>,
+    pub pot: u32,
+    pub current_bet: u32,
+    pub community_cards: Vec<Card>,
+    pub round: &'static str,
+    pub game_over: bool,
+    pub winner_message: Option<String>,
+    pub is_local_turn: bool,
+    pub selected_action: &'static str,
+    pub raise_amount: u32,
+    pub sementes: u64,
 }
 
 /// Yggdrasil adapter wrapping [`game_core::PokerGame`] com buy-in e cash-out em sementes.
@@ -135,6 +135,24 @@ impl YggPoker {
 }
 
 impl YggGame for YggPoker {
+    type State = PokerRender;
+
+    fn render(&self) -> PokerRender {
+        PokerRender {
+            players: self.inner.players.clone(),
+            pot: self.inner.table.pot,
+            current_bet: self.inner.table.current_bet,
+            community_cards: self.inner.table.community_cards.clone(),
+            round: self.inner.round.name(),
+            game_over: self.inner.game_over,
+            winner_message: self.inner.winner_message.clone(),
+            is_local_turn: self.inner.is_local_turn(),
+            selected_action: action_name(self.inner.selected_action),
+            raise_amount: self.inner.raise_amount,
+            sementes: self.sementes_balance(),
+        }
+    }
+
     fn tick(&mut self, input: Input) -> GameAction {
         if self.game_over {
             return GameAction::Quit;
@@ -144,24 +162,6 @@ impl YggGame for YggPoker {
             self.game_over = true;
         }
         action
-    }
-
-    fn render_json(&self) -> String {
-        let sementes = self.sementes_balance();
-        let render = PokerRender {
-            players: &self.inner.players,
-            pot: self.inner.table.pot,
-            current_bet: self.inner.table.current_bet,
-            community_cards: &self.inner.table.community_cards,
-            round: self.inner.round.name(),
-            game_over: self.inner.game_over,
-            winner_message: &self.inner.winner_message,
-            is_local_turn: self.inner.is_local_turn(),
-            selected_action: action_name(self.inner.selected_action),
-            raise_amount: self.inner.raise_amount,
-            sementes,
-        };
-        serde_json::to_string(&render).unwrap_or_default()
     }
 
     fn score(&self) -> u32 {
@@ -273,10 +273,9 @@ mod tests {
     }
 
     #[test]
-    fn render_json_valid() {
+    fn render_valid() {
         let (game, _dir) = make_game(INITIAL_SEMENTES);
-        let json = game.render_json();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let v = serde_json::to_value(game.render()).unwrap();
         assert!(v["players"].is_array());
         assert!(v["pot"].is_number());
         assert!(v["community_cards"].is_array());
@@ -286,10 +285,9 @@ mod tests {
     }
 
     #[test]
-    fn render_json_has_three_players() {
+    fn render_has_three_players() {
         let (game, _dir) = make_game(INITIAL_SEMENTES);
-        let json = game.render_json();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let v = serde_json::to_value(game.render()).unwrap();
         assert_eq!(v["players"].as_array().unwrap().len(), 3);
     }
 

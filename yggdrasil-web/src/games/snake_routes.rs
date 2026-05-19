@@ -17,7 +17,7 @@ use nanoid::nanoid;
 use yggdrasil_core::games::snake::SnakeOptions;
 use yggdrasil_core::games::{YggGame, YggSnake};
 
-use super::common::{self, InputRequest, StartResponse, TickResponse, VariantQuery, map_to_value};
+use super::common::{self, InputRequest, StartResponse, TickResponse, VariantQuery};
 
 pub struct SnakeState {
     sessions: Mutex<HashMap<String, YggSnake>>,
@@ -56,14 +56,14 @@ pub async fn start_game(
         universe.map.height,
     );
     let game = YggSnake::with_options(universe, opts);
-    let state_val = map_to_value(&game.render_json());
+    let game_state = game.render();
     let id = nanoid!();
 
     state.sessions.lock().unwrap().insert(id.clone(), game);
 
     Json(StartResponse {
         id,
-        state: state_val,
+        state: game_state,
         score: 0,
     })
 }
@@ -88,7 +88,7 @@ pub async fn send_input(
 ) -> impl IntoResponse {
     let input = parse_direction(&body.direction);
 
-    let (action, state_val, score) = {
+    let (action, game_state, score) = {
         let mut sessions = state.sessions.lock().unwrap();
         let game = match sessions.get_mut(&id) {
             Some(g) => g,
@@ -96,14 +96,14 @@ pub async fn send_input(
         };
 
         let action = game.tick(input);
-        let state_val = map_to_value(&game.render_json());
+        let game_state = game.render();
         let score = game.score();
 
         if action != GameAction::Continue {
             sessions.remove(&id);
         }
 
-        (action, state_val, score)
+        (action, game_state, score)
     };
 
     let action_str = if action == GameAction::Continue {
@@ -115,7 +115,7 @@ pub async fn send_input(
 
     Json(TickResponse {
         action: action_str.to_string(),
-        state: state_val,
+        state: game_state,
         score,
     })
     .into_response()
