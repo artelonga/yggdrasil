@@ -13,11 +13,12 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [0.9.3] — 2026-05-19
 
-### Refactored (YG-44)
-- `ScoresStore` trait introduzido em `yggdrasil-web/src/scores_store.rs`; `SqliteScoresStore` usa uma única `Arc<Mutex<Connection>>` compartilhada entre todos os estados de jogo.
-- `SnakeState`, `TetrisState`, `InvadersState` e `ScoresState` recebem `Arc<dyn ScoresStore>` no lugar de conexões SQLite separadas — as 4 `Connection::open` paralelas ao mesmo `yggdrasil.db` foram eliminadas.
-- `InMemoryScoresStore` (SQLite `:memory:`) fornecida como impl de teste; todos os testes de jogo passam a usá-la em vez de `tempfile`.
-- `games/common.rs` limpo de `init_db`, `save_score` e `save_score_locked` (substituídos pelo trait).
+### Refactored (YG-45)
+- `auth.rs` (630 LOC) dividido em `auth/{state,jwt,magic_link,tests}.rs`; nenhum arquivo excede 270 LOC.
+- `auth/state.rs`: `AuthState`, `init_auth_db`.
+- `auth/jwt.rs`: `Claims`, `UserId`, `sign_jwt`, `verify_jwt`, `require_auth`.
+- `auth/magic_link.rs`: `CodeRequest`, `VerifyRequest`, `generate_code`, `request_code`, `verify_code`.
+- Testes movidos para `auth/tests.rs`; `api/me.rs` (253 LOC) já dentro do limite.
 
 ## [0.9.2] — 2026-05-19
 
