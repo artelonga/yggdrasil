@@ -2,6 +2,26 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.11.0] — 2026-05-20 — Migração de 5 universos para WASM (YG-57)
+
+### Added
+
+- `universes/` — workspace standalone (não membro do workspace principal, YG-61 integrará o CI).
+  - `universe-sdk` (rlib) — ABI v1 para crates de universo WASM: host imports como `unsafe extern "C"`, mocks nativos para testes, `kv_load`/`kv_store`/`emit`/`get_random`/`write_output`, macro `universe_exports!(SessionType)`.
+  - `universe-snake` (cdylib) — Snake 40×20 auto-contido em WASM. Input/output JSON; porta a lógica de `yggdrasil-core/src/games/snake.rs` sem depender de `game-core`.
+  - `universe-tetris` (cdylib) — Tetris 10×20 com 7 peças, gravidade, linha, nível, PRNG xorshift64.
+  - `universe-invaders` (cdylib) — Space Invaders 480×480: grade 4×10, movimento, tiro, colisão, pontuação por fileira.
+  - `universe-pointset` (cdylib) — SameGame flood-fill 8×6: remoção de grupos conexos, gravidade, pontuação = tamanho².
+  - `universe-poker` (cdylib) — Texas Hold'em completo: 3 jogadores (1 humano + 2 bots), blinds, flop/turn/river, showdown, avaliação de mão, estado persistido via `kv_set`/`kv_get` (compatível com `poker_persistence.rs`).
+- `yggdrasil-web/embedded/{snake,tetris,invaders,pointset,poker}.wasm` — artefatos reais compilados com `wasm-opt -O3`; dentro dos budgets (snake 62KB, tetris 65KB, invaders 70KB, pointset 34KB, poker 104KB).
+- `WasmSession::process_json(&str) -> Result<String, WasmError>` — executa uma rodada com input JSON, retorna JSON de estado (ABI: `process(ptr, len) -> (out_ptr << 32 | out_len)`).
+- `build-universes.sh` — script para recompilar os 5 universos e copiar para `embedded/` com verificação de budget.
+- 9 novos testes em `wasm_runtime.rs`: `process_json_returns_output_from_process_export`, `process_json_resets_fuel_before_call`, `snake/tetris/invaders/pointset/poker_10_ticks_return_valid_json`, `process_json_invalid_input_returns_error_field`, `poker_kv_state_survives_session_reconstruction`. Total: 92 testes.
+
+### Changed
+
+- `WasmRuntime::from_embedded` — budget de tempo ajustado de 500ms para 30s (compilação JIT Cranelift de módulos reais vs. stubs de 8 bytes).
+
 ## [0.10.0] — 2026-05-20 — WASM Runtime Host (YG-55)
 
 ### Added

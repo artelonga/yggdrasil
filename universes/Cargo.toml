@@ -3,9 +3,15 @@ resolver = "2"
 members = [
     "universe-sdk",
     "echo",
+    "universe-snake",
+    "universe-tetris",
+    "universe-invaders",
+    "universe-pointset",
+    "universe-poker",
 ]
 
 [profile.release]
 opt-level = "z"
 lto = true
 panic = "abort"
+codegen-units = 1
