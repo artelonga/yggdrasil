@@ -8,6 +8,7 @@ pub mod hint_engine;
 mod lobby;
 mod mail;
 mod scores_store;
+pub mod universos_routes;
 pub mod wasm_runtime;
 
 use std::net::SocketAddr;
@@ -18,7 +19,7 @@ use scores_store::{ScoresStore, SqliteScoresStore};
 use axum::{
     Router,
     response::{Html, IntoResponse, Redirect},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use games::invaders_routes::{
     make_invaders_state, send_input as invaders_input, start_game as invaders_start,
@@ -172,6 +173,20 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/poker/lobbies/{id}/ws", get(poker_ws))
         .with_state(poker_state);
 
+    // YG-60: unified /api/v1/universos session routes + WebSocket
+    let universos_state = universos_routes::UniversosState::new(Arc::new(
+        SqliteScoresStore::open(&db_path)
+            .map_err(|e| anyhow::anyhow!("universos scores db: {e}"))?,
+    ));
+    let universos_router = Router::new()
+        .route("/api/v1/universos", get(universos_routes::list_universos))
+        .route("/api/v1/universos/{id}", get(universos_routes::get_universo))
+        .route("/api/v1/universos/{id}/sessoes", post(universos_routes::create_sessao))
+        .route("/api/v1/universos/{id}/sessoes/{sid}/tick", post(universos_routes::tick_sessao))
+        .route("/api/v1/universos/{id}/sessoes/{sid}", delete(universos_routes::delete_sessao))
+        .route("/api/v1/universos/{id}/sessoes/{sid}/ws", get(universos_routes::ws_sessao))
+        .with_state(universos_state);
+
     let app = Router::new()
         .route("/", get(root))
         .merge(lobby_router())
@@ -199,6 +214,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(invaders_router)
         .merge(vim_router)
         .merge(poker_router)
+        .merge(universos_router)
         .nest_service("/static", ServeDir::new("yggdrasil-web/static"));
 
     let addr: SocketAddr = "0.0.0.0:3030".parse()?;
