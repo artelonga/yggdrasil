@@ -3030,7 +3030,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "yggdrasil-core"
-version = "0.9.3"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3046,7 +3046,7 @@ dependencies = [
 
 [[package]]
 name = "yggdrasil-web"
-version = "0.9.3"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "argon2",
