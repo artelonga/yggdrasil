@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 yggdrasil-core = { path = "../yggdrasil-core" }
 game-core = { workspace = true }
+universe-vim = { path = "../universes/universe-vim" }
 
 axum = { workspace = true, features = ["ws"] }
 tokio = { workspace = true }
