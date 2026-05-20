@@ -2,6 +2,25 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.12.0] — 2026-05-20 — Universe Platform v1.0 WASM epic + Unified API (YG-54 → YG-60)
+
+### Theme
+
+Bundles eight user-stories that constitute the WASM-embedded universe platform: the runtime (YG-55), the Rust SDK (YG-56), migration of 5 existing universos to WASM (YG-57), the Universo Vim modal editor (YG-58), the Claude hint engine (YG-59), and the unified `/api/v1/universos` session API + WebSocket (YG-60). The remaining v1.0 work (YG-50 OpenAPI, YG-61 CI/CD, YG-62 telemetria) lands separately before the v1.0.0 release commit.
+
+### Highlights
+
+- **WASM runtime** (YG-55): wasmtime + fuel enforcement (10M instructions/tick), per-session sandboxed `Store<HostState>`, host imports for KV/events/hints/random/now.
+- **Universe SDK + 5 ported universos** (YG-56, YG-57): snake, tetris, invaders, pointset, poker compiled to WASM.
+- **Universo Vim** (YG-58): modal editor in Rust, 10 progressive levels, `vim_routes.rs` HTTP surface, exposed as a path-dep crate from the root workspace.
+- **Claude hint engine** (YG-59): `HintEngine` host-side bridge to Anthropic API, rate limited 5/user/hour, fallback per level.
+- **Unified API** (YG-60): `GET /api/v1/universos`, session CRUD + WebSocket for real-time state streaming, `UniversoSession` trait adapters for each game, legacy `/api/v1/games/...` routes preserved.
+- **YG-58 hotfix**: `universe-vim` added as path dep in `yggdrasil-web/Cargo.toml` after the cross-workspace import was missing post-merge.
+
+### Why
+
+Sets the foundation for v1.0.0: every universo runs in an isolated WASM sandbox addressed by one unified API. Anonymous + authenticated clients consume the same surface. The legacy per-game routes remain as-is for backwards-compatibility during the transition.
+
 ## [0.11.0] — 2026-05-20 — Claude hint engine (YG-59)
 
 ### Added
