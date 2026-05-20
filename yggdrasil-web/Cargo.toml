@@ -49,6 +49,8 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
 ] }
 tokio-util = "0.7"
+wasmtime = { version = "44.0.1", features = ["cranelift"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+wat = "1"

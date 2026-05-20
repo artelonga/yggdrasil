@@ -7,6 +7,7 @@ mod games;
 mod lobby;
 mod mail;
 mod scores_store;
+pub mod wasm_runtime;
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
