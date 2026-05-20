@@ -31,9 +31,13 @@ COPY yggdrasil/Cargo.toml yggdrasil/Cargo.lock yggdrasil/
 COPY yggdrasil/yggdrasil-core/Cargo.toml yggdrasil/yggdrasil-core/Cargo.toml
 COPY yggdrasil/yggdrasil-web/Cargo.toml yggdrasil/yggdrasil-web/Cargo.toml
 
-RUN mkdir -p yggdrasil/yggdrasil-core/src yggdrasil/yggdrasil-web/src && \
+# YG-56..58: universe-vim is a path-dep of yggdrasil-web; copy its manifest into the cache layer
+COPY yggdrasil/universes/universe-vim/Cargo.toml yggdrasil/universes/universe-vim/Cargo.toml
+
+RUN mkdir -p yggdrasil/yggdrasil-core/src yggdrasil/yggdrasil-web/src yggdrasil/universes/universe-vim/src && \
     echo "pub fn _dummy() {}" > yggdrasil/yggdrasil-core/src/lib.rs && \
-    echo "fn main() {}" > yggdrasil/yggdrasil-web/src/main.rs
+    echo "fn main() {}" > yggdrasil/yggdrasil-web/src/main.rs && \
+    echo "pub fn _dummy() {}" > yggdrasil/universes/universe-vim/src/lib.rs
 
 WORKDIR /usr/src/yggdrasil
 RUN cargo build --release -p yggdrasil-web 2>/dev/null || true
@@ -42,6 +46,8 @@ RUN cargo build --release -p yggdrasil-web 2>/dev/null || true
 COPY yggdrasil/yggdrasil-core/src yggdrasil-core/src
 COPY yggdrasil/yggdrasil-web/src yggdrasil-web/src
 COPY yggdrasil/yggdrasil-web/static yggdrasil-web/static
+COPY yggdrasil/yggdrasil-web/build.rs yggdrasil-web/build.rs
+COPY yggdrasil/universes/universe-vim/src universes/universe-vim/src
 
 RUN rm -rf target/release/.fingerprint/yggdrasil* \
            target/release/deps/yggdrasil_* \
