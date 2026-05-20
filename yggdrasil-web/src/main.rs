@@ -32,6 +32,9 @@ use games::snake_routes::{make_snake_state, send_input as snake_input, start_gam
 use games::tetris_routes::{
     make_tetris_state, send_input as tetris_input, start_game as tetris_start,
 };
+use games::vim_routes::{
+    create_session as vim_create_session, make_vim_state, send_key as vim_send_key,
+};
 use lobby::router as lobby_router;
 use tower_http::services::ServeDir;
 use tracing::info;
@@ -65,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
     let snake_state = make_snake_state(scores_store.clone());
     let tetris_state = make_tetris_state(scores_store.clone());
     let invaders_state = make_invaders_state(scores_store.clone());
+    let vim_state = make_vim_state();
 
     let scores_state = Arc::new(api::scores::ScoresState {
         scores: scores_store,
@@ -145,6 +149,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/games/invaders/{id}/input", post(invaders_input))
         .with_state(invaders_state);
 
+    let vim_router = Router::new()
+        .route("/api/v1/universos/vim/sessoes", post(vim_create_session))
+        .route(
+            "/api/v1/universos/vim/sessoes/{id}/tecla",
+            post(vim_send_key),
+        )
+        .with_state(vim_state);
+
     let poker_router = Router::new()
         .route("/api/v1/poker/lobbies", get(poker_list_lobbies))
         .route("/api/v1/poker/lobbies/{id}", get(poker_get_lobby))
@@ -167,6 +179,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/universos/tetris", get(serve_tetris))
         .route("/universos/invaders", get(serve_invaders))
         .route("/universos/poker", get(serve_poker))
+        .route("/universos/vim", get(serve_vim))
         // 301 redirects para preservar bookmarks/links externos com a URL
         // antiga `/games/<slug>`. Remover quando todos os universos ativos
         // estiverem na nova URL por ≥ 1 release.
@@ -183,6 +196,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(snake_router)
         .merge(tetris_router)
         .merge(invaders_router)
+        .merge(vim_router)
         .merge(poker_router)
         .nest_service("/static", ServeDir::new("yggdrasil-web/static"));
 
@@ -215,6 +229,10 @@ async fn serve_invaders() -> impl IntoResponse {
 
 async fn serve_poker() -> impl IntoResponse {
     Html(include_str!("../static/universos/poker.html"))
+}
+
+async fn serve_vim() -> impl IntoResponse {
+    Html(include_str!("../static/universos/vim.html"))
 }
 
 // ── Legacy redirects (YG-N rename `/games/*` → `/universos/*`) ─────────────
