@@ -1,7 +1,8 @@
 //! Build script: generates minimal WASM stub files in `embedded/` for each
-//! universo if they are absent. Real artifacts are produced by `build-universes.sh`
-//! (YG-61) and overwrite these stubs. Without this, `include_bytes!()` would fail
-//! at compile time before `build-universes.sh` has been run.
+//! universo if they are absent. Real artifacts are produced by
+//! `scripts/build-universes.sh` (YG-61) and overwrite these stubs. Without
+//! this, `include_bytes!()` would fail at compile time before
+//! `scripts/build-universes.sh` has been run.
 
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -17,7 +18,7 @@ fn main() {
             std::fs::write(&path, stub).unwrap_or_else(|e| {
                 panic!(
                     "cannot write stub {name}.wasm: {e}\n\
-                    Tip: run `build-universes.sh` to build real WASM artifacts."
+                    Tip: run `scripts/build-universes.sh` to build real WASM artifacts."
                 )
             });
         }

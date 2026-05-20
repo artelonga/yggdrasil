@@ -2,6 +2,14 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.13.1] — 2026-05-20 — Build pipeline CI/CD (YG-61)
+
+### Added
+
+- `scripts/build-universes.sh` — compila os 6 universos WASM (snake, tetris, invaders, pointset, poker, vim), otimiza com `wasm-opt -O3`, valida budgets individuais (300KB/300KB/300KB/200KB/600KB/250KB) e budget total de 2MB.
+- `.github/workflows/ci.yml` — GitHub Actions: `dtolnay/rust-toolchain@stable` + `wasm32-unknown-unknown`, cache de `~/.cargo/registry`, `target/`, `universes/target/` e `~/.cargo/bin/wasm-opt` por hash do `Cargo.lock`, executa `build-universes.sh` → `cargo build --release` → `cargo test` → `cargo clippy -- -D warnings`.
+- `yggdrasil-web/build.rs` — referências atualizadas para `scripts/build-universes.sh`.
+
 ## [0.13.0] — 2026-05-20 — OpenAPI spec (YG-50)
 
 ### Added

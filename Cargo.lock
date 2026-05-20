@@ -3090,7 +3090,7 @@ dependencies = [
 
 [[package]]
 name = "universe-vim"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4091,7 +4091,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "yggdrasil-core"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4107,7 +4107,7 @@ dependencies = [
 
 [[package]]
 name = "yggdrasil-web"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "argon2",
