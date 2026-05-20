@@ -13,10 +13,12 @@
 //! | POST     | /api/v1/universos/{id}/sessoes/{sid}/tick     | tick one or more inputs      |
 //! | DELETE   | /api/v1/universos/{id}/sessoes/{sid}          | end session + persist score  |
 //! | GET (WS) | /api/v1/universos/{id}/sessoes/{sid}/ws       | real-time stream             |
+//! | GET      | /api/v1/admin/analytics                       | funnel + engagement metrics  |
 
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use axum::{
@@ -35,6 +37,7 @@ use utoipa::ToSchema;
 use yggdrasil_core::games::{YggGame, YggInvaders, YggSnake, YggTetris};
 
 use crate::scores_store::ScoresStore;
+use crate::telemetria::TelemetriaDb;
 
 // ─── Universo list ───────────────────────────────────────────────────────────
 
@@ -278,20 +281,83 @@ fn make_session(id: &str) -> Option<Box<dyn UniversoSession>> {
 struct SessionEntry {
     universo_id: String,
     session: Box<dyn UniversoSession>,
+    started_at: i64,
+    last_tick_at: tokio::time::Instant,
 }
 
 pub struct UniversosState {
     sessions: Mutex<HashMap<String, SessionEntry>>,
     pub scores: Arc<dyn ScoresStore>,
+    pub telemetria: Arc<TelemetriaDb>,
+    admin_token: Option<String>,
 }
 
 impl UniversosState {
-    pub fn new(scores: Arc<dyn ScoresStore>) -> Arc<Self> {
+    pub fn new(scores: Arc<dyn ScoresStore>, telemetria: Arc<TelemetriaDb>) -> Arc<Self> {
+        let admin_token = std::env::var("YGGDRASIL_ADMIN_TOKEN").ok();
         Arc::new(Self {
             sessions: Mutex::new(HashMap::new()),
             scores,
+            telemetria,
+            admin_token,
         })
     }
+
+    #[cfg(test)]
+    pub fn for_test(
+        scores: Arc<dyn ScoresStore>,
+        telemetria: Arc<TelemetriaDb>,
+        admin_token: Option<String>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            sessions: Mutex::new(HashMap::new()),
+            scores,
+            telemetria,
+            admin_token,
+        })
+    }
+}
+
+// ─── Cleanup job ─────────────────────────────────────────────────────────────
+
+/// Removes sessions inactive for > 30 minutes and records them as abandoned.
+/// Exposed for testing; in production use [`spawn_cleanup_job`].
+pub async fn run_cleanup_once(state: &Arc<UniversosState>) {
+    let cutoff = Duration::from_secs(30 * 60);
+    let now = tokio::time::Instant::now();
+
+    let abandoned: Vec<(String, String)> = {
+        let mut sessions = state.sessions.lock().unwrap();
+        let stale: Vec<String> = sessions
+            .iter()
+            .filter(|(_, e)| now.duration_since(e.last_tick_at) > cutoff)
+            .map(|(k, _)| k.clone())
+            .collect();
+        stale
+            .into_iter()
+            .filter_map(|sid| sessions.remove(&sid).map(|e| (sid, e.universo_id)))
+            .collect()
+    };
+
+    if !abandoned.is_empty() {
+        let ended_at = chrono::Utc::now().timestamp_millis();
+        for (sid, universe_id) in abandoned {
+            state
+                .telemetria
+                .session_abandon(&sid, &universe_id, ended_at);
+        }
+    }
+}
+
+/// Spawns a background task that calls [`run_cleanup_once`] every 5 minutes.
+pub fn spawn_cleanup_job(state: Arc<UniversosState>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            run_cleanup_once(&state).await;
+        }
+    });
 }
 
 // ─── Request / response types ────────────────────────────────────────────────
@@ -361,7 +427,7 @@ pub async fn list_universos(_state: State<Arc<UniversosState>>) -> impl IntoResp
     tag = "universos"
 )]
 pub async fn get_universo(
-    _state: State<Arc<UniversosState>>,
+    State(state): State<Arc<UniversosState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !is_known(&id) {
@@ -371,6 +437,7 @@ pub async fn get_universo(
         )
             .into_response();
     }
+    state.telemetria.universe_view(&id);
     let meta = serde_json::json!({
         "id": id,
         "api_version": 1,
@@ -423,14 +490,22 @@ pub async fn create_sessao(
 
     let initial_state = session.render_json();
     let session_id = nanoid!();
+    let started_at = chrono::Utc::now().timestamp_millis();
+    let now = tokio::time::Instant::now();
 
     state.sessions.lock().unwrap().insert(
         session_id.clone(),
         SessionEntry {
-            universo_id: id,
+            universo_id: id.clone(),
             session,
+            started_at,
+            last_tick_at: now,
         },
     );
+
+    state
+        .telemetria
+        .session_create(&session_id, &id, started_at);
 
     (
         StatusCode::OK,
@@ -461,7 +536,7 @@ pub async fn tick_sessao(
     Path((id, sid)): Path<(String, String)>,
     Json(body): Json<TickBody>,
 ) -> impl IntoResponse {
-    let (game_state, score, session_ended, universo_id_opt) = {
+    let (game_state, score, session_ended, completed_opt) = {
         let mut sessions = state.sessions.lock().unwrap();
 
         let entry = match sessions.get_mut(&sid) {
@@ -488,11 +563,13 @@ pub async fn tick_sessao(
                 entry.session.tick_key(&input.key);
             }
         }
+        entry.last_tick_at = tokio::time::Instant::now();
 
         let game_state = entry.session.render_json();
         let score = entry.session.score();
         let is_over = entry.session.is_over();
         let universo_id = entry.universo_id.clone();
+        let started_at = entry.started_at;
 
         if is_over {
             sessions.remove(&sid);
@@ -502,12 +579,20 @@ pub async fn tick_sessao(
             game_state,
             score,
             is_over,
-            if is_over { Some(universo_id) } else { None },
+            if is_over {
+                Some((universo_id, started_at))
+            } else {
+                None
+            },
         )
     };
 
-    if let Some(uid) = universo_id_opt {
+    if let Some((uid, started_at)) = completed_opt {
         state.scores.save_score("anonymous", &uid, score);
+        let ended_at = chrono::Utc::now().timestamp_millis();
+        state
+            .telemetria
+            .session_complete(&sid, &uid, ended_at, ended_at - started_at, score);
     }
 
     (
@@ -538,7 +623,7 @@ pub async fn delete_sessao(
     State(state): State<Arc<UniversosState>>,
     Path((id, sid)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let (final_score, universo_id) = {
+    let (final_score, universo_id, started_at) = {
         let mut sessions = state.sessions.lock().unwrap();
 
         let entry = match sessions.remove(&sid) {
@@ -553,7 +638,7 @@ pub async fn delete_sessao(
         };
 
         if entry.universo_id != id {
-            sessions.insert(sid, entry);
+            sessions.insert(sid.clone(), entry);
             return (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({ "erro": "Sessão não pertence a este universo" })),
@@ -561,12 +646,21 @@ pub async fn delete_sessao(
                 .into_response();
         }
 
-        (entry.session.score(), entry.universo_id)
+        (entry.session.score(), entry.universo_id, entry.started_at)
     };
 
     state
         .scores
         .save_score("anonymous", &universo_id, final_score);
+
+    let ended_at = chrono::Utc::now().timestamp_millis();
+    state.telemetria.session_complete(
+        &sid,
+        &universo_id,
+        ended_at,
+        ended_at - started_at,
+        final_score,
+    );
 
     (StatusCode::OK, Json(DeleteResponse { final_score })).into_response()
 }
@@ -623,7 +717,7 @@ async fn ws_loop(mut socket: WebSocket, state: Arc<UniversosState>, sid: String)
             Err(_) => continue,
         };
 
-        let (game_state, session_ended, score, universo_id_opt) = {
+        let (game_state, session_ended, score, completed_opt) = {
             let mut sessions = state.sessions.lock().unwrap();
 
             let entry = match sessions.get_mut(&sid) {
@@ -632,10 +726,13 @@ async fn ws_loop(mut socket: WebSocket, state: Arc<UniversosState>, sid: String)
             };
 
             entry.session.tick_key(&ws_msg.key);
+            entry.last_tick_at = tokio::time::Instant::now();
+
             let game_state = entry.session.render_json();
             let score = entry.session.score();
             let is_over = entry.session.is_over();
             let universo_id = entry.universo_id.clone();
+            let started_at = entry.started_at;
 
             if is_over {
                 sessions.remove(&sid);
@@ -645,12 +742,20 @@ async fn ws_loop(mut socket: WebSocket, state: Arc<UniversosState>, sid: String)
                 game_state,
                 is_over,
                 score,
-                if is_over { Some(universo_id) } else { None },
+                if is_over {
+                    Some((universo_id, started_at))
+                } else {
+                    None
+                },
             )
         };
 
-        if let Some(uid) = universo_id_opt {
+        if let Some((uid, started_at)) = completed_opt {
             state.scores.save_score("anonymous", &uid, score);
+            let ended_at = chrono::Utc::now().timestamp_millis();
+            state
+                .telemetria
+                .session_complete(&sid, &uid, ended_at, ended_at - started_at, score);
         }
 
         let Ok(json) = serde_json::to_string(&WsStateMessage { state: game_state }) else {
@@ -666,6 +771,53 @@ async fn ws_loop(mut socket: WebSocket, state: Arc<UniversosState>, sid: String)
             break;
         }
     }
+}
+
+// ─── Analytics endpoint ──────────────────────────────────────────────────────
+
+pub async fn get_analytics(
+    State(state): State<Arc<UniversosState>>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let admin_token = match &state.admin_token {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "erro": "Token de administração não configurado" })),
+            )
+                .into_response();
+        }
+    };
+
+    let provided = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .unwrap_or("");
+
+    if provided != admin_token {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "erro": "Token inválido" })),
+        )
+            .into_response();
+    }
+
+    let active_counts: HashMap<String, i64> = {
+        let sessions = state.sessions.lock().unwrap();
+        let mut counts: HashMap<String, i64> = HashMap::new();
+        for entry in sessions.values() {
+            *counts.entry(entry.universo_id.clone()).or_insert(0) += 1;
+        }
+        counts
+    };
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let since_ms = now_ms - 24 * 60 * 60 * 1000;
+
+    let report = state.telemetria.get_analytics(since_ms, &active_counts);
+    (StatusCode::OK, Json(report)).into_response()
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -684,10 +836,12 @@ mod tests {
 
     use super::*;
     use crate::scores_store::InMemoryScoresStore;
+    use crate::telemetria::TelemetriaDb;
 
     fn make_app() -> (Router, Arc<UniversosState>) {
         let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
-        let state = UniversosState::new(scores);
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria, None);
         let app = Router::new()
             .route("/api/v1/universos", get(list_universos))
             .route("/api/v1/universos/{id}", get(get_universo))
@@ -701,6 +855,7 @@ mod tests {
                 delete(delete_sessao),
             )
             .route("/api/v1/universos/{id}/sessoes/{sid}/ws", get(ws_sessao))
+            .route("/api/v1/admin/analytics", get(get_analytics))
             .with_state(state.clone());
         (app, state)
     }
@@ -780,6 +935,31 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
+    #[tokio::test]
+    async fn get_universo_emite_universe_view() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria.clone(), None);
+        let app = Router::new()
+            .route("/api/v1/universos/{id}", get(get_universo))
+            .with_state(state);
+
+        app.oneshot(
+            Request::builder()
+                .uri("/api/v1/universos/snake")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            telemetria.count_events("UNIVERSE_VIEW"),
+            1,
+            "UNIVERSE_VIEW deve ser emitido"
+        );
+    }
+
     // ── POST /api/v1/universos/{id}/sessoes ──────────────────────────────────
 
     #[tokio::test]
@@ -800,10 +980,32 @@ mod tests {
         let v = body_json(resp).await;
         assert!(v["session_id"].is_string(), "session_id ausente");
         assert!(v["state"].is_object(), "state ausente");
-        // snake state must have width, height, tiles
         assert!(v["state"]["width"].is_number());
         assert!(v["state"]["height"].is_number());
         assert!(v["state"]["tiles"].is_array());
+    }
+
+    #[tokio::test]
+    async fn create_sessao_registra_session_create_event() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria.clone(), None);
+        let app = Router::new()
+            .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
+            .with_state(state);
+
+        app.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/universos/snake/sessoes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(telemetria.count_events("SESSION_CREATE"), 1);
+        assert_eq!(telemetria.count_session_records(), 1);
     }
 
     #[tokio::test]
@@ -878,28 +1080,12 @@ mod tests {
 
     // ── POST /api/v1/universos/{id}/sessoes/{sid}/tick ───────────────────────
 
-    async fn create_snake_session(app: Router) -> (Router, String) {
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/v1/universos/snake/sessoes")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let v = body_json(resp).await;
-        let sid = v["session_id"].as_str().unwrap().to_string();
-        (app, sid)
-    }
-
     #[tokio::test]
     async fn tick_snake_com_arrow_right_retorna_state_valido() {
         let (app, state) = make_app();
         let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
-        let state2 = UniversosState::new(scores);
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state2 = UniversosState::for_test(scores, telemetria, None);
         let app2 = Router::new()
             .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
             .route(
@@ -949,7 +1135,8 @@ mod tests {
     #[tokio::test]
     async fn tick_snake_com_vim_key_l_retorna_state_valido() {
         let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
-        let state = UniversosState::new(scores);
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria, None);
         let app = Router::new()
             .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
             .route(
@@ -1011,7 +1198,8 @@ mod tests {
     #[tokio::test]
     async fn tick_snake_quit_termina_sessao_e_session_ended_true() {
         let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
-        let state = UniversosState::new(scores);
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria.clone(), None);
         let app = Router::new()
             .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
             .route(
@@ -1059,6 +1247,13 @@ mod tests {
             .filter(|r| r.game == "snake")
             .count();
         assert_eq!(count, 1, "score não foi persistido");
+
+        // SESSION_COMPLETE deve ter sido emitido
+        assert_eq!(
+            telemetria.count_events("SESSION_COMPLETE"),
+            1,
+            "SESSION_COMPLETE deve ser emitido ao encerrar via tick"
+        );
     }
 
     // ── DELETE /api/v1/universos/{id}/sessoes/{sid} ──────────────────────────
@@ -1066,7 +1261,8 @@ mod tests {
     #[tokio::test]
     async fn delete_sessao_persiste_score_e_remove_sessao() {
         let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
-        let state = UniversosState::new(scores);
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria.clone(), None);
         let app = Router::new()
             .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
             .route(
@@ -1104,7 +1300,6 @@ mod tests {
         let v = body_json(resp).await;
         assert!(v["final_score"].is_number());
 
-        // Score persistido
         let count = state
             .scores
             .recent_scores(10)
@@ -1112,6 +1307,54 @@ mod tests {
             .filter(|r| r.game == "snake")
             .count();
         assert_eq!(count, 1, "score não foi persistido via DELETE");
+
+        assert_eq!(
+            telemetria.count_events("SESSION_COMPLETE"),
+            1,
+            "SESSION_COMPLETE deve ser emitido ao deletar sessão"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_sessao_registra_duration_ms_correto() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria.clone(), None);
+        let app = Router::new()
+            .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
+            .route(
+                "/api/v1/universos/{id}/sessoes/{sid}",
+                delete(delete_sessao),
+            )
+            .with_state(state.clone());
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/universos/snake/sessoes")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v = body_json(resp).await;
+        let sid = v["session_id"].as_str().unwrap().to_string();
+
+        app.oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/universos/snake/sessoes/{sid}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let duration = telemetria.session_duration(&sid);
+        assert!(duration.is_some(), "duration_ms deve ser registrado");
+        assert!(duration.unwrap() >= 0, "duration_ms deve ser não-negativo");
     }
 
     #[tokio::test]
@@ -1131,17 +1374,12 @@ mod tests {
     }
 
     // ── WS /api/v1/universos/{id}/sessoes/{sid}/ws ───────────────────────────
-    //
-    // axum 0.8 `WebSocketUpgrade` returns 426 when the underlying connection is
-    // not upgradable (e.g., tower::ServiceExt::oneshot doesn't provide a real
-    // TCP socket). Protocol-level WS tests therefore run as integration tests
-    // against a live 127.0.0.1 listener. Here we validate session-state logic
-    // that the WS handler delegates to.
 
     #[tokio::test]
     async fn ws_sessao_existente_pode_ser_localizada_no_estado() {
         let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
-        let state = UniversosState::new(scores);
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria, None);
         let app = Router::new()
             .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
             .with_state(state.clone());
@@ -1159,7 +1397,6 @@ mod tests {
         let v = body_json(resp).await;
         let sid = v["session_id"].as_str().unwrap().to_string();
 
-        // ws_sessao checks this condition before upgrading
         let exists = {
             let sessions = state.sessions.lock().unwrap();
             sessions
@@ -1169,7 +1406,6 @@ mod tests {
         };
         assert!(exists, "ws_sessao deveria encontrar a sessão");
 
-        // Sessão inexistente → ws_sessao retornaria 404
         let not_exists = {
             let sessions = state.sessions.lock().unwrap();
             sessions
@@ -1182,10 +1418,9 @@ mod tests {
 
     #[tokio::test]
     async fn ws_loop_envia_state_e_fecha_ao_encerrar_sessao() {
-        // Test ws_loop logic indirectly via session tick:
-        // Creating a session and sending quit via tick closes the session.
         let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
-        let state = UniversosState::new(scores);
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria, None);
         let app = Router::new()
             .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
             .route(
@@ -1208,7 +1443,6 @@ mod tests {
         let v = body_json(resp).await;
         let sid = v["session_id"].as_str().unwrap().to_string();
 
-        // Simulate what ws_loop does: receive key "q" → tick → session ends
         let body = serde_json::json!({ "inputs": [{ "key": "q" }] }).to_string();
         let resp = app
             .oneshot(
@@ -1223,21 +1457,243 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let v = body_json(resp).await;
-        // session_ended == true mirrors the Close frame ws_loop sends
         assert_eq!(
             v["session_ended"], true,
             "ws_loop fecha quando session_ended=true"
         );
 
-        // Session should be gone from state (ws_loop removes it)
         let still_there = state.sessions.lock().unwrap().contains_key(&sid);
         assert!(!still_there, "sessão deve ter sido removida após terminar");
     }
 
+    // ── Cleanup job ──────────────────────────────────────────────────────────
+
+    #[tokio::test(start_paused = true)]
+    async fn cleanup_abandona_sessoes_inativas_apos_30min() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria.clone(), None);
+
+        let session_id = "cleanup-test-session";
+        let now_ms = chrono::Utc::now().timestamp_millis();
+
+        {
+            let mut sessions = state.sessions.lock().unwrap();
+            sessions.insert(
+                session_id.to_string(),
+                SessionEntry {
+                    universo_id: "snake".to_string(),
+                    session: Box::new(StubSession::new()),
+                    started_at: now_ms,
+                    last_tick_at: tokio::time::Instant::now(),
+                },
+            );
+        }
+        state.telemetria.session_create(session_id, "snake", now_ms);
+
+        // Advance virtual time past the 30-minute threshold
+        tokio::time::advance(Duration::from_secs(31 * 60)).await;
+
+        run_cleanup_once(&state).await;
+
+        assert!(
+            !state.sessions.lock().unwrap().contains_key(session_id),
+            "sessão deve ser removida da memória"
+        );
+        assert!(
+            telemetria.session_abandoned(session_id),
+            "session_records.abandoned deve ser 1"
+        );
+        assert_eq!(
+            telemetria.count_events("SESSION_ABANDON"),
+            1,
+            "SESSION_ABANDON deve ser emitido"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cleanup_nao_abandona_sessoes_recentes() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria.clone(), None);
+
+        let session_id = "recent-session";
+        let now_ms = chrono::Utc::now().timestamp_millis();
+
+        {
+            let mut sessions = state.sessions.lock().unwrap();
+            sessions.insert(
+                session_id.to_string(),
+                SessionEntry {
+                    universo_id: "tetris".to_string(),
+                    session: Box::new(StubSession::new()),
+                    started_at: now_ms,
+                    last_tick_at: tokio::time::Instant::now(),
+                },
+            );
+        }
+
+        // Only 10 minutes elapsed — should NOT be abandoned
+        tokio::time::advance(Duration::from_secs(10 * 60)).await;
+        run_cleanup_once(&state).await;
+
+        assert!(
+            state.sessions.lock().unwrap().contains_key(session_id),
+            "sessão recente não deve ser removida"
+        );
+        assert_eq!(telemetria.count_events("SESSION_ABANDON"), 0);
+    }
+
+    // ── GET /api/v1/admin/analytics ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn analytics_sem_token_retorna_401() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria, Some("secret".to_string()));
+        let app = Router::new()
+            .route("/api/v1/admin/analytics", get(get_analytics))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/admin/analytics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn analytics_token_errado_retorna_401() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria, Some("secret".to_string()));
+        let app = Router::new()
+            .route("/api/v1/admin/analytics", get(get_analytics))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/admin/analytics")
+                    .header("authorization", "Bearer wrong-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn analytics_sem_admin_token_configurado_retorna_401() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        // admin_token = None → always 401
+        let state = UniversosState::for_test(scores, telemetria, None);
+        let app = Router::new()
+            .route("/api/v1/admin/analytics", get(get_analytics))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/admin/analytics")
+                    .header("authorization", "Bearer anything")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn analytics_com_token_correto_retorna_json() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria, Some("test-token".to_string()));
+        let app = Router::new()
+            .route("/api/v1/admin/analytics", get(get_analytics))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/admin/analytics")
+                    .header("authorization", "Bearer test-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["period"], "24h");
+        assert!(v["generated_at"].is_string());
+        assert!(v["universos"].is_array());
+        assert!(v["funnel_24h"].is_object());
+        assert!(v["funnel_24h"]["universe_views"].is_number());
+        assert!(v["funnel_24h"]["session_creates"].is_number());
+        assert!(v["funnel_24h"]["session_completions"].is_number());
+        assert!(v["funnel_24h"]["conversion_view_to_create_pct"].is_number());
+        assert!(v["funnel_24h"]["conversion_create_to_complete_pct"].is_number());
+    }
+
+    #[tokio::test]
+    async fn analytics_active_now_reflete_sessoes_em_memoria() {
+        let scores: Arc<dyn ScoresStore> = Arc::new(InMemoryScoresStore::new());
+        let telemetria = Arc::new(TelemetriaDb::in_memory().unwrap());
+        let state = UniversosState::for_test(scores, telemetria, Some("tok".to_string()));
+        let app = Router::new()
+            .route("/api/v1/universos/{id}/sessoes", post(create_sessao))
+            .route("/api/v1/admin/analytics", get(get_analytics))
+            .with_state(state.clone());
+
+        // Create two snake sessions
+        for _ in 0..2 {
+            app.clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/v1/universos/snake/sessoes")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+        }
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/admin/analytics")
+                    .header("authorization", "Bearer tok")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let v = body_json(resp).await;
+        let snake = v["universos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|u| u["id"] == "snake")
+            .unwrap();
+        assert_eq!(
+            snake["active_now"], 2,
+            "active_now deve refletir sessões em memória"
+        );
+    }
+
     // ── Legacy alias snapshot tests ──────────────────────────────────────────
-    // Rotas legadas não são alteradas. Os testes em snake_routes.rs, tetris_routes.rs
-    // e invaders_routes.rs garantem o contrato.
-    // Este teste verifica o formato exato do JSON legado do snake.
 
     #[tokio::test]
     async fn legacy_snake_start_retorna_formato_esperado() {
@@ -1262,7 +1718,6 @@ mod tests {
 
         assert_eq!(resp.status(), StatusCode::OK);
         let v = body_json(resp).await;
-        // Schema snapshot — campos obrigatórios não podem ser removidos.
         assert!(v["id"].is_string(), "campo 'id' ausente ou não-string");
         assert!(
             v["state"]["width"].is_number(),

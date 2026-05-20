@@ -9,6 +9,7 @@ mod lobby;
 mod mail;
 pub mod openapi;
 mod scores_store;
+pub mod telemetria;
 pub mod universos_routes;
 pub mod wasm_runtime;
 
@@ -175,10 +176,19 @@ async fn main() -> anyhow::Result<()> {
         .with_state(poker_state);
 
     // YG-60: unified /api/v1/universos session routes + WebSocket
-    let universos_state = universos_routes::UniversosState::new(Arc::new(
-        SqliteScoresStore::open(&db_path)
-            .map_err(|e| anyhow::anyhow!("universos scores db: {e}"))?,
-    ));
+    // YG-62: telemetria — funnel_events + session_records + analytics
+    let telemetria = Arc::new(
+        telemetria::TelemetriaDb::open(&db_path)
+            .map_err(|e| anyhow::anyhow!("telemetria db: {e}"))?,
+    );
+    let universos_state = universos_routes::UniversosState::new(
+        Arc::new(
+            SqliteScoresStore::open(&db_path)
+                .map_err(|e| anyhow::anyhow!("universos scores db: {e}"))?,
+        ),
+        telemetria,
+    );
+    universos_routes::spawn_cleanup_job(universos_state.clone());
     let universos_router = Router::new()
         .route("/api/v1/universos", get(universos_routes::list_universos))
         .route(
@@ -200,6 +210,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/universos/{id}/sessoes/{sid}/ws",
             get(universos_routes::ws_sessao),
+        )
+        .route(
+            "/api/v1/admin/analytics",
+            get(universos_routes::get_analytics),
         )
         .with_state(universos_state);
 
