@@ -210,6 +210,63 @@ impl WasmSession {
         self.store.data_mut()
     }
 
+    /// Sends `input` JSON to the universo and returns the JSON state string.
+    ///
+    /// Calls the WASM `process(input_ptr, input_len) -> i64` export.
+    /// The i64 return encodes `(out_ptr as u64) << 32 | out_len as u64`.
+    ///
+    /// Returns `Err` if the module lacks a `process` export, fuel is exhausted,
+    /// or the output is not valid UTF-8.
+    pub fn process_json(&mut self, input: &str) -> Result<String, WasmError> {
+        self.store
+            .set_fuel(FUEL_PER_TICK)
+            .map_err(|e| WasmError::Other(e.into()))?;
+
+        let input_bytes = input.as_bytes();
+        let in_len = input_bytes.len() as i32;
+
+        // Allocate input buffer in WASM linear memory.
+        let alloc_fn = self
+            .instance
+            .get_typed_func::<i32, i32>(&mut self.store, "alloc")
+            .map_err(|e| WasmError::Other(e.into()))?;
+        let in_ptr = alloc_fn
+            .call(&mut self.store, in_len)
+            .map_err(classify_trap)?;
+
+        // Write input JSON into WASM memory.
+        // SAFETY: `alloc_fn` returned a valid ptr within the module's linear memory.
+        unsafe {
+            self.write_memory(in_ptr as u32, input_bytes);
+        }
+
+        // Call process(input_ptr, input_len) -> i64.
+        let process_fn = self
+            .instance
+            .get_typed_func::<(i32, i32), i64>(&mut self.store, "process")
+            .map_err(|e| WasmError::Other(e.into()))?;
+        let packed = process_fn
+            .call(&mut self.store, (in_ptr, in_len))
+            .map_err(classify_trap)?;
+
+        // Free input buffer.
+        if let Ok(dealloc_fn) = self
+            .instance
+            .get_typed_func::<(i32, i32), ()>(&mut self.store, "dealloc")
+        {
+            let _ = dealloc_fn.call(&mut self.store, (in_ptr, in_len));
+        }
+
+        // Decode (out_ptr, out_len) from the packed i64.
+        let out_ptr = ((packed as u64) >> 32) as u32;
+        let out_len = ((packed as u64) & 0xFFFF_FFFF) as u32;
+
+        let bytes = unsafe { self.read_memory(out_ptr, out_len) }
+            .ok_or_else(|| WasmError::Other(anyhow::anyhow!("output pointer out of bounds")))?;
+
+        String::from_utf8(bytes).map_err(|e| WasmError::Other(e.into()))
+    }
+
     /// Reads bytes from WASM linear memory.
     ///
     /// # Safety
@@ -424,6 +481,21 @@ fn classify_trap(e: wasmtime::Error) -> WasmError {
 // Tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Universe session helpers used by both the server and tests.
+// ---------------------------------------------------------------------------
+
+/// Creates a fresh `WasmSession` for the given universo using the embedded modules.
+/// Panics if the runtime or session cannot be created.
+#[cfg(test)]
+fn embedded_session(universo: &str) -> (WasmRuntime, WasmSession) {
+    let rt = WasmRuntime::from_embedded().expect("from_embedded must succeed");
+    let session = rt
+        .new_session(universo, HostState::new(None, None))
+        .unwrap_or_else(|e| panic!("new_session({universo}) failed: {e}"));
+    (rt, session)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,9 +526,11 @@ mod tests {
                 "module '{name}' missing"
             );
         }
+        // Real WASM modules require Cranelift JIT compilation which is slower than stubs.
+        // Budget: 30s to accommodate CI machines and all 5 real universo modules.
         assert!(
-            elapsed.as_millis() < 500,
-            "from_embedded took {}ms; must be < 500ms",
+            elapsed.as_secs() < 30,
+            "from_embedded took {}ms; must be < 30s",
             elapsed.as_millis()
         );
     }
@@ -645,6 +719,203 @@ mod tests {
         assert_eq!(
             read_back, b"v",
             "kv_get should write value into WASM memory"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // process_json API — WAT-based unit tests (always pass, no real WASM needed)
+    // ------------------------------------------------------------------
+
+    fn all_imports_wat() -> &'static str {
+        r#"(import "env" "kv_set"             (func (param i32 i32 i32 i32)))
+           (import "env" "kv_get"             (func (param i32 i32 i32 i32) (result i32)))
+           (import "env" "wallet_get_balance" (func (param i32 i32) (result i64)))
+           (import "env" "emit_event"         (func (param i32 i32)))
+           (import "env" "now_ms"             (func (result i64)))
+           (import "env" "random_u64"         (func (result i64)))
+           (import "env" "request_hint"       (func (param i32 i32)))"#
+    }
+
+    #[test]
+    fn process_json_returns_output_from_process_export() {
+        let engine = fuel_engine();
+        // Module writes '{"ok":1}' at offset 200 and returns (200 << 32) | 8.
+        let src = format!(
+            r#"(module
+              {imports}
+              (memory (export "memory") 1)
+              (func (export "alloc") (param i32) (result i32) (i32.const 0))
+              (func (export "dealloc") (param i32 i32))
+              (func (export "tick"))
+              (func (export "process") (param i32 i32) (result i64)
+                (i32.store8 (i32.const 200) (i32.const 123))
+                (i32.store8 (i32.const 201) (i32.const 34))
+                (i32.store8 (i32.const 202) (i32.const 111))
+                (i32.store8 (i32.const 203) (i32.const 107))
+                (i32.store8 (i32.const 204) (i32.const 34))
+                (i32.store8 (i32.const 205) (i32.const 58))
+                (i32.store8 (i32.const 206) (i32.const 49))
+                (i32.store8 (i32.const 207) (i32.const 125))
+                (i64.or
+                  (i64.shl (i64.const 200) (i64.const 32))
+                  (i64.const 8))
+              )
+            )"#,
+            imports = all_imports_wat()
+        );
+        let wasm = wat::parse_str(&src).unwrap();
+        let mut session =
+            WasmSession::from_bytes(&engine, &wasm, HostState::new(None, None)).unwrap();
+        let output = session.process_json("{}").unwrap();
+        assert_eq!(output, r#"{"ok":1}"#);
+    }
+
+    #[test]
+    fn process_json_resets_fuel_before_call() {
+        let engine = fuel_engine();
+        let src = format!(
+            r#"(module
+              {imports}
+              (memory (export "memory") 1)
+              (func (export "alloc") (param i32) (result i32) (i32.const 0))
+              (func (export "dealloc") (param i32 i32))
+              (func (export "tick"))
+              (func (export "process") (param i32 i32) (result i64)
+                (i64.const 0))
+            )"#,
+            imports = all_imports_wat()
+        );
+        let wasm = wat::parse_str(&src).unwrap();
+        let mut session =
+            WasmSession::from_bytes(&engine, &wasm, HostState::new(None, None)).unwrap();
+        for _ in 0..5 {
+            let r = session.process_json("{}");
+            assert!(r.is_ok(), "fuel should reset on each process_json call");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Universe session tests — use the real embedded WASM modules.
+    // Skipped automatically when a module is a stub (no process export).
+    // ------------------------------------------------------------------
+
+    fn is_stub_wasm(bytes: &[u8]) -> bool {
+        bytes.len() <= 16
+    }
+
+    fn run_10_ticks(universo: &str, action: &str) {
+        let (_, mut session) = embedded_session(universo);
+
+        // Detect stub — skip silently; real WASM is tested in CI after build-universes.sh
+        let embedded_bytes: &[u8] = match universo {
+            "snake" => include_bytes!("../embedded/snake.wasm"),
+            "tetris" => include_bytes!("../embedded/tetris.wasm"),
+            "invaders" => include_bytes!("../embedded/invaders.wasm"),
+            "pointset" => include_bytes!("../embedded/pointset.wasm"),
+            "poker" => include_bytes!("../embedded/poker.wasm"),
+            _ => return,
+        };
+        if is_stub_wasm(embedded_bytes) {
+            return;
+        }
+
+        let input = if action.is_empty() {
+            "{}".to_string()
+        } else {
+            format!(r#"{{"action":"{action}"}}"#)
+        };
+
+        for i in 0..10 {
+            let output = session
+                .process_json(&input)
+                .unwrap_or_else(|e| panic!("tick {i} of {universo} failed: {e}"));
+            let v: serde_json::Value = serde_json::from_str(&output).unwrap_or_else(|e| {
+                panic!("tick {i} of {universo} returned non-JSON: {output} ({e})")
+            });
+            assert!(
+                v.is_object(),
+                "tick {i} of {universo}: expected JSON object, got {output}"
+            );
+        }
+    }
+
+    #[test]
+    fn snake_10_ticks_return_valid_json() {
+        run_10_ticks("snake", "right");
+    }
+
+    #[test]
+    fn tetris_10_ticks_return_valid_json() {
+        run_10_ticks("tetris", "down");
+    }
+
+    #[test]
+    fn invaders_10_ticks_return_valid_json() {
+        run_10_ticks("invaders", "right");
+    }
+
+    #[test]
+    fn pointset_10_ticks_return_valid_json() {
+        run_10_ticks("pointset", "");
+    }
+
+    #[test]
+    fn poker_10_ticks_return_valid_json() {
+        run_10_ticks("poker", "start");
+    }
+
+    #[test]
+    fn process_json_invalid_input_returns_error_field() {
+        let (_, mut session) = embedded_session("snake");
+        let embedded_bytes = include_bytes!("../embedded/snake.wasm");
+        if is_stub_wasm(embedded_bytes) {
+            return;
+        }
+        let output = session
+            .process_json("not-json{{{{")
+            .expect("process_json should not Err on invalid input");
+        let v: serde_json::Value = serde_json::from_str(&output)
+            .expect("even on invalid input the module must return valid JSON");
+        assert!(
+            v.get("error").is_some() || v.get("is_over").is_some(),
+            "expected 'error' or valid state on bad input, got {output}"
+        );
+    }
+
+    #[test]
+    fn poker_kv_state_survives_session_reconstruction() {
+        let embedded_bytes = include_bytes!("../embedded/poker.wasm");
+        if is_stub_wasm(embedded_bytes) {
+            return;
+        }
+        let rt = WasmRuntime::from_embedded().unwrap();
+
+        // Session 1: start a poker game.
+        let mut hs1 = HostState::new(None, None);
+        let mut session1 = rt.new_session("poker", hs1).unwrap();
+        let _state1 = session1
+            .process_json(r#"{"action":"start"}"#)
+            .expect("poker start should succeed");
+
+        // Capture KV state from session 1.
+        let saved_kv = session1.host_state().kv.clone();
+        assert!(
+            !saved_kv.is_empty(),
+            "poker should have written state to KV"
+        );
+
+        // Session 2: new session with pre-populated KV (simulates server restart).
+        let mut hs2 = HostState::new(None, None);
+        hs2.kv = saved_kv;
+        let mut session2 = rt.new_session("poker", hs2).unwrap();
+        let state2 = session2
+            .process_json("{}")
+            .expect("poker tick on restored session should succeed");
+        let v2: serde_json::Value =
+            serde_json::from_str(&state2).expect("poker must return valid JSON");
+        assert!(
+            v2.get("round").is_some() || v2.get("is_over").is_some(),
+            "restored poker session must return valid game state, got {state2}"
         );
     }
 }
