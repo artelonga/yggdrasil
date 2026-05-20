@@ -50,7 +50,10 @@ COPY yggdrasil/yggdrasil-web/build.rs yggdrasil-web/build.rs
 COPY yggdrasil/universes/universe-vim/src universes/universe-vim/src
 
 RUN rm -rf target/release/.fingerprint/yggdrasil* \
+           target/release/.fingerprint/universe-vim* \
            target/release/deps/yggdrasil_* \
+           target/release/deps/universe_vim* \
+           target/release/deps/libuniverse_vim* \
            target/release/yggdrasil-web 2>/dev/null; \
     cargo build --release -p yggdrasil-web
 
