@@ -2,6 +2,15 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.9.3] — 2026-05-20 — Arquiva repositório universos (YG-53)
+
+### Chore
+
+- `artelonga/universe` renomeado para `artelonga/universos-archive` e arquivado no GitHub.
+- Descrição do repo atualizada: `Archived — see artelonga/yggdrasil and artelonga/co/game-core`.
+- `ARCHIVED.md` adicionado ao root do repo arquivado com pointers para `artelonga/yggdrasil` e `artelonga/co`.
+- Único canônico do game stack: `yggdrasil` + `co/game-core`; sem forks paralelos.
+
 ## [0.8.1] — 2026-05-19 — Reconcilia drift game-core (YG-52)
 
 ### Fixed
