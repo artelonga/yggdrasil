@@ -7,9 +7,9 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 ### Chore
 
 - `artelonga/universe` renomeado para `artelonga/universos-archive` e arquivado no GitHub.
-- Descrição do repo atualizada: `Archived — see artelonga/yggdrasil and artelonga/co/game-core`.
-- `ARCHIVED.md` adicionado ao root do repo arquivado com pointers para `artelonga/yggdrasil` e `artelonga/co`.
-- Único canônico do game stack: `yggdrasil` + `co/game-core`; sem forks paralelos.
+- Descrição do repo atualizada: `Archived — see artelonga/yggdrasil`.
+- `ARCHIVED.md` adicionado ao root do repo arquivado apontando para `artelonga/yggdrasil` como único canônico.
+- Todo o stack (engine, jogos, lobby, auth, sementes, universos) vive em `yggdrasil`.
 
 ## [0.8.1] — 2026-05-19 — Reconcilia drift game-core (YG-52)
 
