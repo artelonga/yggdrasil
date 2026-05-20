@@ -11,7 +11,7 @@
 # Trixie matches the co-web image: glibc 2.40 avoids __isoc23_* link errors
 # from native deps.
 
-FROM rust:1.90-slim-trixie AS builder
+FROM rust:1.94-slim-trixie AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler pkg-config libssl-dev g++ \
