@@ -2,6 +2,22 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.10.0] — 2026-05-20 — WASM Runtime Host (YG-55)
+
+### Added
+
+- `yggdrasil-web/src/wasm_runtime.rs` — novo módulo `WasmRuntime` + `WasmSession`:
+  - `WasmRuntime::from_embedded()` — pré-compila 6 módulos WASM ao boot (snake, tetris, invaders, pointset, poker, vim) via `include_bytes!("../embedded/<name>.wasm")`. Tempo < 500ms em hardware commodity.
+  - `WasmSession` — envolve `Store<HostState>` + `Instance` com memória linear isolada por sessão. Drop libera toda a memória WASM (RAII).
+  - `WasmSession::tick()` — reseta combustível para `FUEL_PER_TICK = 10_000_000` e executa a export `tick`; retorna `Err(WasmError::FuelExhausted)` ao esgotar o orçamento. Loop infinito não trava o servidor.
+  - `HostState` — `user_id`, KV namespace por sessão (`HashMap<String, Vec<u8>>`), canal de hint para Claude, PRNG xorshift64.
+  - Linker ABI (namespace `"env"`): `wallet_get_balance`, `kv_get`, `kv_set`, `emit_event`, `now_ms`, `random_u64`, `request_hint`.
+  - `pub unsafe fn read_memory` / `write_memory` — acesso direto à memória linear com bounds check.
+- `yggdrasil-web/build.rs` — gera stubs mínimos (8 bytes WASM válido) em `embedded/` se ausentes; `build-universes.sh` (YG-61) sobrescreve com binários reais.
+- `yggdrasil-web/embedded/*.wasm` adicionado ao `.gitignore`; stubs gerados pelo `build.rs` em tempo de compilação.
+- 6 novos testes de integração: `from_embedded_loads_all_six_modules`, `tick_with_tight_loop_returns_fuel_exhausted`, `server_continues_after_fuel_exhausted`, `sessions_have_isolated_linear_memory`, `dropping_session_releases_store`, `kv_set_and_get_roundtrip`. Total: 83 testes.
+- Dependência `wasmtime = { version = "44.0.1", features = ["cranelift"] }` adicionada a `yggdrasil-web`.
+
 ## [0.9.3] — 2026-05-20 — Arquiva repositório universos (YG-53)
 
 ### Chore
