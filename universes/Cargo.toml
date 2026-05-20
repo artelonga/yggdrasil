@@ -8,6 +8,7 @@ members = [
     "universe-invaders",
     "universe-pointset",
     "universe-poker",
+    "universe-vim",
 ]
 
 [profile.release]
