@@ -44,6 +44,17 @@ fn parse_input(s: &str) -> Input {
 
 /// `GET /api/v1/games/invaders/start[?variant=<slug>]` — cria sessão e retorna estado inicial.
 /// Variantes suportadas: `invaders/swarm` reduz vidas para 1 (YG-37).
+#[utoipa::path(
+    get,
+    path = "/api/v1/games/invaders/start",
+    params(
+        ("variant" = Option<String>, Query, description = "Variante do jogo (ex: invaders/swarm)")
+    ),
+    responses(
+        (status = 200, description = "Sessão criada", body = crate::openapi::InvadersStartResponse)
+    ),
+    tag = "invaders"
+)]
 pub async fn start_game(
     State(state): State<Arc<InvadersState>>,
     Query(q): Query<VariantQuery>,
@@ -69,6 +80,19 @@ fn invaders_opts_for_variant(variant: Option<&str>) -> InvadersOptions {
 }
 
 /// `POST /api/v1/games/invaders/:id/input` — avança um tick com o input recebido.
+#[utoipa::path(
+    post,
+    path = "/api/v1/games/invaders/{id}/input",
+    params(
+        ("id" = String, Path, description = "ID da sessão de jogo")
+    ),
+    request_body = crate::games::common::InputRequest,
+    responses(
+        (status = 200, description = "Tick processado", body = crate::openapi::InvadersTickResponse),
+        (status = 404, description = "Sessão não encontrada")
+    ),
+    tag = "invaders"
+)]
 pub async fn send_input(
     Path(id): Path<String>,
     State(state): State<Arc<InvadersState>>,

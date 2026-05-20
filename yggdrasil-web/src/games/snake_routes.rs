@@ -45,6 +45,17 @@ fn parse_direction(s: &str) -> Input {
 
 /// `GET /api/v1/games/snake/start[?variant=<slug>]` — cria sessão e retorna estado inicial.
 /// Variantes suportadas: `snake/walls` adiciona paredes internas (YG-37).
+#[utoipa::path(
+    get,
+    path = "/api/v1/games/snake/start",
+    params(
+        ("variant" = Option<String>, Query, description = "Variante do jogo (ex: snake/walls)")
+    ),
+    responses(
+        (status = 200, description = "Sessão criada", body = crate::openapi::SnakeStartResponse)
+    ),
+    tag = "snake"
+)]
 pub async fn start_game(
     State(state): State<Arc<SnakeState>>,
     Query(q): Query<VariantQuery>,
@@ -81,6 +92,19 @@ fn snake_opts_for_variant(variant: Option<&str>, width: usize, height: usize) ->
 }
 
 /// `POST /api/v1/games/snake/:id/input` — avança um tick com o input recebido.
+#[utoipa::path(
+    post,
+    path = "/api/v1/games/snake/{id}/input",
+    params(
+        ("id" = String, Path, description = "ID da sessão de jogo")
+    ),
+    request_body = crate::games::common::InputRequest,
+    responses(
+        (status = 200, description = "Tick processado", body = crate::openapi::SnakeTickResponse),
+        (status = 404, description = "Sessão não encontrada")
+    ),
+    tag = "snake"
+)]
 pub async fn send_input(
     Path(id): Path<String>,
     State(state): State<Arc<SnakeState>>,

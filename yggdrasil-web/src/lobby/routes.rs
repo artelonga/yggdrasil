@@ -1,8 +1,17 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use game_core::engine::Tile;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use yggdrasil_core::lobby::lobby;
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/lobby",
+    responses(
+        (status = 200, description = "Universo lobby 40×20 com portais para os jogos")
+    ),
+    tag = "lobby"
+)]
 pub async fn get_lobby() -> impl IntoResponse {
     Json(lobby())
 }
@@ -13,11 +22,20 @@ pub struct EnterRequest {
     y: usize,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct EnterResponse {
-    slug: String,
+    pub slug: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/lobby/enter",
+    responses(
+        (status = 200, description = "Portal encontrado, retorna slug do jogo", body = EnterResponse),
+        (status = 404, description = "Tile não é um portal")
+    ),
+    tag = "lobby"
+)]
 pub async fn post_enter(Json(req): Json<EnterRequest>) -> impl IntoResponse {
     let u = lobby();
     match u.map.get_tile(req.x, req.y) {

@@ -17,6 +17,9 @@ publish = false
 # Engine importado do co (path dep no dev; será git rev em release — ver YG-17)
 game-core = { path = "../co/game-core" }
 
+# OpenAPI
+utoipa = { version = "5", features = ["macros", "chrono"] }
+
 # Web
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }

@@ -20,6 +20,7 @@ pub const BOT_DISPLAY_NAME: &str = "Bot Carvalho";
 /// Outros valores são aceitos para futuras configurações.
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeatOccupant {
     Empty,
@@ -31,6 +32,7 @@ pub enum SeatOccupant {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PokerLobby {
     pub id: String,
     pub name: String,
