@@ -11,14 +11,11 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
-## [0.9.3] — 2026-05-19
+## [0.9.3] — 2026-05-20
 
-### Refactored (YG-45)
-- `auth.rs` (630 LOC) dividido em `auth/{state,jwt,magic_link,tests}.rs`; nenhum arquivo excede 270 LOC.
-- `auth/state.rs`: `AuthState`, `init_auth_db`.
-- `auth/jwt.rs`: `Claims`, `UserId`, `sign_jwt`, `verify_jwt`, `require_auth`.
-- `auth/magic_link.rs`: `CodeRequest`, `VerifyRequest`, `generate_code`, `request_code`, `verify_code`.
-- Testes movidos para `auth/tests.rs`; `api/me.rs` (253 LOC) já dentro do limite.
+### Docs (YG-46)
+
+- Criado `docs/architecture/data-model.md` descrevendo o layout real de dois bancos (`yggdrasil.db` SQLite + `yggdrasil-sementes.db` redb), todas as tabelas com seus schemas DDL, e aposentando o mito de "um banco por jogo".
 
 ## [0.9.2] — 2026-05-19
 
