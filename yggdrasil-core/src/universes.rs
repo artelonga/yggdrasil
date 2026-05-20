@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 
 /// Tipo do nó. Determina como o engine subjacente é invocado.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum UniverseKind {
     /// Universo fundacional — define o engine. Ex: `tetris`, `snake`.
@@ -35,6 +36,7 @@ pub enum UniverseKind {
 /// (`/api/v1/games/<root>/...`); variantes apontam para a mesma rota com
 /// query string `?variant=<slug>`.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ApiContract {
     /// Caminho HTTP para iniciar uma sessão.
     pub start: String,
@@ -46,6 +48,7 @@ pub struct ApiContract {
 
 /// Um nó do grafo de universos.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UniverseNode {
     /// Identificador canônico — pode conter `/` para indicar caminho no
     /// grafo (`tetris/sprint-40`). Único globalmente.
@@ -62,6 +65,7 @@ pub struct UniverseNode {
     /// Parâmetros que definem essa variação. Para roots = defaults.
     /// Para variantes = overrides do default do root.
     #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub parameters: BTreeMap<String, serde_json::Value>,
     pub api: ApiContract,
 }

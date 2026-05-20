@@ -11,7 +11,7 @@ name = "yggdrasil-web"
 path = "src/main.rs"
 
 [dependencies]
-yggdrasil-core = { path = "../yggdrasil-core" }
+yggdrasil-core = { path = "../yggdrasil-core", features = ["openapi"] }
 game-core = { workspace = true }
 
 axum = { workspace = true, features = ["ws"] }
@@ -49,6 +49,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
 ] }
 tokio-util = "0.7"
+utoipa = { workspace = true, features = ["yaml"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
