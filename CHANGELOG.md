@@ -2,21 +2,23 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
-## [0.11.0] — 2026-05-20 — Universo Vim (YG-58)
+## [0.11.0] — 2026-05-20 — Claude hint engine (YG-59)
 
 ### Added
 
-- `universes/universe-vim/` — nova crate `universe-vim`:
-  - `src/editor.rs` — emulador modal Vim em Rust puro: modos Normal, Insert, Visual e Command. Comandos: `hjkl`, `w/b/e`, `0/$/ ^`, `gg/G`, `x`, `dd`, `dw/d$`, `yy/p/P`, `u` (undo), `.` (repeat), `/text/n/N` (busca), `i/I/a/A/o/O` (insert), `v/V` (visual), `:w/:q/:wq/:s/find/replace/`.
-  - `src/levels.rs` — 10 níveis progressivos em PT-BR, ensinando hjkl → word motions → insert → delete → yank/paste → search → substitute. `success_fn` por nível; recompensas 10/20/30 sementes por tier.
-  - `src/lib.rs` — `VimSession` com progressão de níveis, score, hint_count, bônus +50% sem hints e +100 ao completar todos os 10 níveis. Exports WASM (`#[cfg(target_arch = "wasm32")]`) para o artefato `embedded/vim.wasm`.
-- `yggdrasil-web/src/games/vim_routes.rs` — rotas HTTP do universo Vim:
-  - `POST /api/v1/universos/vim/sessoes` — cria sessão, retorna `{session_id, state}`.
-  - `POST /api/v1/universos/vim/sessoes/{id}/tecla` — processa tecla Vim, retorna `{state}`. 404 para sessão inexistente.
-- `yggdrasil-web/src/main.rs` — rota `/universos/vim` e API wired.
-- `yggdrasil-web/static/universos/vim.html` — página do universo com header de nível/score, canvas do editor, barra de status (modo + posição), caixa de dica e overlay de nível completo.
-- `yggdrasil-web/static/universos/vim.js` — renderer canvas monospace; cursor bloco (NORMAL/COMMAND) ou barra (INSERT) ou bloco roxo (VISUAL); destaque de linha atual; destaque de seleção visual; captura de teclado com composição de `gg`.
-- 124 novos testes unitários cobrindo todos os comandos, bordas de cursor, undo, repeat, busca, substituição e success_fns dos 10 níveis. Total: 319 testes no workspace.
+- `yggdrasil-web/src/hint_engine.rs` — novo módulo `HintEngine`: LLM bridge host-side para hints adaptativos no Universo Vim.
+  - `HintContext` — struct deserializada do JSON emitido pelo WASM via `request_hint`; campos: `puzzle_id`, `puzzle_description`, `buffer_content`, `cursor`, `recent_commands[5]`, `attempt_count`, `description_lang`.
+  - `HintApi` trait — abstração sobre a chamada HTTP; injetável em testes via `HintEngine::with_components(api, now_fn)`.
+  - `ReqwestHintApi` — implementação real que chama `POST https://api.anthropic.com/v1/messages` com modelo `claude-sonnet-4-6`.
+  - `HintEngine::from_env()` — lê `ANTHROPIC_API_KEY` do ambiente; loga `INFO` (não `WARN`) se ausente.
+  - `HintEngine::request(user_id, ctx)` — async; retorna hint do Claude ou fallback estático por nível.
+  - Rate limiting: máx 5 hints/usuário/hora via `DashMap<user_id, (count, window_start)>`; clock injetável para testes determinísticos.
+  - Fallback PT-BR por nível (1–10) do Universo Vim + hint genérico para IDs desconhecidos.
+  - Hint em PT-BR quando `description_lang == "pt"`.
+  - 8 novos testes: fallback sem API key, rate limit bloqueia 6ª chamada sem chamar API (mock via `CountingApi`), reset de janela de hora, independência de rate limit entre usuários, prompt inclui todos os campos de contexto, idioma EN vs PT-BR, static hints para 10 níveis.
+- `HostState::hint_result: Arc<Mutex<Option<String>>>` — campo adicionado em `wasm_runtime.rs`; inicializado em `new()`. Escrito pela task de hint assíncrona; lido pelo tick endpoint (YG-60) para retornar `{ hint: "..." }` no tick seguinte.
+- `dashmap = "6"` adicionado como dependência de workspace.
+- `docs/DEPLOY.md` — nova seção "Hint engine do Universo Vim" documentando `ANTHROPIC_API_KEY`, comportamento por cenário, e custo estimado ($0,002/hint, máx $0,01/hora/usuário).
 
 ## [0.10.0] — 2026-05-20 — WASM Runtime Host (YG-55)
 

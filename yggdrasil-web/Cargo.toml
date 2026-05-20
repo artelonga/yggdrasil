@@ -12,7 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 yggdrasil-core = { path = "../yggdrasil-core" }
-universe-vim = { path = "../universes/universe-vim" }
 game-core = { workspace = true }
 
 axum = { workspace = true, features = ["ws"] }
@@ -51,6 +50,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 tokio-util = "0.7"
 wasmtime = { version = "44.0.1", features = ["cranelift"] }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

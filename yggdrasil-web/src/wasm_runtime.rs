@@ -35,6 +35,10 @@ pub struct HostState {
     pub kv: HashMap<String, Vec<u8>>,
     /// Optional channel for forwarding hint requests (Vim universe → Claude).
     pub hint_tx: Option<tokio::sync::mpsc::Sender<String>>,
+    /// Written by the background hint task (YG-59); read by the tick endpoint
+    /// (YG-60) to return `{ hint: "..." }` in the tick following the Claude
+    /// API response. `None` means no hint is ready yet.
+    pub hint_result: std::sync::Arc<tokio::sync::Mutex<Option<String>>>,
     /// xorshift64 PRNG state; must be non-zero.
     rng: u64,
 }
@@ -53,6 +57,7 @@ impl HostState {
             user_id,
             kv: HashMap::new(),
             hint_tx,
+            hint_result: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             rng: seed,
         }
     }

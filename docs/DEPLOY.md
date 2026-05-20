@@ -10,6 +10,35 @@ Instruções para configurar o ambiente de produção no Fly.io.
 | `YGGDRASIL_DB` | Caminho do banco SQLite principal | `fly.toml [env]` |
 | `YGGDRASIL_SEMENTES_DB` | Caminho do banco de sementes | `fly.toml [env]` |
 
+## Hint engine do Universo Vim (Claude API)
+
+O Universo Vim oferece hints adaptativos gerados pela Claude API. A variável é **opcional** — sem ela, o servidor usa hints estáticos por nível (PT-BR) sem nenhum erro.
+
+| Variável | Obrigatório | Descrição |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | não | Chave da API Anthropic para hints gerados por Claude |
+
+### Configurar no Fly.io
+
+```bash
+# Sempre via secrets — nunca expor a chave em fly.toml
+flyctl secrets set ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Comportamento
+
+| Cenário | Comportamento |
+|---|---|
+| `ANTHROPIC_API_KEY` configurado | Hints gerados por `claude-sonnet-4-6` via API Anthropic |
+| `ANTHROPIC_API_KEY` ausente | Hints estáticos por nível (PT-BR), sem erro no log |
+| Rate limit excedido (5 hints/usuário/hora) | Hint estático por nível, sem chamada à API |
+| Erro na API Anthropic | Log `WARN` + hint estático por nível |
+
+### Custo estimado
+
+- ~500 tokens entrada + ~100 tokens saída por hint ≈ $0,002/hint
+- Rate limit de 5 hints/hora/usuário → custo máximo por usuário ativo: ~$0,01/hora
+
 ## Configuração de SMTP (envio de email)
 
 O servidor detecta automaticamente se SMTP está configurado. Se `YGGDRASIL_SMTP_HOST` não estiver definido (ou estiver vazio), os emails são impressos no stdout — útil para desenvolvimento.
