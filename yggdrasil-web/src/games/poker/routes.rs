@@ -8,6 +8,7 @@ use axum::{
 };
 use game_core::games::poker::PokerAction;
 use serde::Deserialize;
+use utoipa::ToSchema;
 use yggdrasil_core::games::poker_bot::auto_step_bots;
 use yggdrasil_core::games::poker_lobby::PokerLobby;
 
@@ -33,17 +34,28 @@ fn require_user(headers: &HeaderMap, secret: &str) -> Result<String, Response> {
     verify_jwt(&token, secret).map_err(|_| unauthorized())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct SitRequest {
     pub seat: usize,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ActionRequest {
+    /// fold, check, call, raise
     pub action: String,
     pub amount: Option<u32>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/poker/lobbies",
+    responses(
+        (status = 200, description = "Lista de mesas de pôquer", body = crate::openapi::PokerLobbiesDoc),
+        (status = 401, description = "Não autenticado"),
+    ),
+    security(("bearerAuth" = [])),
+    tag = "poker"
+)]
 pub async fn list_lobbies(
     State(state): State<Arc<PokerState>>,
     headers: HeaderMap,
@@ -60,6 +72,18 @@ pub async fn list_lobbies(
         .into_response()
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/poker/lobbies/{id}",
+    params(("id" = String, Path, description = "ID da mesa")),
+    responses(
+        (status = 200, description = "Estado da mesa", body = crate::openapi::PokerLobbyDoc),
+        (status = 401, description = "Não autenticado"),
+        (status = 404, description = "Mesa não encontrada"),
+    ),
+    security(("bearerAuth" = [])),
+    tag = "poker"
+)]
 pub async fn get_lobby(
     State(state): State<Arc<PokerState>>,
     Path(id): Path<String>,
@@ -75,6 +99,19 @@ pub async fn get_lobby(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/poker/lobbies/{id}/sit",
+    params(("id" = String, Path, description = "ID da mesa")),
+    request_body = SitRequest,
+    responses(
+        (status = 200, description = "Sentou na mesa", body = crate::openapi::PokerLobbyDoc),
+        (status = 401, description = "Não autenticado"),
+        (status = 404, description = "Mesa não encontrada"),
+    ),
+    security(("bearerAuth" = [])),
+    tag = "poker"
+)]
 pub async fn sit(
     State(state): State<Arc<PokerState>>,
     Path(id): Path<String>,
@@ -99,6 +136,18 @@ pub async fn sit(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/poker/lobbies/{id}/stand",
+    params(("id" = String, Path, description = "ID da mesa")),
+    responses(
+        (status = 200, description = "Levantou da mesa", body = crate::openapi::PokerLobbyDoc),
+        (status = 401, description = "Não autenticado"),
+        (status = 404, description = "Mesa não encontrada"),
+    ),
+    security(("bearerAuth" = [])),
+    tag = "poker"
+)]
 pub async fn stand(
     State(state): State<Arc<PokerState>>,
     Path(id): Path<String>,
@@ -122,8 +171,18 @@ pub async fn stand(
     }
 }
 
-/// Estado público da mão: community cards, pot, current actor, próximos a falar.
-/// Auto-inicia a mão se houver ≥ 2 ocupantes e nenhuma partida em curso.
+#[utoipa::path(
+    get,
+    path = "/api/v1/poker/lobbies/{id}/hand",
+    params(("id" = String, Path, description = "ID da mesa")),
+    responses(
+        (status = 200, description = "Estado público da mão", body = crate::openapi::PokerHandDoc),
+        (status = 401, description = "Não autenticado"),
+        (status = 404, description = "Mesa não encontrada"),
+    ),
+    security(("bearerAuth" = [])),
+    tag = "poker"
+)]
 pub async fn get_hand(
     State(state): State<Arc<PokerState>>,
     Path(id): Path<String>,
@@ -147,7 +206,18 @@ pub async fn get_hand(
     }
 }
 
-/// Hole cards do usuário autenticado (apenas as suas).
+#[utoipa::path(
+    get,
+    path = "/api/v1/poker/lobbies/{id}/hole-cards",
+    params(("id" = String, Path, description = "ID da mesa")),
+    responses(
+        (status = 200, description = "Cartas privadas do jogador autenticado", body = crate::openapi::PokerHoleCardsDoc),
+        (status = 401, description = "Não autenticado"),
+        (status = 404, description = "Mesa não encontrada"),
+    ),
+    security(("bearerAuth" = [])),
+    tag = "poker"
+)]
 pub async fn get_hole_cards(
     State(state): State<Arc<PokerState>>,
     Path(id): Path<String>,
@@ -168,7 +238,20 @@ pub async fn get_hole_cards(
     }
 }
 
-/// Aplica uma ação do jogador. Body: `{action: "call"|"raise"|"fold"|"check", amount?: u32}`.
+#[utoipa::path(
+    post,
+    path = "/api/v1/poker/lobbies/{id}/action",
+    params(("id" = String, Path, description = "ID da mesa")),
+    request_body = ActionRequest,
+    responses(
+        (status = 200, description = "Estado da mão após a ação", body = crate::openapi::PokerHandDoc),
+        (status = 400, description = "Ação inválida"),
+        (status = 401, description = "Não autenticado"),
+        (status = 404, description = "Mesa não encontrada"),
+    ),
+    security(("bearerAuth" = [])),
+    tag = "poker"
+)]
 pub async fn post_action(
     State(state): State<Arc<PokerState>>,
     Path(id): Path<String>,

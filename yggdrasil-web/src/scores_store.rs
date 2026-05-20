@@ -4,8 +4,9 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, params};
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ScoreRow {
     pub user_id: String,
     pub game: String,

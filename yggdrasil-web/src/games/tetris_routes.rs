@@ -44,8 +44,17 @@ fn parse_direction(s: &str) -> Input {
     }
 }
 
-/// `GET /api/v1/games/tetris/start[?variant=<slug>]` — cria sessão e retorna estado inicial.
-/// Variantes suportadas: `tetris/sprint-40` encerra ao limpar 40 linhas (YG-37).
+#[utoipa::path(
+    get,
+    path = "/api/v1/games/tetris/start",
+    params(
+        ("variant" = Option<String>, Query, description = "Variante: 'tetris/sprint-40' encerra em 40 linhas")
+    ),
+    responses(
+        (status = 200, description = "Sessão de Tetris criada", body = crate::openapi::TetrisStartDoc),
+    ),
+    tag = "games"
+)]
 pub async fn start_game(
     State(state): State<Arc<TetrisState>>,
     Query(q): Query<VariantQuery>,
@@ -74,7 +83,19 @@ fn tetris_opts_for_variant(variant: Option<&str>) -> TetrisOptions {
     }
 }
 
-/// `POST /api/v1/games/tetris/:id/input` — avança um tick com o input recebido.
+#[utoipa::path(
+    post,
+    path = "/api/v1/games/tetris/{id}/input",
+    params(
+        ("id" = String, Path, description = "ID da sessão de Tetris")
+    ),
+    request_body = InputRequest,
+    responses(
+        (status = 200, description = "Estado após o tick", body = crate::openapi::TetrisTickDoc),
+        (status = 404, description = "Sessão não encontrada"),
+    ),
+    tag = "games"
+)]
 pub async fn send_input(
     Path(id): Path<String>,
     State(state): State<Arc<TetrisState>>,

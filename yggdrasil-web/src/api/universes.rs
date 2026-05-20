@@ -17,7 +17,14 @@ pub struct UniversesState {
     pub registry: Arc<UniverseRegistry>,
 }
 
-/// `GET /api/v1/universes` — lista todos os nós em ordem de slug.
+#[utoipa::path(
+    get,
+    path = "/api/v1/universes",
+    responses(
+        (status = 200, description = "Lista de todos os universos", body = crate::openapi::UniversesListDoc),
+    ),
+    tag = "universes"
+)]
 pub async fn list_universes(State(state): State<Arc<UniversesState>>) -> impl IntoResponse {
     let nodes: Vec<&yggdrasil_core::universes::UniverseNode> = state.registry.list();
     (
@@ -27,10 +34,18 @@ pub async fn list_universes(State(state): State<Arc<UniversesState>>) -> impl In
         .into_response()
 }
 
-/// `GET /api/v1/universes/{slug}` — um nó individual com filhos.
-///
-/// O slug pode conter `/` (ex: `tetris/sprint-40`), então a rota
-/// usa `{*slug}` (wildcard).
+#[utoipa::path(
+    get,
+    path = "/api/v1/universes/{slug}",
+    params(
+        ("slug" = String, Path, description = "Slug do universo (pode conter '/', ex: tetris/sprint-40)")
+    ),
+    responses(
+        (status = 200, description = "Nó do universo", body = crate::openapi::UniverseNodeDoc),
+        (status = 404, description = "Universo não encontrado", body = crate::openapi::ErrorDoc),
+    ),
+    tag = "universes"
+)]
 pub async fn get_universe(
     State(state): State<Arc<UniversesState>>,
     Path(slug): Path<String>,
@@ -45,8 +60,14 @@ pub async fn get_universe(
     }
 }
 
-/// `GET /api/v1/universes/graph` — vista de grafo (nós + arestas).
-/// Para visualizadores e ferramentas externas.
+#[utoipa::path(
+    get,
+    path = "/api/v1/universes/graph",
+    responses(
+        (status = 200, description = "Grafo de universos (nós + arestas)", body = crate::openapi::UniverseGraphDoc),
+    ),
+    tag = "universes"
+)]
 pub async fn get_graph(State(state): State<Arc<UniversesState>>) -> impl IntoResponse {
     (StatusCode::OK, Json(state.registry.graph())).into_response()
 }

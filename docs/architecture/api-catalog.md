@@ -1,8 +1,11 @@
 # Yggdrasil — API Catalog
 
-> Source of truth: `yggdrasil-web/src/main.rs` (router wiring) at
-> workspace `v0.9.0`. **No WebSocket routes exist** — all surfaces are
-> plain HTTP. Listed once per route.
+> Machine-readable spec: **`GET /openapi.json`** (OpenAPI 3.x) and
+> **`GET /openapi.yaml`**. Generated from `#[utoipa::path]` annotations
+> in `yggdrasil-web/src/` (see `openapi.rs`).
+>
+> Source of truth for routing: `yggdrasil-web/src/main.rs` (router wiring) at
+> workspace `v0.13.0`. Listed once per route.
 
 Auth conventions:
 
@@ -124,6 +127,7 @@ Auth conventions:
 
 ## WebSocket routes
 
-**None.** No `axum::extract::ws`, no `tokio::sync::broadcast`, no
-`mpsc`/`watch` usage in either crate. Poker is the only multiplayer
-surface and is implemented as short-poll HTTP via the routes above.
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| WS | `/api/v1/poker/lobbies/{id}/ws` | JWT (required) | Real-time poker events broadcast. |
+| WS | `/api/v1/universos/{id}/sessoes/{sid}/ws` | None | Game-state stream for single-player universos. |

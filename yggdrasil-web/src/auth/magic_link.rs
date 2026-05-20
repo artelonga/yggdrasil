@@ -3,7 +3,8 @@ use std::sync::Arc;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use chrono::Utc;
 use rusqlite::Connection;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::jwt::sign_jwt;
@@ -14,12 +15,12 @@ const RATE_LIMIT_WINDOW_SECS: i64 = 900;
 const CODE_EXPIRY_SECS: i64 = 300;
 const MAX_ATTEMPTS: u32 = 3;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct CodeRequest {
     pub email: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct VerifyRequest {
     pub email: String,
     pub code: String,
@@ -31,6 +32,15 @@ pub fn generate_code() -> String {
     format!("{n:06}", n = n % 1_000_000)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/code",
+    request_body = CodeRequest,
+    responses(
+        (status = 200, description = "Código enviado por e-mail (ou ignorado se rate-limited)"),
+    ),
+    tag = "auth"
+)]
 pub async fn request_code(
     State(state): State<Arc<AuthState>>,
     Json(req): Json<CodeRequest>,
@@ -119,6 +129,17 @@ pub(super) fn do_request_code(conn: &Connection, email: &str) -> rusqlite::Resul
     Ok(Some(code))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/verify",
+    request_body = VerifyRequest,
+    responses(
+        (status = 200, description = "JWT emitido", body = crate::openapi::AuthTokenDoc),
+        (status = 410, description = "Código expirado ou não encontrado", body = crate::openapi::ErrorDoc),
+        (status = 422, description = "Código incorreto", body = crate::openapi::ErrorDoc),
+    ),
+    tag = "auth"
+)]
 pub async fn verify_code(
     State(state): State<Arc<AuthState>>,
     Json(req): Json<VerifyRequest>,

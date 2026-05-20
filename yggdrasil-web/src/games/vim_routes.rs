@@ -17,6 +17,7 @@ use axum::{
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use universe_vim::{GameState, VimSession};
+use utoipa::ToSchema;
 
 // ── Estado compartilhado ─────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ pub struct CreateSessionResponse {
     pub state: GameState,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct SendKeyRequest {
     pub key: String,
 }
@@ -50,7 +51,15 @@ pub struct SendKeyResponse {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
-/// `POST /api/v1/universos/vim/sessoes` — cria uma nova sessão de jogo.
+#[utoipa::path(
+    post,
+    path = "/api/v1/universos/vim/sessoes",
+    responses(
+        (status = 200, description = "Sessão Vim criada", body = crate::openapi::VimCreateSessionDoc),
+        (status = 500, description = "Erro interno"),
+    ),
+    tag = "games"
+)]
 pub async fn create_session(State(state): State<Arc<VimState>>) -> impl IntoResponse {
     let session = VimSession::new();
     let game_state = session.state();
@@ -72,7 +81,19 @@ pub async fn create_session(State(state): State<Arc<VimState>>) -> impl IntoResp
     .into_response()
 }
 
-/// `POST /api/v1/universos/vim/sessoes/{id}/tecla` — processa uma tecla.
+#[utoipa::path(
+    post,
+    path = "/api/v1/universos/vim/sessoes/{id}/tecla",
+    params(
+        ("id" = String, Path, description = "ID da sessão Vim")
+    ),
+    request_body = SendKeyRequest,
+    responses(
+        (status = 200, description = "Estado após a tecla", body = crate::openapi::VimSendKeyResponseDoc),
+        (status = 404, description = "Sessão não encontrada"),
+    ),
+    tag = "games"
+)]
 pub async fn send_key(
     Path(id): Path<String>,
     State(state): State<Arc<VimState>>,
