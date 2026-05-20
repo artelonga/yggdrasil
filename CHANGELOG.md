@@ -2,6 +2,21 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.14.0] — 2026-05-20 — Telemetria e funil básico (YG-62)
+
+### Added
+
+- `yggdrasil-web/src/telemetria.rs` — novo módulo `TelemetriaDb`: schema idempotente (`init_telemetry_db`) com tabelas `funnel_events` (event_id, user_id, session_id, universe_id, event_type, properties, created_at) e `session_records` (session_id, universe_id, started_at, ended_at, duration_ms, final_score, abandoned). Índices em `(universe_id, created_at)` e `(user_id, created_at)`.
+- Instrumentação em `universos_routes.rs`: `SESSION_CREATE` no `POST /api/v1/universos/{id}/sessoes`, `SESSION_COMPLETE` no `DELETE` e no `tick` com `session_ended=true` (inclui `final_score` e `duration_ms` corretos), `UNIVERSE_VIEW` no `GET /api/v1/universos/{id}`.
+- Cleanup job (`spawn_cleanup_job`): `tokio::spawn` com `tokio::time::interval(300s)` que detecta sessões sem tick há > 30min, remove da memória e emite `SESSION_ABANDON` + marca `abandoned=1` no banco.
+- `GET /api/v1/admin/analytics` — protegido por `YGGDRASIL_ADMIN_TOKEN` (Bearer header). Retorna JSON com `universos` (sessions_today, completions_today, completion_rate_pct, median_duration_ms, active_now) e `funnel_24h` (universe_views, session_creates, session_completions, conversion_view_to_create_pct, conversion_create_to_complete_pct) para as últimas 24h.
+- `[dev-dependencies] tokio = { ..., features = ["test-util"] }` para suporte a `#[tokio::test(start_paused = true)]` nos testes do cleanup job.
+
+### Changed
+
+- `UniversosState` recebe `Arc<TelemetriaDb>` e `admin_token: Option<String>` (lido de `YGGDRASIL_ADMIN_TOKEN` no boot).
+- `SessionEntry` armazena `started_at: i64` e `last_tick_at: tokio::time::Instant` para cálculo de duração e detecção de inatividade.
+
 ## [0.13.1] — 2026-05-20 — Build pipeline CI/CD (YG-61)
 
 ### Added
