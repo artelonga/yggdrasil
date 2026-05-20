@@ -18,7 +18,6 @@ const PLAYER_H: i32 = 10;
 const BULLET_H: i32 = 10;
 
 #[derive(Serialize, Clone)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Bullet {
     pub x: i32,
     pub y: i32,
@@ -27,7 +26,6 @@ pub struct Bullet {
 }
 
 #[derive(Serialize, Clone)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Alien {
     pub x: i32,
     pub y: i32,
@@ -36,7 +34,6 @@ pub struct Alien {
 }
 
 #[derive(Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct InvadersRender {
     pub player_x: i32,
     pub bullets: Vec<Bullet>,

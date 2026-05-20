@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 /// Query string `?variant=<slug>` para rotas de início de jogo (YG-37).
 /// Slug `None` ou desconhecido → root default.
@@ -12,7 +11,7 @@ fn default_user_id() -> String {
     "anonymous".to_string()
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
 pub struct InputRequest {
     pub direction: String,
     #[serde(default = "default_user_id")]

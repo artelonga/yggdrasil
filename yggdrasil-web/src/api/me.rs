@@ -7,7 +7,6 @@ use axum::{
     response::IntoResponse,
 };
 use serde::Serialize;
-use utoipa::ToSchema;
 use yggdrasil_core::sementes::Sementes;
 
 use crate::auth::verify_jwt;
@@ -17,23 +16,13 @@ pub struct MeState {
     pub sementes: Arc<Sementes>,
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct SaldoResponse {
-    pub saldo: u64,
-    pub moeda: &'static str,
-    pub atualizado_em: String,
+#[derive(Serialize)]
+struct SaldoResponse {
+    saldo: u64,
+    moeda: &'static str,
+    atualizado_em: String,
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/v1/me/sementes",
-    responses(
-        (status = 200, description = "Saldo de sementes do usuário autenticado", body = SaldoResponse),
-        (status = 401, description = "Não autenticado")
-    ),
-    security(("bearer_auth" = [])),
-    tag = "me"
-)]
 pub async fn get_sementes(
     State(state): State<Arc<MeState>>,
     headers: HeaderMap,

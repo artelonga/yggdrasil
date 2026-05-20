@@ -194,7 +194,6 @@ impl YggTetris {
 }
 
 #[derive(Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ActivePiece {
     pub piece_type: u8,
     pub x: i32,
@@ -203,7 +202,6 @@ pub struct ActivePiece {
 }
 
 #[derive(Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TetrisRender {
     pub board: Vec<Vec<u8>>,
     pub piece: ActivePiece,

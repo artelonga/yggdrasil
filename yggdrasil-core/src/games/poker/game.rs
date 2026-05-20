@@ -49,14 +49,12 @@ pub enum PokerStandError {
 }
 
 #[derive(Serialize, Clone, Debug)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CardView {
     pub rank: String,
     pub suit: String,
 }
 
 #[derive(Serialize, Clone)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PublicPlayer {
     pub user_id: String,
     pub chips: u32,
@@ -66,7 +64,6 @@ pub struct PublicPlayer {
 }
 
 #[derive(Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct HandState {
     pub community_cards: Vec<CardView>,
     pub pot: u32,

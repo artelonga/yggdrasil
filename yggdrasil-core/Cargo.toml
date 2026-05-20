@@ -6,9 +6,6 @@ license.workspace = true
 description = "Yggdrasil — núcleo: lobby, modelos de universo, integração com game-core"
 publish = false
 
-[features]
-openapi = ["dep:utoipa"]
-
 [dependencies]
 game-core = { workspace = true }
 serde = { workspace = true }
@@ -19,7 +16,6 @@ thiserror = { workspace = true }
 nanoid = { workspace = true }
 rand = "0.8"
 tokio = { version = "1", features = ["sync"] }
-utoipa = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

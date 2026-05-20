@@ -1,10 +1,7 @@
 # Yggdrasil — API Catalog
 
-> **OpenAPI spec:** served at `/openapi.json` (JSON) and `/openapi.yaml` (YAML).
-> Use `curl -s http://localhost:3030/openapi.json | jq .` to inspect.
-
 > Source of truth: `yggdrasil-web/src/main.rs` (router wiring) at
-> workspace `v0.9.2`. **No WebSocket routes exist** — all surfaces are
+> workspace `v0.9.0`. **No WebSocket routes exist** — all surfaces are
 > plain HTTP. Listed once per route.
 
 Auth conventions:
