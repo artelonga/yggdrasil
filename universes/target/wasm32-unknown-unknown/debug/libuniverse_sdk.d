@@ -1,1 +1,0 @@
-/Users/artelonga/projects/yggdrasil/.worktrees/YG-56/universes/target/wasm32-unknown-unknown/debug/libuniverse_sdk.rlib: /Users/artelonga/projects/yggdrasil/.worktrees/YG-56/universes/universe-sdk/src/lib.rs

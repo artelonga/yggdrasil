@@ -1,1 +1,0 @@
-/Users/artelonga/projects/yggdrasil/.worktrees/YG-56/universes/target/wasm32-unknown-unknown/release/echo.wasm: /Users/artelonga/projects/yggdrasil/.worktrees/YG-56/universes/echo/src/lib.rs /Users/artelonga/projects/yggdrasil/.worktrees/YG-56/universes/universe-sdk/src/lib.rs
