@@ -2,6 +2,35 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [1.0.0] — 2026-05-20 — Universe Platform v1.0 (YG-54 epic complete)
+
+### Theme
+
+Marks the completion of the **YG-54 Universe Platform v1.0 epic** — eight user-stories shipped over the day:
+
+- **YG-55** WASM runtime (wasmtime + fuel enforcement)
+- **YG-56** Universe SDK (ABI v1 + build tooling)
+- **YG-57** Five universos migrated to WASM (snake, tetris, invaders, pointset, poker)
+- **YG-58** Universo Vim — modal editor + 10 levels
+- **YG-59** Claude hint engine — host-side LLM bridge for Vim
+- **YG-60** Unified `/api/v1/universos` API + WebSocket
+- **YG-50** OpenAPI 3.x specification at `/openapi.json` + `/openapi.yaml`
+- **YG-61** `build-universes.sh` + GitHub Actions CI/CD pipeline
+- **YG-62** Telemetry — `funnel_events` + `session_records` + `/api/v1/admin/analytics`
+
+### Acceptance criteria — verified live in prod
+
+- ✅ Single self-contained binary with 6 WASM universos embedded
+- ✅ `GET /api/v1/universos` lists all 6: snake, tetris, invaders, pointset, poker, vim (verified at `https://yggdrasil-artelonga.fly.dev/api/v1/universos`)
+- ✅ Legacy `/api/v1/games/{game}/start` routes preserved (YG-60 design)
+- ✅ Vim universe playable with Claude API hints (YG-58 + YG-59)
+- ✅ `cargo test` + `cargo clippy -- -D warnings` clean
+- ✅ `Cargo.toml` bumped to **1.0.0**
+
+### Why
+
+Yggdrasil graduates from per-game backend chaos to a unified WASM-embedded universe platform with: typed contracts (OpenAPI), runtime sandboxing (wasmtime + fuel), composable SDK, AI-augmented learning surface (Universo Vim + Claude hints), and observability (funnel + analytics). The next-tier feature — user-uploaded universos via the Component Model — is gated behind v2.x.
+
 ## [0.14.0] — 2026-05-20 — Telemetria e funil básico (YG-62)
 
 ### Added
