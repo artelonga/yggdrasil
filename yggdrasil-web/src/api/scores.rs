@@ -31,7 +31,17 @@ fn default_limit() -> u32 {
     3
 }
 
-/// `GET /api/v1/scores/top?limit=3` — top N por universo, todos os universos.
+#[utoipa::path(
+    get,
+    path = "/api/v1/scores/top",
+    params(
+        ("limit" = Option<u32>, Query, description = "Máx por universo (1–50, default 3)")
+    ),
+    responses(
+        (status = 200, description = "Top scores por universo", body = crate::openapi::ScoresListDoc),
+    ),
+    tag = "scores"
+)]
 pub async fn get_top(
     State(state): State<Arc<ScoresState>>,
     Query(q): Query<TopQuery>,
@@ -45,7 +55,14 @@ pub async fn get_top(
         .into_response()
 }
 
-/// `GET /api/v1/scores/recent` — últimas 10 entradas (atividade recente).
+#[utoipa::path(
+    get,
+    path = "/api/v1/scores/recent",
+    responses(
+        (status = 200, description = "Últimas 10 pontuações", body = crate::openapi::ScoresListDoc),
+    ),
+    tag = "scores"
+)]
 pub async fn get_recent(State(state): State<Arc<ScoresState>>) -> impl IntoResponse {
     let scores = state.scores.recent_scores(10);
     (

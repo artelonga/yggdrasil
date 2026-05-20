@@ -7,6 +7,7 @@ mod games;
 pub mod hint_engine;
 mod lobby;
 mod mail;
+pub mod openapi;
 mod scores_store;
 pub mod universos_routes;
 pub mod wasm_runtime;
@@ -180,14 +181,31 @@ async fn main() -> anyhow::Result<()> {
     ));
     let universos_router = Router::new()
         .route("/api/v1/universos", get(universos_routes::list_universos))
-        .route("/api/v1/universos/{id}", get(universos_routes::get_universo))
-        .route("/api/v1/universos/{id}/sessoes", post(universos_routes::create_sessao))
-        .route("/api/v1/universos/{id}/sessoes/{sid}/tick", post(universos_routes::tick_sessao))
-        .route("/api/v1/universos/{id}/sessoes/{sid}", delete(universos_routes::delete_sessao))
-        .route("/api/v1/universos/{id}/sessoes/{sid}/ws", get(universos_routes::ws_sessao))
+        .route(
+            "/api/v1/universos/{id}",
+            get(universos_routes::get_universo),
+        )
+        .route(
+            "/api/v1/universos/{id}/sessoes",
+            post(universos_routes::create_sessao),
+        )
+        .route(
+            "/api/v1/universos/{id}/sessoes/{sid}/tick",
+            post(universos_routes::tick_sessao),
+        )
+        .route(
+            "/api/v1/universos/{id}/sessoes/{sid}",
+            delete(universos_routes::delete_sessao),
+        )
+        .route(
+            "/api/v1/universos/{id}/sessoes/{sid}/ws",
+            get(universos_routes::ws_sessao),
+        )
         .with_state(universos_state);
 
     let app = Router::new()
+        .route("/openapi.json", get(openapi::serve_openapi_json))
+        .route("/openapi.yaml", get(openapi::serve_openapi_yaml))
         .route("/", get(root))
         .merge(lobby_router())
         .route("/login", get(serve_login))

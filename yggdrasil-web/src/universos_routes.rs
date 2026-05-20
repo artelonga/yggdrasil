@@ -31,16 +31,20 @@ use axum::{
 use game_core::engine::{Direction, Input, Universe};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use yggdrasil_core::games::{YggGame, YggInvaders, YggSnake, YggTetris};
 
 use crate::scores_store::ScoresStore;
 
 // ─── Universo list ───────────────────────────────────────────────────────────
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, ToSchema)]
 pub struct UniversoMeta {
+    #[schema(value_type = String)]
     pub id: &'static str,
+    #[schema(value_type = String)]
     pub name: &'static str,
+    #[schema(value_type = String)]
     pub version: &'static str,
     pub max_players: u32,
     pub api_version: u32,
@@ -298,14 +302,14 @@ struct CreateSessaoResponse {
     state: serde_json::Value,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct TickInput {
     pub key: String,
     #[serde(default)]
     pub timestamp_ms: Option<u64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct TickBody {
     pub inputs: Vec<TickInput>,
 }
@@ -334,12 +338,28 @@ struct WsStateMessage {
 
 // ─── Route handlers ──────────────────────────────────────────────────────────
 
-/// `GET /api/v1/universos` — lista todos os universos com metadados básicos.
+#[utoipa::path(
+    get,
+    path = "/api/v1/universos",
+    responses(
+        (status = 200, description = "Lista de universos disponíveis", body = Vec<UniversoMeta>),
+    ),
+    tag = "universos"
+)]
 pub async fn list_universos(_state: State<Arc<UniversosState>>) -> impl IntoResponse {
     Json(universo_list())
 }
 
-/// `GET /api/v1/universos/{id}` — metadados + schema mínimo do universo.
+#[utoipa::path(
+    get,
+    path = "/api/v1/universos/{id}",
+    params(("id" = String, Path, description = "ID do universo")),
+    responses(
+        (status = 200, description = "Metadados e schema do universo", body = crate::openapi::UniversoMetaSchemaDoc),
+        (status = 404, description = "Universo não encontrado", body = crate::openapi::ErrorDoc),
+    ),
+    tag = "universos"
+)]
 pub async fn get_universo(
     _state: State<Arc<UniversosState>>,
     Path(id): Path<String>,
@@ -365,9 +385,17 @@ pub async fn get_universo(
     (StatusCode::OK, Json(meta)).into_response()
 }
 
-/// `POST /api/v1/universos/{id}/sessoes` — cria sessão e retorna estado inicial.
-///
-/// Poker usa `/api/v1/poker/lobbies` e retorna 422 aqui.
+#[utoipa::path(
+    post,
+    path = "/api/v1/universos/{id}/sessoes",
+    params(("id" = String, Path, description = "ID do universo")),
+    responses(
+        (status = 200, description = "Sessão criada", body = crate::openapi::CreateSessaoDoc),
+        (status = 404, description = "Universo não encontrado", body = crate::openapi::ErrorDoc),
+        (status = 422, description = "Pôquer usa /api/v1/poker/lobbies"),
+    ),
+    tag = "universos"
+)]
 pub async fn create_sessao(
     State(state): State<Arc<UniversosState>>,
     Path(id): Path<String>,
@@ -414,7 +442,20 @@ pub async fn create_sessao(
         .into_response()
 }
 
-/// `POST /api/v1/universos/{id}/sessoes/{sid}/tick` — processa inputs e retorna estado.
+#[utoipa::path(
+    post,
+    path = "/api/v1/universos/{id}/sessoes/{sid}/tick",
+    params(
+        ("id" = String, Path, description = "ID do universo"),
+        ("sid" = String, Path, description = "ID da sessão"),
+    ),
+    request_body = TickBody,
+    responses(
+        (status = 200, description = "Estado após os inputs", body = crate::openapi::TickResponseDoc),
+        (status = 404, description = "Sessão não encontrada", body = crate::openapi::ErrorDoc),
+    ),
+    tag = "universos"
+)]
 pub async fn tick_sessao(
     State(state): State<Arc<UniversosState>>,
     Path((id, sid)): Path<(String, String)>,
@@ -480,7 +521,19 @@ pub async fn tick_sessao(
         .into_response()
 }
 
-/// `DELETE /api/v1/universos/{id}/sessoes/{sid}` — encerra sessão e persiste score.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/universos/{id}/sessoes/{sid}",
+    params(
+        ("id" = String, Path, description = "ID do universo"),
+        ("sid" = String, Path, description = "ID da sessão"),
+    ),
+    responses(
+        (status = 200, description = "Sessão encerrada e score persistido", body = crate::openapi::DeleteSessaoDoc),
+        (status = 404, description = "Sessão não encontrada", body = crate::openapi::ErrorDoc),
+    ),
+    tag = "universos"
+)]
 pub async fn delete_sessao(
     State(state): State<Arc<UniversosState>>,
     Path((id, sid)): Path<(String, String)>,
@@ -518,11 +571,19 @@ pub async fn delete_sessao(
     (StatusCode::OK, Json(DeleteResponse { final_score })).into_response()
 }
 
-/// `GET /api/v1/universos/{id}/sessoes/{sid}/ws` — WebSocket para stream em tempo real.
-///
-/// Client → Server: `{ "key": "<input>" }`
-/// Server → Client: `{ "state": <game_state> }`
-/// Server envia Close frame quando `session_ended == true`.
+#[utoipa::path(
+    get,
+    path = "/api/v1/universos/{id}/sessoes/{sid}/ws",
+    params(
+        ("id" = String, Path, description = "ID do universo"),
+        ("sid" = String, Path, description = "ID da sessão"),
+    ),
+    responses(
+        (status = 101, description = "WebSocket upgrade — stream de estado em tempo real"),
+        (status = 404, description = "Sessão não encontrada"),
+    ),
+    tag = "universos"
+)]
 pub async fn ws_sessao(
     State(state): State<Arc<UniversosState>>,
     Path((id, sid)): Path<(String, String)>,

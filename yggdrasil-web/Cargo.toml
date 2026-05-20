@@ -53,6 +53,9 @@ tokio-util = "0.7"
 wasmtime = { version = "44.0.1", features = ["cranelift"] }
 dashmap = { workspace = true }
 
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+serde_yaml = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 wat = "1"

@@ -2,6 +2,20 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.13.0] — 2026-05-20 — OpenAPI spec (YG-50)
+
+### Added
+
+- `yggdrasil-web/src/openapi.rs` — `ApiDoc` struct com `#[derive(OpenApi)]` agregando todos os 29 paths da API pública. Schema doc-types concretos para todos os tipos de estado de jogo (SnakeMapDoc, TetrisStateDoc, InvadersStateDoc, VimGameStateDoc) e respostas (SnakeStartDoc, TetrisStartDoc, InvadersStartDoc, PokerHandDoc, etc.).
+- `GET /openapi.json` — especificação OpenAPI 3.x serializada como JSON; sem estado, gerada em compile-time via utoipa.
+- `GET /openapi.yaml` — mesma spec em YAML (`Content-Type: application/x-yaml`).
+- `utoipa = "5.5.0"` e `serde_yaml = "0.9"` adicionados como dependências de `yggdrasil-web`.
+- `#[utoipa::path]` em todos os 29 handlers: `auth/magic_link.rs`, `api/me.rs`, `api/scores.rs`, `api/universes.rs`, `games/snake_routes.rs`, `games/tetris_routes.rs`, `games/invaders_routes.rs`, `games/vim_routes.rs`, `games/poker/routes.rs`, `universos_routes.rs`.
+- `#[derive(ToSchema)]` em: `CodeRequest`, `VerifyRequest`, `SaldoResponse`, `ScoreRow`, `InputRequest`, `SendKeyRequest`, `SitRequest`, `ActionRequest`, `UniversoMeta`, `TickInput`, `TickBody`.
+- 3 novos testes de integração em `openapi::tests`: spec retorna 200 + versão "3.x", ≥20 paths, rotas obrigatórias por prefixo, YAML com Content-Type correto. Total: 127 testes.
+- `docs/architecture/api-catalog.md` atualizado: pointer para `/openapi.json`, seção de WebSocket corrigida (antes dizia "none").
+- `SecurityAddon` modifier wires `bearerAuth` (HS256 JWT) como security scheme reutilizável.
+
 ## [0.12.0] — 2026-05-20 — Universe Platform v1.0 WASM epic + Unified API (YG-54 → YG-60)
 
 ### Theme
