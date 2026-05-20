@@ -4,6 +4,7 @@ mod api;
 mod auth;
 mod auth_co;
 mod games;
+pub mod hint_engine;
 mod lobby;
 mod mail;
 mod scores_store;
