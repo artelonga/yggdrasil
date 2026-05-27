@@ -2,6 +2,16 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [1.0.1] — 2026-05-24
+
+### Changed — Fly machines now suspend instead of stop on idle (CO-285)
+
+Updated `fly.toml` to use `auto_stop_machines = "suspend"` and `min_machines_running = 0`.
+Suspend freezes machine state rather than shutting it down — cold-wake is ~250ms instead of ~10s.
+Saves ~$1-2/mo at typical low-traffic idle rates.
+
+---
+
 ## [1.0.0] — 2026-05-20 — Universe Platform v1.0 (YG-54 epic complete)
 
 ### Theme
