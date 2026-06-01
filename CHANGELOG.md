@@ -4,6 +4,16 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added — Drill-down macro→núcleos + camada do tronco (YG-88)
+
+- **Clicar no encéfalo** no viewer Godot (`/anatomia`) abre o viewer de núcleos
+  (`/neuro`) — salto macro→sub-anatômico (web export via `JavaScriptBridge`).
+- `/neuro` ganha 2ª camada: **núcleos do tronco — Harvard AAN v2.0 (CC0)**, 16
+  núcleos nomeados (DR, MnR, PAG, VTA, LC, LDTg, mRt, PBC, PnO, PTg; L/R),
+  alinhada (MNI152 1mm) com a camada subcortical. `convert_atlas.py` constrói as
+  duas via Zenodo/nilearn. Brainstem Navigator (31 núcleos) fica para depois
+  (NITRC exige login). Desenvolvido em worktree `feat/YG-88-...`, merge FF.
+
 ### Changed — Home/lobby: chips de universos, ícones SVG, painéis colapsáveis
 
 - Legenda estática (desatualizada) substituída por **chips clicáveis** de todos os
