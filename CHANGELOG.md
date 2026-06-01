@@ -2,6 +2,13 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.0.1] — 2026-06-01
+
+### Added
+
+- **`GET /version`** — devolve `{name, version}` do binário (`CARGO_PKG_VERSION`),
+  para verificar qual release está no ar sem depender do contador interno do Fly.
+
 ## [2.0.0] — 2026-06-01 — Plataforma de universos (primeiro release estável pós-v1.0)
 
 Marco maior: a plataforma deixou de ser "lobby + 4 jogos" e virou um ecossistema —
