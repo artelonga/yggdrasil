@@ -12,15 +12,15 @@ config_version=5
 
 config/name="yggdrasil-godot"
 config/description="Cliente Godot 4 do Yggdrasil — lobby 2D com 5 jogos: Snake, Tetris, Invaders, PointSet e Poker."
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/anatomy3d/anatomy_viewer.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]
 
 SignalBus="*res://scripts/autoloads/signal_bus.gd"
-ApiClient="*res://scripts/autoloads/api_client.gd"
 SaveManager="*res://scripts/autoloads/save_manager.gd"
+ApiClient="*res://scripts/autoloads/api_client.gd"
 AudioManager="*res://scripts/autoloads/audio_manager.gd"
 GameManager="*res://scripts/autoloads/game_manager.gd"
 

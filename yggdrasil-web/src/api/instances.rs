@@ -1,0 +1,707 @@
+//! REST API de instâncias de universo autoradas (YG-76/77/79).
+//!
+//! Conceito host-neutral: o contrato JSON + endpoints abaixo é a fronteira
+//! estável que web e Godot consomem. Auth via `sub` do JWT (mesmo padrão de
+//! [`crate::api::me`]). Persistência via [`InstanceStore`] (disco + blobs).
+
+use std::sync::Arc;
+
+use axum::{
+    Json,
+    extract::{Multipart, Path, Query, State},
+    http::{HeaderMap, StatusCode, header},
+    response::IntoResponse,
+};
+use nanoid::nanoid;
+use serde::Deserialize;
+use yggdrasil_core::instance::{
+    AttachmentKind, ContentRef, EditError, EditOp, InstanceStore, StoreError, UniverseInstance,
+    template_by_slug, template_summaries,
+};
+
+use crate::auth::verify_jwt;
+
+/// Estado compartilhado das rotas de instâncias.
+pub struct InstancesState {
+    pub jwt_secret: String,
+    pub store: Arc<InstanceStore>,
+    /// Tamanho máximo de anexo em bytes.
+    pub max_attachment_bytes: usize,
+}
+
+impl InstancesState {
+    pub fn new(jwt_secret: String, store: Arc<InstanceStore>) -> Self {
+        let max_attachment_bytes = std::env::var("YGGDRASIL_MAX_ATTACHMENT_BYTES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(25 * 1024 * 1024);
+        Self {
+            jwt_secret,
+            store,
+            max_attachment_bytes,
+        }
+    }
+}
+
+type ApiState = State<Arc<InstancesState>>;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+fn extract_bearer(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|s| s.to_string())
+}
+
+fn unauthorized() -> axum::response::Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({ "erro": "nao_autenticado" })),
+    )
+        .into_response()
+}
+
+fn err_json(status: StatusCode, msg: &str) -> axum::response::Response {
+    (status, Json(serde_json::json!({ "erro": msg }))).into_response()
+}
+
+/// Extrai e valida o `sub` do JWT, ou devolve 401.
+#[allow(clippy::result_large_err)] // o `Err` é uma `Response` axum por design
+fn require_user(
+    state: &InstancesState,
+    headers: &HeaderMap,
+) -> Result<String, axum::response::Response> {
+    let token = extract_bearer(headers).ok_or_else(unauthorized)?;
+    verify_jwt(&token, &state.jwt_secret).map_err(|_| unauthorized())
+}
+
+/// Carrega a instância exigindo que o caller seja o dono.
+#[allow(clippy::result_large_err)] // o `Err` é uma `Response` axum por design
+fn load_owned(
+    state: &InstancesState,
+    id: &str,
+    user: &str,
+) -> Result<UniverseInstance, axum::response::Response> {
+    let inst = state.store.load(id).map_err(map_store_err)?;
+    if inst.owner != user {
+        return Err(err_json(StatusCode::FORBIDDEN, "nao_e_dono"));
+    }
+    Ok(inst)
+}
+
+fn map_store_err(e: StoreError) -> axum::response::Response {
+    match e {
+        StoreError::NotFound(_) => err_json(StatusCode::NOT_FOUND, "instancia_nao_encontrada"),
+        StoreError::BlobNotFound(_) => err_json(StatusCode::NOT_FOUND, "anexo_nao_encontrado"),
+        StoreError::Serde(_) => err_json(StatusCode::UNPROCESSABLE_ENTITY, "instancia_corrompida"),
+        StoreError::Io(_) => err_json(StatusCode::INTERNAL_SERVER_ERROR, "erro_io"),
+    }
+}
+
+fn map_edit_err(e: EditError) -> axum::response::Response {
+    let status = match e {
+        EditError::BlockExists(_) | EditError::LayerExists(_) => StatusCode::CONFLICT,
+        _ => StatusCode::UNPROCESSABLE_ENTITY,
+    };
+    (status, Json(serde_json::json!({ "erro": e.to_string() }))).into_response()
+}
+
+// ─── CRUD ───────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct CreateQuery {
+    #[serde(default)]
+    pub template: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+/// `POST /api/v1/instances` — cria (opcionalmente a partir de `?template=`).
+pub async fn create_instance(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Query(q): Query<CreateQuery>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let id = nanoid!();
+    let mut inst = match q.template.as_deref() {
+        Some(slug) => match template_by_slug(slug) {
+            Some(t) => {
+                let mut inst = t.instantiate(&id, &user);
+                if let Some(title) = q.title {
+                    inst.title = title;
+                }
+                inst
+            }
+            None => return err_json(StatusCode::NOT_FOUND, "template_nao_encontrado"),
+        },
+        None => UniverseInstance::empty(
+            &id,
+            &user,
+            q.title.unwrap_or_else(|| "Novo universo".into()),
+        ),
+    };
+    // Semeia assets de fundo embutidos para templates que os têm (ex.
+    // neuroanatomia: silhueta + SNC) — assim o toggle de transparência já tem
+    // o que revelar/esconder antes de qualquer upload do usuário.
+    seed_template_assets(&state.store, &mut inst);
+    if let Err(e) = state.store.save(&inst) {
+        return map_store_err(e);
+    }
+    (StatusCode::CREATED, Json(inst)).into_response()
+}
+
+// Assets de fundo embutidos por template (placeholders originais, CC0).
+const NEURO_CORPO_SVG: &[u8] =
+    include_bytes!("../../static/universos/assets/neuroanatomia/corpo.svg");
+const NEURO_SNC_SVG: &[u8] = include_bytes!("../../static/universos/assets/neuroanatomia/snc.svg");
+
+/// Grava os assets de fundo embutidos do template no blob store e liga-os às
+/// camadas correspondentes. No-op para templates sem assets.
+fn seed_template_assets(store: &InstanceStore, inst: &mut UniverseInstance) {
+    let assets: &[(&str, &str, &[u8])] = match inst.template.as_str() {
+        "neuroanatomia" => &[
+            ("corpo", "corpo.svg", NEURO_CORPO_SVG),
+            ("snc", "snc.svg", NEURO_SNC_SVG),
+        ],
+        _ => return,
+    };
+    for (layer_id, filename, bytes) in assets {
+        let Ok((hash, size)) = store.write_blob(bytes) else {
+            continue;
+        };
+        if let Some(layer) = inst.layer_mut(layer_id) {
+            layer.background = Some(ContentRef {
+                kind: AttachmentKind::Image,
+                hash,
+                filename: (*filename).to_string(),
+                mime: "image/svg+xml".to_string(),
+                size,
+            });
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ListQuery {
+    #[serde(default)]
+    pub published: bool,
+}
+
+/// `GET /api/v1/instances` — lista do caller, ou feed público (`?published=true`).
+pub async fn list_instances(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Query(q): Query<ListQuery>,
+) -> impl IntoResponse {
+    if q.published {
+        return match state.store.list_published() {
+            Ok(list) => Json(list).into_response(),
+            Err(e) => map_store_err(e),
+        };
+    }
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    match state.store.list_owner(&user) {
+        Ok(list) => Json(list).into_response(),
+        Err(e) => map_store_err(e),
+    }
+}
+
+/// `GET /api/v1/instances/{id}` — público se `published`, senão owner-only.
+pub async fn get_instance(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let inst = match state.store.load(&id) {
+        Ok(i) => i,
+        Err(e) => return map_store_err(e),
+    };
+    if !inst.published {
+        match require_user(&state, &headers) {
+            Ok(u) if u == inst.owner => {}
+            Ok(_) => return err_json(StatusCode::FORBIDDEN, "nao_e_dono"),
+            Err(r) => return r,
+        }
+    }
+    Json(inst).into_response()
+}
+
+/// `PUT /api/v1/instances/{id}` — salva a instância inteira (owner-only).
+pub async fn put_instance(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(mut body): Json<UniverseInstance>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    // garante existência + posse antes de sobrescrever
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+    // id e owner são imutáveis pelo corpo
+    body.id = id;
+    body.owner = user;
+    body.updated_at = chrono::Utc::now();
+    if let Err(e) = state.store.save(&body) {
+        return map_store_err(e);
+    }
+    Json(body).into_response()
+}
+
+/// `PATCH /api/v1/instances/{id}` — aplica um [`EditOp`] (owner-only).
+pub async fn patch_instance(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(op): Json<EditOp>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let mut inst = match load_owned(&state, &id, &user) {
+        Ok(i) => i,
+        Err(r) => return r,
+    };
+    if let Err(e) = op.apply(&mut inst) {
+        return map_edit_err(e);
+    }
+    if let Err(e) = state.store.save(&inst) {
+        return map_store_err(e);
+    }
+    Json(inst).into_response()
+}
+
+/// `DELETE /api/v1/instances/{id}` — apaga (owner-only).
+pub async fn delete_instance(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+    match state.store.delete(&id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => map_store_err(e),
+    }
+}
+
+// ─── Anexos ─────────────────────────────────────────────────────────────────
+
+/// `POST /api/v1/instances/{id}/attachments` — upload multipart → [`ContentRef`].
+pub async fn upload_attachment(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+
+    let field = match multipart.next_field().await {
+        Ok(Some(f)) => f,
+        Ok(None) => return err_json(StatusCode::BAD_REQUEST, "arquivo_ausente"),
+        Err(_) => return err_json(StatusCode::BAD_REQUEST, "multipart_invalido"),
+    };
+
+    let filename = field.file_name().unwrap_or("anexo").to_string();
+    let mime = field
+        .content_type()
+        .unwrap_or("application/octet-stream")
+        .to_string();
+
+    let kind = match AttachmentKind::from_mime(&mime) {
+        Some(k) => k,
+        None => {
+            return err_json(StatusCode::UNSUPPORTED_MEDIA_TYPE, "tipo_nao_suportado");
+        }
+    };
+
+    let bytes = match field.bytes().await {
+        Ok(b) => b,
+        Err(_) => return err_json(StatusCode::BAD_REQUEST, "leitura_falhou"),
+    };
+    if bytes.len() > state.max_attachment_bytes {
+        return err_json(StatusCode::PAYLOAD_TOO_LARGE, "arquivo_grande_demais");
+    }
+
+    let (hash, size) = match state.store.write_blob(&bytes) {
+        Ok(r) => r,
+        Err(e) => return map_store_err(e),
+    };
+
+    let content = ContentRef {
+        kind,
+        hash,
+        filename,
+        mime,
+        size,
+    };
+    (StatusCode::CREATED, Json(content)).into_response()
+}
+
+/// `GET /api/v1/instances/{id}/attachments/{hash}` — serve bytes content-addressed.
+pub async fn serve_attachment(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path((id, hash)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let inst = match state.store.load(&id) {
+        Ok(i) => i,
+        Err(e) => return map_store_err(e),
+    };
+    if !inst.published {
+        match require_user(&state, &headers) {
+            Ok(u) if u == inst.owner => {}
+            Ok(_) => return err_json(StatusCode::FORBIDDEN, "nao_e_dono"),
+            Err(r) => return r,
+        }
+    }
+
+    // descobre o mime/filename do ContentRef referenciado (se houver)
+    let cref = inst
+        .layers
+        .iter()
+        .flat_map(|l| {
+            l.background
+                .iter()
+                .chain(l.blocks.iter().flat_map(|b| b.attachments.iter()))
+        })
+        .find(|c| c.hash == hash);
+
+    let bytes = match state.store.read_blob(&hash) {
+        Ok(b) => b,
+        Err(e) => return map_store_err(e),
+    };
+
+    let mime = cref
+        .map(|c| c.mime.clone())
+        .unwrap_or_else(|| "application/octet-stream".into());
+    let filename = cref
+        .map(|c| c.filename.clone())
+        .unwrap_or_else(|| hash.clone());
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, mime),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"{filename}\""),
+            ),
+            (
+                header::CACHE_CONTROL,
+                "public, max-age=31536000, immutable".into(),
+            ),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
+// ─── Templates ──────────────────────────────────────────────────────────────
+
+/// `GET /api/v1/templates` — lista resumida dos templates.
+pub async fn list_templates() -> impl IntoResponse {
+    Json(template_summaries())
+}
+
+/// `GET /api/v1/templates/{slug}` — detalhe (seed + palette + render_hints).
+pub async fn get_template(Path(slug): Path<String>) -> impl IntoResponse {
+    match template_by_slug(&slug) {
+        Some(t) => Json(t).into_response(),
+        None => err_json(StatusCode::NOT_FOUND, "template_nao_encontrado"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        Router,
+        body::Body,
+        http::Request,
+        routing::{get, post},
+    };
+    use tempfile::TempDir;
+    use tower::ServiceExt;
+
+    use crate::auth::sign_jwt;
+
+    const SECRET: &str = "test-secret";
+
+    fn app() -> (Router, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(InstanceStore::new(dir.path()).unwrap());
+        let state = Arc::new(InstancesState {
+            jwt_secret: SECRET.into(),
+            store,
+            max_attachment_bytes: 1024,
+        });
+        let router = Router::new()
+            .route(
+                "/api/v1/instances",
+                post(create_instance).get(list_instances),
+            )
+            .route(
+                "/api/v1/instances/{id}",
+                get(get_instance)
+                    .put(put_instance)
+                    .patch(patch_instance)
+                    .delete(delete_instance),
+            )
+            .route("/api/v1/templates", get(list_templates))
+            .route("/api/v1/templates/{slug}", get(get_template))
+            .with_state(state);
+        (router, dir)
+    }
+
+    fn token(user: &str) -> String {
+        sign_jwt(user, "u@test.com", SECRET).unwrap()
+    }
+
+    async fn body_json(resp: axum::response::Response) -> serde_json::Value {
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn create_sem_jwt_401() {
+        let (app, _d) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/instances")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn create_com_template_neuroanatomia() {
+        let (app, _d) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/instances?template=neuroanatomia")
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let v = body_json(resp).await;
+        assert_eq!(v["template"], "neuroanatomia");
+        assert_eq!(v["owner"], "alice");
+        let layers = v["layers"].as_array().unwrap();
+        assert_eq!(layers.len(), 3);
+        // assets de fundo (silhueta + SNC) semeados → o toggle de transparência
+        // tem o que revelar/esconder sem upload prévio.
+        for id in ["corpo", "snc"] {
+            let layer = layers.iter().find(|l| l["id"] == id).unwrap();
+            assert!(
+                layer["background"]["hash"]
+                    .as_str()
+                    .is_some_and(|h| !h.is_empty()),
+                "camada {id} deveria ter background semeado"
+            );
+            assert_eq!(layer["background"]["mime"], "image/svg+xml");
+        }
+    }
+
+    #[tokio::test]
+    async fn create_template_invalido_404() {
+        let (app, _d) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/instances?template=fantasma")
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    async fn create_blank(app: &Router, user: &str) -> String {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/instances")
+                    .header("authorization", format!("Bearer {}", token(user)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v = body_json(resp).await;
+        v["id"].as_str().unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn patch_place_block_persiste() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        let op = serde_json::json!({
+            "op": "place_block",
+            "layer": "base",
+            "block": { "id": "n1", "block_type": "note", "pos": { "x": 2, "y": 3 } }
+        });
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/instances/{id}"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .header("content-type", "application/json")
+                    .body(Body::from(op.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["layers"][0]["blocks"][0]["id"], "n1");
+    }
+
+    #[tokio::test]
+    async fn patch_connection_endpoint_invalido_422() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        let op = serde_json::json!({
+            "op": "add_connection",
+            "connection": { "id": "c1", "from": "nada", "to": "nada2" }
+        });
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/instances/{id}"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .header("content-type", "application/json")
+                    .body(Body::from(op.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn owner_b_nao_acessa_instancia_de_a_403() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/api/v1/instances/{id}"))
+                    .header("authorization", format!("Bearer {}", token("bob")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn delete_depois_get_404() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        let del = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/v1/instances/{id}"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(del.status(), StatusCode::NO_CONTENT);
+        let get = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/api/v1/instances/{id}"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(get.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn templates_lista_e_detalhe() {
+        let (app, _d) = app();
+        let list = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/templates")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(list.status(), StatusCode::OK);
+        let detail = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/templates/neuroanatomia")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(detail.status(), StatusCode::OK);
+        let v = body_json(detail).await;
+        assert_eq!(v["slug"], "neuroanatomia");
+        assert!(v["palette"].as_array().unwrap().len() >= 1);
+    }
+}

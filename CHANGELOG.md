@@ -2,6 +2,195 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [1.2.0] — 2026-06-01 — Editor de universos + Godot/3D + neuro multiescala + Fale conosco
+
+### Added — Landing page "Relic Archive" (UI revamp, fase 1) — YG-90
+
+- Nova **landing page** em `/` (design `docs/mock/` — padrão preto "Relic
+  Archive": superfície `#131313`, ouro `#e9c349`, CTA rosa/borgonha, Newsreader +
+  Manrope, camadas tonais sem bordas 1px). O mapa em canvas segue em `/lobby`.
+- **Visitante (não logado)**: barra esquerda lista os **universos** (com o melhor
+  placar de cada), CTA **"Criar universo"**, **stats anônimas** (universos,
+  sessões 24h, jogando agora, maior placar) e grade de **placares por jogo** —
+  ícone + pontuação + quem fez.
+- `GET /api/v1/stats` — endpoint **público** de agregados sem PII (sessões 24h +
+  jogando agora); evita expor o `/api/v1/admin/analytics` (que continua com token).
+
+### Fixed — neuro: licenças revisadas (distribuição pública) + deep-link de região
+
+- **Brainstem Navigator removido** de `/neuro`: o `Copyright.txt` (NITRC/MGH)
+  proíbe distribuir cópias **ou derivados** fora da organização — incompatível
+  com servir publicamente. `convert_atlas.py` não o constrói mais.
+- **Licenças corrigidas/atestadas** para distribuição pública: Harvard-Oxford é
+  **CC BY-SA 4.0** (não a licença FMRIB restritiva — atribuição+ShareAlike,
+  creditado no header de `/neuro`); AAN v2.0 é **CC0**. Registro em
+  `docs/anatomia/ATTRIBUTION.md`.
+- **Deep-link de região**: `/neuro?focus=<dir>:<segs>&label=` foca um núcleo/
+  região específico (resto oculto) — permite índices externos abrirem o atlas
+  já focado.
+
+### Added — Fale conosco: canal de feedback por universo (YG-89)
+
+- Botão flutuante **"💬 Fale conosco"** em todos os universos e na raiz/lobby
+  (`static/feedback.js`, auto-injetado): feedback, dúvida ou sugestão.
+- `POST /api/v1/feedback` — **JWT opcional**: mensagem de usuário logado grava
+  `user_sub`; sem token, é anônima. **Nome e e-mail opcionais** ("se gostar de
+  receber resposta, deixe seu e-mail"). Validação de tipo/mensagem/e-mail.
+- Persistência na mesma SQLite (`YGGDRASIL_DB`): tabela `feedback` criada
+  idempotentemente no boot (`feedback.rs`), indexada por universo e data.
+- **Mural público** em `/feedback` (`GET /api/v1/feedback`) — mostra tipo,
+  universo, **nome** (ou "Anônimo"), mensagem e data; **e-mail nunca** sai do
+  banco (a query só lê colunas públicas). Formulário avisa que a mensagem pode
+  aparecer no mural.
+
+### Added — Drill-down macro→núcleos + camada do tronco (YG-88)
+
+- **Clicar no encéfalo** no viewer Godot (`/anatomia`) abre o viewer de núcleos
+  (`/neuro`) — salto macro→sub-anatômico (web export via `JavaScriptBridge`).
+- `/neuro` ganha 2ª camada: **núcleos do tronco — Harvard AAN v2.0 (CC0)**, 16
+  núcleos nomeados (DR, MnR, PAG, VTA, LC, LDTg, mRt, PBC, PnO, PTg; L/R),
+  alinhada (MNI152 1mm) com a camada subcortical. `convert_atlas.py` constrói as
+  duas via Zenodo/nilearn. (Brainstem Navigator avaliado e **não** incluído —
+  ver Fixed acima.) Desenvolvido em worktree `feat/YG-88-...`, merge FF.
+
+### Changed — Home/lobby: chips de universos, ícones SVG, painéis colapsáveis
+
+- Legenda estática (desatualizada) substituída por **chips clicáveis** de todos os
+  universos (Snake/Tetris/Invaders/Poker/Vim/Neuro/Comunicação) sob o mapa —
+  clicar entra direto no universo.
+- **Ícones SVG, não emojis** — conjunto de ícones vetoriais (`currentColor`) nos
+  chips (inline, herda a cor) e nos portais do canvas (recoloridos via data-URL).
+  Emojis removidos também dos rótulos de scores/atividade.
+- **HIGH SCORES**, **ATIVIDADE RECENTE** e **REVIEWS** agora são painéis
+  **colapsáveis** (`<details>`), fechados por padrão — sidebar mais limpa.
+
+### Added — Neuro multiescala: POC Neuroglancer em /neuro (YG-87)
+
+- `/neuro` agora é um viewer **Neuroglancer** (embarcado) do **atlas de núcleos
+  subcorticais** (Harvard-Oxford via nilearn → **Precomputed** com cloud-volume +
+  igneous), servido pela própria plataforma; 21 núcleos como segmentos 3D
+  selecionáveis (auto-mesh do labelmap). Viewer Godot macro fica em `/anatomia`.
+- `CorsLayer::permissive()` no `/static` (NG hosted busca os dados cross-origin).
+- `scripts/build-neuro-atlas.sh` + `convert_atlas.py` reproduzem os dados
+  (gitignored). Direção: viewer profundo = Neuroglancer/Precomputed, não Godot.
+- Licença Harvard-Oxford: **CC BY-SA 4.0** (ver Fixed em [1.2.0]).
+
+### Changed — Melhorias de navegação no viewer 3D (YG-86)
+
+- Scroll de zoom **menos agressivo** (passo suave por notch).
+- **Controles na tela** (HUD): girar (yaw ◄►), inclinar (pitch ▲▼), zoom (+/−),
+  reset (R) — botões com hold-to-repeat.
+- **Atalhos de teclado**: setas/WASD giram·inclinam, +/− zoom.
+- **Clicar numa estrutura centraliza** a câmera nela (e mostra o nome).
+- **Sem arrastar** para navegar (removido drag-to-orbit/pan) — navegação via
+  controles + atalhos + clique.
+
+### Added — Neuro como universo + deploy (YG-85)
+
+- **neuro** (atlas 3D) é um universo de verdade: portal no lobby `(20,10)` (core:
+  `lobby/grid.rs`/`portals.rs`/`mod.rs`, símbolo 🧠 no `lobby.js`), entrada no
+  catálogo `GET /api/v1/universos` (7 universos), e rota `/universos/neuro` →
+  o viewer Godot Web (`/static/anatomia/`).
+- Deploy Fly (`yggdrasil-artelonga`, gru) com o bundle 3D na imagem; domínio
+  `yggdrasil.artelonga.com.br` via `certs add` (DNS do dono).
+
+### Added — Visualizador 3D servido online (YG-84)
+
+- Export do visualizador 3D para a **web (Godot HTML5/WASM, single-thread)** →
+  servível por host estático sem COOP/COEP. Servido pelo `yggdrasil-web` em
+  **`/anatomia`** (308 → `/static/anatomia/`).
+- `scripts/build-anatomy-web.sh` (export → `static/anatomia/`) +
+  `godot.sh install-templates`. Bundle (~67 MB) gitignored, reproduzível.
+- Config: preset Web `thread_support=false`, `vram_texture_compression=false`;
+  `run/main_scene` → o visualizador 3D.
+- Verificado em Chrome real (WebGL 2.0, renderer Compatibility) servido localmente.
+
+### Added — Visualizador 3D interativo de anatomia (YG-83)
+
+Pivô para 3D (estilo TeachMeAnatomy) no cliente Godot, sobre malhas open-source
+reais:
+
+- `yggdrasil-godot/scenes/anatomy3d/anatomy_viewer.tscn` + script: câmera orbital
+  (girar/zoom/pan), corpo translúcido com **SNC (encéfalo + medula) por dentro**,
+  slider de transparência do corpo, e click-to-pick (raycast trimesh) com rótulo.
+- Malhas **BodyParts3D / DBCLS (CC-BY-SA 2.1 JP)**: pele, encéfalo (59 sub-malhas
+  mescladas), medula — compartilham coordenadas, então o SNC já fica no lugar.
+- `scripts/fetch-anatomy.sh` baixa/prepara as malhas (gitignored, ~37 MB);
+  `assets/anatomia/ATTRIBUTION.md` credita a fonte.
+- Verificado por render headless (corpo translúcido + encéfalo; toggle revela o
+  SNC; orbit confirmado em frame de perfil).
+
+## [1.1.0] — 2026-05-29 — Editor de universos data-driven (YG-73) + integração CLI do Godot (YG-82)
+
+### Added — Integração CLI do Godot + lint headless de GDScript (YG-82)
+
+- `yggdrasil-godot/scripts/godot.sh` — provisiona Godot 4.5 headless
+  (`install`, sem GUI/sudo; em macOS remove quarentena + assina ad-hoc) e valida
+  todo o GDScript (`check`) via harness `scripts/dev/lint.gd` em contexto de
+  runtime (autoloads registrados, cobre scripts não referenciados, sem falsos
+  positivos). Subcomandos `bin/version/import/editor/run` para dev.
+- `build.sh` compartilha a resolução de binário (`$GODOT_BIN` → `.godot-bin/` →
+  `$PATH`).
+- CI: novo job `godot` (`install` + `check`).
+- **Login no cliente Godot** (magic-link): `ApiClient.request_login_code` +
+  `verify_login` (espelham `/api/v1/auth/{code,verify}`), token decodificado e
+  persistido via `SaveManager`, restaurado no boot (`$GODOT_JWT` tem prioridade
+  para dev/headless). `scenes/editor/grid_editor.tscn` ganha painel de login —
+  surface Godot do editor agora é interativa ponta a ponta. Autoloads reordenados
+  (`SaveManager` antes de `ApiClient`).
+
+### Added — Review E2E (script + CI)
+
+- `scripts/e2e-editor.sh` — review ponta a ponta do editor contra um servidor
+  real com **autenticação real** (magic-link): login → criar de template →
+  upload de anexo → EditOps → persistência → restart → re-leitura do disco.
+  Aceita `$YGGDRASIL_WEB_BIN`. Rodado no CI (job `build`) sobre o binário release.
+
+### Fixed — Três quebras pré-existentes de GDScript sob Godot 4.5 (reveladas pelo lint)
+
+- `api_client.gd`: `_get`/`_post` renomeados para `_http_get`/`_http_post`
+  (`_get` colidia com o virtual `Object._get()`).
+- `invaders_game.gd` / `tetris_game.gd`: `var color :=` anotado como
+  `var color: Color =` (inferência de tipo mais estrita no 4.5).
+
+### Added — Editor de universos estilo Sims/Paralives (base + player/editor web + Godot)
+
+Novo conceito **paralelo** ao runtime WASM: universos autorados por usuário como
+**dados** (`UniverseInstance`) carregados em runtime, não crates compilados. Nada
+de arcade/WASM/registry foi tocado — tudo aditivo.
+
+- **YG-74** `yggdrasil-core/src/instance/schema.rs` — formato serde
+  (`UniverseInstance`, `Layer`, `Block`, `Connection`, `ContentRef`), projeção
+  2D/isométrica, `schema_version = 1`.
+- **YG-75** `instance/store.rs` — persistência em disco (escrita atômica) +
+  anexos content-addressed por SHA-256 com dedupe; disco é a fonte da verdade.
+- **YG-76** `yggdrasil-web/src/api/instances.rs` — REST CRUD + PATCH `EditOp`
+  granular (place/move/delete block, edit/add layer, add/del connection, attach),
+  validação num ponto único, auth por dono (JWT `sub`).
+- **YG-77** upload multipart → blob content-addressed (allowlist de MIME + cap de
+  tamanho) e serve com `Cache-Control: immutable`.
+- **YG-79** `instance/template.rs` — mecânica de templates (`seed` + `palette` +
+  `render_hints`) + endpoints `GET /api/v1/templates[/{slug}]`; template `blank`.
+- **YG-80** template `neuroanatomia` — silhueta + camada SNC (opacity 0.5 = toggle
+  de transparência) + landmarks + conexões; fontes open-source documentadas em
+  `docs/architecture/editor.md`.
+- Template `neuroanatomia` semeia assets de fundo embutidos (silhueta + SNC,
+  SVGs originais CC0) na criação — o toggle de transparência já revela/esconde o
+  SNC sobre o corpo sem upload prévio.
+- **YG-78/YG-81** player+editor web genérico (`static/universos/instance.html`
+  + `instance.js`): render de camadas/projeção/opacity/blocos/conexões, viewers de
+  anexo, e modo edição (paleta, place/move/delete, slider de opacity, conexões,
+  upload) via os endpoints REST.
+- **Godot** — `scripts/editor/instance_api.gd` + `scripts/editor/grid_editor.gd`
+  + `scenes/editor/grid_editor.tscn`: editor de grade consumindo o mesmo contrato
+  REST host-neutral.
+
+Verificado end-to-end ao vivo: criar de template → place block → toggle de opacity
+persiste → upload+serve de anexo → sobrevive a restart do servidor (reindex do
+disco). `cargo fmt`/`clippy -D warnings`/`test --workspace` limpos.
+
+---
+
 ## [1.0.1] — 2026-05-24
 
 ### Changed — Fly machines now suspend instead of stop on idle (CO-285)

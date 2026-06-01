@@ -352,7 +352,47 @@ pub fn default_registry() -> UniverseRegistry {
     )
     .expect("poker/heads-up");
 
+    // ── Comunicação — salas de léxico cross-linguístico ───────────────────────
+    // Universo autorado (não-arcade): seu contrato HTTP vive em
+    // `/api/v1/comunicacao/*`, então sobrescrevemos o `ApiContract` default.
+    let mut comunicacao = UniverseNode::root(
+        "comunicacao",
+        "Comunicação",
+        "Salas interativas de léxico cross-linguístico — Mbyá Guaraní × Iorubá. \
+         Posicione palavras num mapa, ligue-as a conceitos e publique termos novos.",
+    );
+    comunicacao.api = ApiContract {
+        start: "/api/v1/comunicacao/salas".to_string(),
+        input: "/api/v1/comunicacao/salas/{id}".to_string(),
+        page: "/universos/comunicacao".to_string(),
+    };
+    reg.register(comunicacao).expect("comunicacao root");
+    reg.register(
+        comunicacao_variant("comunicacao/yoruba", "Sala Iorubá", "yoruba")
+            .with_param("template", serde_json::json!("yoruba"))
+            .with_param("lang", serde_json::json!("yo")),
+    )
+    .expect("comunicacao/yoruba");
+    reg.register(
+        comunicacao_variant("comunicacao/mbya", "Sala Mbyá Guaraní", "mbya")
+            .with_param("template", serde_json::json!("mbya"))
+            .with_param("lang", serde_json::json!("gn-mbya")),
+    )
+    .expect("comunicacao/mbya");
+
     reg
+}
+
+/// Variante do universo `comunicacao` com `ApiContract` apontando para o
+/// template-semente (`?template=<slug>`).
+fn comunicacao_variant(slug: &str, title: &str, template: &str) -> UniverseNode {
+    let mut node = UniverseNode::variant(slug, "comunicacao", title, "");
+    node.api = ApiContract {
+        start: format!("/api/v1/comunicacao/salas?template={template}"),
+        input: "/api/v1/comunicacao/salas/{id}".to_string(),
+        page: format!("/universos/comunicacao?template={template}"),
+    };
+    node
 }
 
 #[cfg(test)]
@@ -437,12 +477,12 @@ mod tests {
     }
 
     #[test]
-    fn default_registry_tem_quatro_roots() {
+    fn default_registry_tem_cinco_roots() {
         let reg = default_registry();
         let roots = reg.roots();
-        assert_eq!(roots.len(), 4);
+        assert_eq!(roots.len(), 5);
         let root_slugs: Vec<&str> = roots.iter().map(|n| n.slug.as_str()).collect();
-        for expected in &["snake", "tetris", "invaders", "poker"] {
+        for expected in &["snake", "tetris", "invaders", "poker", "comunicacao"] {
             assert!(
                 root_slugs.contains(expected),
                 "esperava {expected} em {root_slugs:?}"

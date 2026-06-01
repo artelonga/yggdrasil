@@ -71,10 +71,22 @@ COPY --from=builder /usr/src/yggdrasil/target/release/yggdrasil-web /usr/local/b
 # so keep WORKDIR=/app and lay out the static tree under it.
 COPY --from=builder /usr/src/yggdrasil/yggdrasil-web/static /app/yggdrasil-web/static
 
+# Semente read-only do léxico curado (do contexto de build, ~/projects). Só os
+# planos de termos; PDFs de comunicacao/mbya/ ficam de fora via .dockerignore.
+COPY comunicacao/yoruba       /app/comunicacao-seed/yoruba
+COPY comunicacao/guarani-mbya /app/comunicacao-seed/guarani-mbya
+COPY comunicacao/portuguese   /app/comunicacao-seed/portuguese
+
+# Entrypoint: copia a semente para o volume gravável no boot (preserva _users/),
+# depois exec do servidor. Best-effort — nunca aborta o boot.
+RUN printf '#!/bin/sh\nSEED=/app/comunicacao-seed\nDIR="${COMUNICACAO_DIR:-/data/comunicacao-lexicon}"\nmkdir -p "$DIR" 2>/dev/null\n[ -d "$SEED" ] && cp -r "$SEED/." "$DIR/" 2>/dev/null\nexec /usr/local/bin/yggdrasil-web\n' > /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh
+
 VOLUME /data
 
 ENV YGGDRASIL_DB=/data/yggdrasil.db
 ENV YGGDRASIL_SEMENTES_DB=/data/yggdrasil-sementes.db
+ENV COMUNICACAO_DIR=/data/comunicacao-lexicon
 ENV RUST_LOG=yggdrasil_web=info,tower_http=info
 
 RUN mkdir -p /data && groupadd -r ygg && useradd -r -g ygg -d /data ygg && chown ygg:ygg /data
@@ -85,4 +97,4 @@ EXPOSE 3030
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3030/health || exit 1
 
-CMD ["/usr/local/bin/yggdrasil-web"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

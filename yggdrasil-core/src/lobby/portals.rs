@@ -5,4 +5,7 @@ pub mod slug {
     pub const TETRIS: &str = "tetris";
     pub const INVADERS: &str = "invaders";
     pub const POKER: &str = "poker";
+    pub const NEURO: &str = "neuro";
+    /// Comunicação — salas interativas de léxico cross-linguístico.
+    pub const COMUNICACAO: &str = "comunicacao";
 }

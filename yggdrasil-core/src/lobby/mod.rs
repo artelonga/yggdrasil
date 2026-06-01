@@ -45,6 +45,14 @@ pub fn lobby() -> Universe {
     let _ = u
         .map
         .set_tile(pos::POKER.0, pos::POKER.1, Tile::Portal(slug::POKER.into()));
+    let _ = u
+        .map
+        .set_tile(pos::NEURO.0, pos::NEURO.1, Tile::Portal(slug::NEURO.into()));
+    let _ = u.map.set_tile(
+        pos::COMUNICACAO.0,
+        pos::COMUNICACAO.1,
+        Tile::Portal(slug::COMUNICACAO.into()),
+    );
 
     u
 }
@@ -107,6 +115,15 @@ mod tests {
         assert_eq!(
             portal_slug(u.map.get_tile(pos::POKER.0, pos::POKER.1)),
             Some(slug::POKER)
+        );
+    }
+
+    #[test]
+    fn lobby_has_comunicacao_portal_at_documented_pos() {
+        let u = lobby();
+        assert_eq!(
+            portal_slug(u.map.get_tile(pos::COMUNICACAO.0, pos::COMUNICACAO.1)),
+            Some(slug::COMUNICACAO)
         );
     }
 

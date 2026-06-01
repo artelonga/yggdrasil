@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 400" role="img" aria-label="Sistema nervoso central">
+  <!-- Placeholder original (CC0) — encéfalo + medula para a camada de overlay,
+       alinhada à silhueta. Substituível por atlas anatômico real via upload. -->
+  <g stroke="#7ec8e3" stroke-width="6" stroke-linecap="round" fill="none">
+    <path d="M104 36 C94 22 122 12 130 24 C144 14 162 30 150 44 C162 56 144 70 130 62 C124 74 104 68 108 54 C94 52 94 40 104 36 Z"
+          fill="#7ec8e3" fill-opacity="0.4"/>
+    <line x1="122" y1="64" x2="122" y2="300"/>
+    <path d="M122 122 q-26 8 -42 30"/>
+    <path d="M122 150 q26 8 42 30"/>
+    <path d="M122 196 q-26 8 -42 32"/>
+    <path d="M122 226 q26 8 42 32"/>
+    <path d="M122 270 q-22 8 -34 28"/>
+    <path d="M122 290 q22 8 34 28"/>
+  </g>
+</svg>

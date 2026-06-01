@@ -30,7 +30,9 @@ const app = {
   rows: 12,          // linhas visíveis no canvas (ajusta conforme nível)
   pendingKey: null,  // teclas aguardando composição (ex: 'g' → 'gg', 'd' → 'dw')
   lastGPress: false, // para detectar 'gg'
-  sending: false,    // evita envio concorrente
+  gTimer: null,      // timeout do 'gg'
+  queue: [],         // fila serial de teclas (nunca descarta — corrige tecla perdida)
+  processing: false, // há um POST em andamento?
 };
 
 // ── Funções de UI ────────────────────────────────────────────────────────────
@@ -185,22 +187,41 @@ async function createSession() {
   return res.json();
 }
 
-async function sendKey(key) {
-  if (app.sending) return null;
-  app.sending = true;
+async function postKey(key) {
+  const res = await fetch(`/api/v1/universos/vim/sessoes/${app.sessionId}/tecla`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key }),
+  });
+  if (!res.ok) {
+    console.warn('send_key error', res.status);
+    return null;
+  }
+  return res.json();
+}
+
+// Fila serial: cada tecla é enviada na ordem, sem descartar nada enquanto um
+// POST está em andamento (corrige "a segunda tecla some" / $ e G ignorados).
+function enqueueKey(key) {
+  app.queue.push(key);
+  if (!app.processing) processQueue();
+}
+
+async function processQueue() {
+  app.processing = true;
   try {
-    const res = await fetch(`/api/v1/universos/vim/sessoes/${app.sessionId}/tecla`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
-    if (!res.ok) {
-      console.warn('send_key error', res.status);
-      return null;
+    while (app.queue.length) {
+      const key = app.queue.shift();
+      try {
+        const data = await postKey(key);
+        if (data) applyState(data.state);
+      } catch (err) {
+        console.error('vim key error', err);
+        setStatus('Erro de comunicação com o servidor.');
+      }
     }
-    return res.json();
   } finally {
-    app.sending = false;
+    app.processing = false;
   }
 }
 
@@ -248,30 +269,22 @@ function mapKey(e) {
 
 // ── Tratamento de teclas com composição ─────────────────────────────────────
 
-async function handleVimKey(key) {
-  // Detecta 'gg': dois 'g' consecutivos → envia "gg"
-  if (app.state && app.state.mode === 'NORMAL') {
-    if (key === 'g') {
-      if (app.lastGPress) {
-        app.lastGPress = false;
-        const data = await sendKey('gg');
-        if (data) applyState(data.state);
-        return;
-      } else {
-        app.lastGPress = true;
-        // Aguarda próximo 'g' — sem enviar nada ainda
-        setTimeout(() => {
-          // Se não veio segundo 'g', ignora (ou envia 'g' sozinho — noop)
-          app.lastGPress = false;
-        }, 800);
-        return;
-      }
+function handleVimKey(key) {
+  // Detecta 'gg': dois 'g' consecutivos em NORMAL → enfileira "gg"
+  if (key === 'g' && app.state && app.state.mode === 'NORMAL') {
+    if (app.lastGPress) {
+      app.lastGPress = false;
+      clearTimeout(app.gTimer);
+      enqueueKey('gg');
+      return;
     }
+    app.lastGPress = true;
+    clearTimeout(app.gTimer);
+    app.gTimer = setTimeout(() => { app.lastGPress = false; }, 800);
+    return;
   }
   app.lastGPress = false;
-
-  const data = await sendKey(key);
-  if (data) applyState(data.state);
+  enqueueKey(key);
 }
 
 // ── Event listener de teclado ────────────────────────────────────────────────
@@ -289,10 +302,7 @@ function handleKeydown(e) {
   if (!key) return;
 
   e.preventDefault();
-  handleVimKey(key).catch(err => {
-    console.error('vim key error', err);
-    setStatus('Erro de comunicação com o servidor.');
-  });
+  handleVimKey(key);
 }
 
 // ── Inicialização ────────────────────────────────────────────────────────────

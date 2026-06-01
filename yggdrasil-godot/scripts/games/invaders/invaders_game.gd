@@ -151,7 +151,7 @@ func _draw() -> void:
 		var aw := _s(ALIEN_W)
 		var ah := _s(ALIEN_H)
 		var row: int = int(alien.get("row", 0))
-		var color := alien_colors[clampi(row, 0, alien_colors.size() - 1)]
+		var color: Color = alien_colors[clampi(row, 0, alien_colors.size() - 1)]
 		draw_rect(Rect2(ax + _s(2), ay, aw - _s(4), ah), color)
 		draw_rect(Rect2(ax, ay + _s(2), _s(2), ah - _s(4)), color)
 		draw_rect(Rect2(ax + aw - _s(2), ay + _s(2), _s(2), ah - _s(4)), color)

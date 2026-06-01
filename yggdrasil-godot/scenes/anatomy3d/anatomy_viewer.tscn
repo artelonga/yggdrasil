@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1anatomy3dviewer1ygg"]
+
+[ext_resource type="Script" path="res://scripts/anatomy3d/anatomy_viewer.gd" id="1_anat"]
+
+[node name="AnatomyViewer" type="Node3D"]
+script = ExtResource("1_anat")

@@ -43,3 +43,24 @@ jobs:
 
       - name: Clippy
         run: cargo clippy -- -D warnings
+
+      - name: E2E — editor de universos (servidor real + auth real)
+        run: YGGDRASIL_WEB_BIN=target/release/yggdrasil-web bash scripts/e2e-editor.sh
+
+  godot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot binary
+        uses: actions/cache@v4
+        with:
+          path: yggdrasil-godot/.godot-bin
+          key: godot-4.5-stable-${{ runner.os }}
+
+      - name: Provision Godot 4.5 headless
+        run: yggdrasil-godot/scripts/godot.sh install
+
+      - name: Validate GDScript (headless lint)
+        run: yggdrasil-godot/scripts/godot.sh check

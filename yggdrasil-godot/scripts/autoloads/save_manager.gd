@@ -21,9 +21,18 @@ var settings: Dictionary = {
 	"sfx_volume": 1.0,
 }
 
+## JWT do Yggdrasil, persistido entre sessões (login magic-link via ApiClient).
+var auth_token: String = ""
+
 
 func _ready() -> void:
 	load_save()
+
+
+## Persiste (ou limpa) o token de autenticação.
+func set_auth_token(token: String) -> void:
+	auth_token = token
+	save()
 
 
 func save() -> void:
@@ -31,6 +40,7 @@ func save() -> void:
 		"profile": player_profile,
 		"stats": game_stats,
 		"settings": settings,
+		"auth_token": auth_token,
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file:
@@ -53,6 +63,8 @@ func load_save() -> void:
 			game_stats.merge(data["stats"], true)
 		if data.has("settings"):
 			settings.merge(data["settings"], true)
+		if data.has("auth_token"):
+			auth_token = data["auth_token"]
 
 
 func record_game_result(game_name: String, score: int) -> void:

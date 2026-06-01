@@ -7,8 +7,8 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #0d0d12;
-      color: #e8e3d3;
+      background: #1c1b1b;
+      color: #e5e2e1;
       font-family: system-ui, monospace;
       display: flex;
       flex-direction: column;
@@ -19,11 +19,11 @@
     h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.8rem; margin-bottom: 0.4rem; }
     .subtitulo { opacity: 0.5; font-size: 0.85rem; margin-bottom: 1.5rem; }
     .info { display: flex; gap: 2rem; margin-bottom: 1rem; font-size: 0.95rem; }
-    .info span strong { font-size: 1.3rem; margin-left: 0.3rem; color: #d4af37; }
+    .info span strong { font-size: 1.3rem; margin-left: 0.3rem; color: #e9c349; }
     canvas {
       display: block;
       image-rendering: pixelated;
-      border: 1px solid #1a1a2e;
+      border: 1px solid #201f1f;
     }
     .rodape {
       min-height: 1.4em;
@@ -33,6 +33,11 @@
       letter-spacing: 0.03em;
     }
   </style>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/ui/relic.css">
+<style>/* relic theme normalization */
+body{font-family:'Manrope',system-ui,sans-serif}
+h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
 </head>
 <body>
   <h1>🐍 SNAKE</h1>
@@ -43,5 +48,6 @@
   <canvas id="canvas" aria-label="Jogo Snake"></canvas>
   <p id="rodape" class="rodape" aria-live="polite"></p>
   <script src="/static/universos/snake.js"></script>
+  <script defer src="/static/feedback.js"></script>
 </body>
 </html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Comunicação — salas de léxico</title>
+  <style>
+    :root {
+      --bg: #0d0d12;
+      --ink: #e8e3d3;
+      --dim: #9a937f;
+      --gold: #d4af37;
+      --panel: #16161e;
+      --line: #2a2a36;
+      --local: #6b6b78;
+      --linked: #5b8def;
+      --contributed: #4caf72;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #app { display: flex; height: 100%; }
+    canvas { flex: 1; display: block; cursor: grab; touch-action: none; }
+    canvas.grabbing { cursor: grabbing; }
+
+    /* Toolbar */
+    #toolbar { position: fixed; top: 0; left: 0; right: 0; height: 48px; display: flex; align-items: center;
+      gap: .5rem; padding: 0 .75rem; background: rgba(13,13,18,.86); border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(6px); z-index: 10; }
+    #toolbar .title { font-weight: 300; letter-spacing: .14em; text-transform: uppercase; font-size: .82rem; color: var(--gold); }
+    #toolbar .spacer { flex: 1; }
+    button { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+      padding: .4rem .7rem; font-size: .82rem; cursor: pointer; }
+    button:hover { border-color: var(--gold); }
+    button.primary { background: var(--gold); color: #1a1407; border-color: var(--gold); font-weight: 600; }
+    #search { background: #0d0d12; color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+      padding: .4rem .6rem; font-size: .82rem; width: 14rem; max-width: 32vw; margin-left: .75rem; }
+    #search:focus { outline: none; border-color: var(--gold); }
+    #inspector input:disabled, #inspector textarea:disabled { opacity: .8; cursor: default; }
+
+    /* Inspector */
+    #inspector { position: fixed; top: 48px; right: 0; bottom: 0; width: 320px; background: var(--panel);
+      border-left: 1px solid var(--line); padding: 1rem; overflow-y: auto; transform: translateX(100%);
+      transition: transform .18s ease; z-index: 9; }
+    #inspector.open { transform: none; }
+    #inspector h2 { margin: 0 0 .25rem; font-size: 1.4rem; font-weight: 500; }
+    #inspector label { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--dim); margin: .8rem 0 .25rem; }
+    #inspector input, #inspector textarea { width: 100%; background: #0d0d12; color: var(--ink);
+      border: 1px solid var(--line); border-radius: 6px; padding: .45rem .55rem; font-size: .9rem; font-family: inherit; }
+    #inspector textarea { resize: vertical; min-height: 3rem; }
+    .badge { display: inline-block; font-size: .68rem; padding: .15rem .5rem; border-radius: 999px;
+      border: 1px solid var(--line); }
+    .badge.local { color: var(--local); } .badge.linked { color: var(--linked); border-color: var(--linked); }
+    .badge.contributed { color: var(--contributed); border-color: var(--contributed); }
+    .refs a { color: var(--linked); font-size: .82rem; display: block; margin: .2rem 0; word-break: break-all; }
+    .row { display: flex; gap: .4rem; margin-top: .8rem; }
+    .row button { flex: 1; }
+
+    /* Launcher + Review modal */
+    .modal { position: fixed; inset: 0; background: rgba(8,8,12,.8); display: none; align-items: center;
+      justify-content: center; z-index: 20; }
+    .modal.open { display: flex; }
+    .modal .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.5rem;
+      width: min(440px, 92vw); max-height: 86vh; overflow-y: auto; }
+    .modal h1 { font-weight: 300; letter-spacing: .1em; font-size: 1rem; text-transform: uppercase; color: var(--gold); margin-top: 0; }
+    .sala-item, .rev-item { border: 1px solid var(--line); border-radius: 8px; padding: .6rem .75rem; margin: .5rem 0;
+      cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .sala-item:hover { border-color: var(--gold); }
+    .rev-card { text-align: center; padding: 1.5rem 0; }
+    .rev-card .word { font-size: 2rem; }
+    .rev-card .gloss { color: var(--dim); margin-top: 1rem; min-height: 1.4em; }
+    #toast { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); background: #1f1f2a;
+      border: 1px solid var(--line); border-radius: 8px; padding: .5rem 1rem; font-size: .85rem; opacity: 0;
+      transition: opacity .2s; z-index: 30; pointer-events: none; }
+    #toast.show { opacity: 1; }
+    .hint { color: var(--dim); font-size: .78rem; line-height: 1.4; }
+    #ins-links { margin-top: .4rem; }
+    .link-row { display: flex; justify-content: space-between; align-items: center; gap: .4rem;
+      font-size: .82rem; padding: .25rem .4rem; border: 1px solid var(--line); border-radius: 6px; margin: .25rem 0; }
+    .link-row span { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .link-del { background: none; border: none; color: var(--dim); cursor: pointer; padding: 0 .3rem; font-size: .9rem; }
+    .link-del:hover { color: #e06c6c; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <span class="title" id="room-title">Comunicação</span>
+    <input id="search" placeholder="buscar termo…" autocomplete="off" />
+    <span id="lex-count" class="hint" style="display:none"></span>
+    <button id="btn-more" style="display:none">+ mais</button>
+    <span class="spacer"></span>
+    <button id="btn-sugerir" class="primary" style="display:none">Sugerir</button>
+    <button id="btn-add">+ palavra</button>
+    <button id="btn-link">Ligar</button>
+    <button id="btn-compor">Compor</button>
+    <button id="btn-review">Revisão <span id="review-count"></span></button>
+    <button id="btn-salas">Salas</button>
+    <button id="btn-fit">Centralizar</button>
+  </div>
+
+  <div id="app">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <aside id="inspector">
+    <span class="badge local" id="ins-badge">local</span>
+    <h2 id="ins-word">—</h2>
+    <div class="hint" id="ins-pron"></div>
+
+    <label>Palavra (língua nativa)</label>
+    <input id="f-word" />
+    <label>Pronúncia</label>
+    <input id="f-pron" placeholder="[i.p.a]" />
+    <label>Glosa / tradução (PT)</label>
+    <textarea id="f-gloss"></textarea>
+    <label>Conceito âncora</label>
+    <input id="f-concept" placeholder="co://concepts/word.md" />
+
+    <div class="refs" id="ins-refs"></div>
+    <div id="ins-links"></div>
+
+    <div class="row" id="row-edit">
+      <button id="btn-save">Salvar</button>
+      <button id="btn-delete">Remover</button>
+    </div>
+    <div class="row" id="row-publish">
+      <button class="primary" id="btn-publish">Publicar no léxico →</button>
+    </div>
+    <p class="hint" id="ins-lexpath"></p>
+  </aside>
+
+  <!-- Launcher: lista de salas + criar -->
+  <div class="modal" id="salas-modal">
+    <div class="card">
+      <h1>Suas salas</h1>
+      <div id="salas-list"></div>
+      <p class="hint">Criar nova:</p>
+      <div class="row">
+        <button data-tpl="yoruba">Iorubá</button>
+        <button data-tpl="mbya">Mbyá Guaraní</button>
+        <button data-tpl="blank">Em branco</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Revisão espaçada -->
+  <div class="modal" id="review-modal">
+    <div class="card">
+      <h1>Revisão de vocabulário</h1>
+      <div id="review-body">
+        <div class="rev-card">
+          <div class="word" id="rev-word">—</div>
+          <div class="gloss" id="rev-gloss" style="display:none"></div>
+        </div>
+        <div class="row" id="rev-reveal-row">
+          <button class="primary" id="rev-reveal" style="flex:1">Mostrar definição</button>
+        </div>
+        <div class="row" id="rev-grade-row" style="display:none">
+          <button id="rev-wrong">Errei</button>
+          <button class="primary" id="rev-right">Acertei</button>
+        </div>
+        <p class="hint" id="rev-progress"></p>
+      </div>
+      <div class="row"><button id="rev-close" style="flex:1">Fechar</button></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="/static/universos/comunicacao.js"></script>
+</body>
+</html>

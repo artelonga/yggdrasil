@@ -1,6 +1,6 @@
 'use strict';
 
-const TILE = 16;
+const TILE = 22;
 
 const COLOR = {
   empty: '#0d0d12',
@@ -9,12 +9,39 @@ const COLOR = {
   player: '#d4af37',
 };
 
-const SYMBOL = {
-  snake: '🐍',
-  tetris: '🟦',
-  invaders: '👾',
-  poker: '🃏',
+// Ícones SVG (não emojis). Markup interno usa `currentColor` para recolorir:
+// inline nos chips (herda a cor do texto) e como imagem dourada/escura no canvas.
+const ICONS = {
+  snake: '<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M4 16c2.6 0 2.6-3.2 5.2-3.2S11.8 16 14.4 16s3.1-1.6 3.1-4.1a4.1 4.1 0 0 0-8.2 0"/><circle cx="4" cy="16" r="1.2" fill="currentColor"/>',
+  tetris: '<g fill="currentColor"><rect x="4" y="3" width="5" height="5" rx="1"/><rect x="4" y="9.5" width="5" height="5" rx="1"/><rect x="4" y="16" width="5" height="5" rx="1"/><rect x="10.5" y="16" width="5" height="5" rx="1"/></g>',
+  invaders: '<g fill="currentColor"><rect x="8" y="4" width="2" height="2"/><rect x="14" y="4" width="2" height="2"/><rect x="7" y="7" width="10" height="3"/><rect x="5" y="10" width="14" height="3"/><rect x="5" y="13" width="3" height="2"/><rect x="16" y="13" width="3" height="2"/><rect x="9" y="13" width="6" height="2"/><rect x="6" y="17" width="3" height="2"/><rect x="15" y="17" width="3" height="2"/></g>',
+  poker: '<path fill="currentColor" d="M12 3C9.2 7 4 9 4 13a3.6 3.6 0 0 0 6.2 2.6c-.2 1.7-1 2.9-2.2 3.4h8c-1.2-.5-2-1.7-2.2-3.4A3.6 3.6 0 0 0 20 13c0-4-5.2-6-8-10z"/>',
+  vim: '<path fill="currentColor" opacity="0.22" d="M12 2 22 12 12 22 2 12z"/><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8 9l4 7 4-7"/>',
+  neuro: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5.5a3 3 0 0 0-3 3 3 3 0 0 0-2 5.2c0 2 1.6 3.3 3.5 3.3H12m0-11.5a3 3 0 0 1 3 3 3 3 0 0 1 2 5.2c0 2-1.6 3.3-3.5 3.3H12m0-11.5v11.5"/>',
+  comunicacao: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
 };
+
+/** SVG inline para os chips (herda a cor do texto). */
+function svgIcon(slug, size) {
+  const inner = ICONS[slug] || '';
+  return `<svg class="ico" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${inner}</svg>`;
+}
+
+// Imagens (data-URL) dos ícones recoloridos p/ os portais do canvas (escuro
+// sobre o tile dourado). Pré-carregadas; redesenha quando prontas.
+const PORTAL_IMG = {};
+function loadPortalIcons(onReady) {
+  let pending = 0;
+  for (const slug in ICONS) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${ICONS[slug].replaceAll('currentColor', '#0d0d12')}</svg>`;
+    const img = new Image();
+    pending++;
+    const done = () => { if (--pending === 0 && onReady) onReady(); };
+    img.onload = () => { PORTAL_IMG[slug] = img; done(); };
+    img.onerror = done;
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+}
 
 // Mirrors game-core Direction { Up, Down, Left, Right }
 const Direction = { Up: 'Up', Down: 'Down', Left: 'Left', Right: 'Right' };
@@ -55,12 +82,16 @@ function draw() {
       } else if (tile !== null && typeof tile === 'object' && tile.Portal) {
         ctx.fillStyle = COLOR.portal;
         ctx.fillRect(px, py, TILE, TILE);
-        const sym = SYMBOL[tile.Portal] ?? tile.Portal[0].toUpperCase();
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#0d0d12';
-        ctx.fillText(sym, px + TILE / 2, py + TILE / 2);
+        const img = PORTAL_IMG[tile.Portal];
+        if (img) {
+          ctx.drawImage(img, px + 2, py + 2, TILE - 4, TILE - 4);
+        } else {
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#0d0d12';
+          ctx.fillText(tile.Portal[0].toUpperCase(), px + TILE / 2, py + TILE / 2);
+        }
       } else {
         ctx.fillStyle = COLOR.empty;
         ctx.fillRect(px, py, TILE, TILE);
@@ -73,7 +104,7 @@ function draw() {
   const py = playerY * TILE;
   ctx.fillStyle = 'rgba(212, 175, 55, 0.15)';
   ctx.fillRect(px, py, TILE, TILE);
-  ctx.font = 'bold 12px monospace';
+  ctx.font = 'bold 15px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = COLOR.player;
@@ -272,11 +303,35 @@ function renderAuthArea() {
 // ── Scores + activity sidebar ────────────────────────────────────────────────
 
 const GAME_LABEL = {
-  snake: '🐍 Snake',
-  tetris: '🟦 Tetris',
-  invaders: '👾 Invaders',
-  poker: '🃏 Poker',
+  snake: 'Snake',
+  tetris: 'Tetris',
+  invaders: 'Invaders',
+  poker: 'Poker',
+  vim: 'Vim',
+  neuro: 'Neuro',
+  comunicacao: 'Comunicação',
 };
+
+// Universos acessíveis a partir do lobby (chips clicáveis sob o mapa).
+const UNIVERSOS = [
+  { slug: 'snake', name: 'Snake' },
+  { slug: 'tetris', name: 'Tetris' },
+  { slug: 'invaders', name: 'Invaders' },
+  { slug: 'poker', name: 'Poker' },
+  { slug: 'vim', name: 'Vim' },
+  { slug: 'neuro', name: 'Neuro — Atlas 3D' },
+  { slug: 'comunicacao', name: 'Comunicação' },
+];
+
+function renderUniversos() {
+  const root = document.getElementById('universos');
+  if (!root) return;
+  root.innerHTML = UNIVERSOS.map((u) => `
+    <a class="universo-chip" href="/universos/${u.slug}" title="Entrar em ${u.name}">
+      ${svgIcon(u.slug, 26)}<span>${u.name}</span>
+    </a>
+  `).join('');
+}
 
 async function loadScores() {
   try {
@@ -355,6 +410,7 @@ function renderActivity(scores) {
 }
 
 renderAuthArea();
+renderUniversos();
 loadScores();
 loadActivity();
-initLobby().catch(console.error);
+initLobby().then(() => loadPortalIcons(draw)).catch(console.error);

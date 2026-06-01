@@ -182,7 +182,7 @@ func _draw() -> void:
 	# Active piece
 	if piece.has("shape") and piece.has("x") and piece.has("y"):
 		var ct: int = piece.get("piece_type", 0)
-		var color := PIECE_COLORS[ct] if ct < PIECE_COLORS.size() else Color.WHITE
+		var color: Color = PIECE_COLORS[ct] if ct < PIECE_COLORS.size() else Color.WHITE
 		var px: int = piece["x"]
 		var py: int = piece["y"]
 		var shape = piece.get("shape", [])
