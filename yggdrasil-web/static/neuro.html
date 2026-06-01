@@ -12,7 +12,12 @@
 <body>
   <header>
     <b>🧠 Neuro — Atlas 3D</b>
-    <span class="muted">núcleos subcorticais (Harvard-Oxford) · Neuroglancer</span>
+    <span class="muted">subcorticais:
+      <a href="https://identifiers.org/neurovault.collection:262" target="_blank" rel="noopener">Harvard-Oxford</a>
+      (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>) ·
+      tronco: Harvard AAN v2.0
+      (<a href="https://zenodo.org/records/8161638" target="_blank" rel="noopener">CC0</a>) ·
+      Neuroglancer</span>
     <span class="grow"></span>
     <a href="/anatomia">viewer macro</a><a href="/lobby">lobby</a>
   </header>
@@ -22,12 +27,12 @@
     // renderizados pelo Neuroglancer (hosted). Camadas alinhadas em MNI152 1mm:
     //   ho-sub         — núcleos subcorticais (Harvard-Oxford)
     //   aan-brainstem  — núcleos do tronco (Harvard AAN v2.0, CC0)
-    //   bsn-brainstem  — núcleos do tronco detalhados (Brainstem Navigator)
+    // (Brainstem Navigator removido: licença NITRC proíbe redistribuição
+    //  pública de derivados — uso de pesquisa não-comercial apenas.)
     const origin = location.origin;
     const LAYERS = [
       { dir: 'ho-sub',        name: 'núcleos subcorticais' },
       { dir: 'aan-brainstem', name: 'núcleos do tronco (AAN)' },
-      { dir: 'bsn-brainstem', name: 'núcleos do tronco (Brainstem Navigator)' },
     ];
     async function segsOf(dir) {
       // ids vêm do segment_properties (mesmo-origem) — robusto a ids esparsos.

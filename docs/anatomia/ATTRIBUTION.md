@@ -43,12 +43,20 @@ Nenhum asset sem licença clara entra no repositório. Assets CC0 podem ser
 incluídos diretamente; assets CC-BY/CC-BY-SA exigem o campo de atribuição
 preenchido no `ContentRef`/`props` antes de publicar a instância.
 
-## Atlas de núcleos (viewer Neuroglancer, /neuro)
+## Atlas de núcleos (viewer Neuroglancer, /neuro) — APENAS fontes redistribuíveis
+
+> Revisão de licenças para **distribuição pública** (2026-06-01). Só entram em
+> `/neuro` atlas cuja licença permite redistribuir derivados publicamente.
 
 - **Harvard-Oxford subcortical atlas** (`sub-maxprob-thr25-1mm`), via `nilearn`
-  (FSL / FMRIB, Harvard CMA). Labelmap NIfTI → Precomputed (cloud-volume+igneous).
-- ⚠ **Licença**: distribuído com o FSL sob a licença FMRIB — uso/redistribuição
-  têm condições (academia/pesquisa). Revisar antes de uso comercial público.
+  (Harvard CMA / Makris et al.). Labelmap NIfTI → Precomputed (cloud-volume+igneous).
+- **Licença: CC BY-SA 4.0.** O atlas Harvard-Oxford, embora distribuído junto do
+  FSL, **não** está sob a licença FMRIB restritiva — a própria página de licença
+  do FSL declara que "the Cerebellum and Harvard-Oxford atlases … are released
+  under the CC BY-SA 4.0 licence". → redistribuição pública permitida **com
+  atribuição** e **ShareAlike**.
+- **ShareAlike**: nossos derivados (`static/neuro-data/ho-sub`) ficam sob
+  **CC BY-SA 4.0**. Crédito exibido no header de `/neuro`.
 
 ## Atlas de núcleos do tronco (camada aan-brainstem)
 
@@ -58,11 +66,17 @@ preenchido no `ContentRef`/`props` antes de publicar a instância.
 - MNI152 1mm → alinha com `ho-sub`. Labelmap NIfTI → Precomputed
   (`scripts/convert_atlas.py`).
 
-## Atlas de núcleos do tronco detalhado (camada bsn-brainstem)
+## ❌ EXCLUÍDO — Brainstem Navigator (NITRC)
 
-- **Brainstem Navigator v1.0** (Bianciardi lab / NITRC) — atlas in-vivo 7T,
-  76 máscaras de núcleos do tronco (MNI152 1mm). Empilhadas numa labelmap
-  (68 núcleos distintos após resolução de sobreposição) → Precomputed.
-- ⚠ **Licença/uso**: distribuído via NITRC (login/aceite de termos) — uso de
-  pesquisa; rever termos antes de uso comercial/público. Não redistribuir o
-  atlas bruto sem checar a licença.
+- **Brainstem Navigator v1.0** (Bianciardi lab / Massachusetts General Hospital,
+  via NITRC) — atlas in-vivo 7T, 76 máscaras de núcleos do tronco.
+- **NÃO redistribuível.** O `Copyright.txt` do atlas é explícito:
+  - cláusula 1: "use … without charge for **non-commercial research purposes
+    only**";
+  - cláusula 2: "**YOU MAY NOT DISTRIBUTE COPIES** of the Brainstem Navigator
+    files, **or copies of files or of information derived from them, to others
+    outside your organization**".
+- Servir os derivados (labelmap/meshes Precomputed) publicamente em `/neuro`
+  violaria a cláusula 2. **Removido** da camada `bsn-brainstem` em 2026-06-01.
+- O zip baixado fica de fora do repo (gitignored); uso permitido apenas para
+  pesquisa não-comercial local, não para o site público.

@@ -2,10 +2,13 @@
 """Converte atlas de núcleos (NIfTI labelmap) → Neuroglancer Precomputed.
 
 Gera duas camadas em yggdrasil-web/static/neuro-data/ (servidas em /neuro):
-  - ho-sub        : Harvard-Oxford subcortical (via nilearn)
-  - aan-brainstem : Harvard AAN v2.0, núcleos do tronco (Zenodo, CC0)
+  - ho-sub        : Harvard-Oxford subcortical (via nilearn) — CC BY-SA 4.0
+  - aan-brainstem : Harvard AAN v2.0, núcleos do tronco (Zenodo) — CC0
 
 Ambos em MNI152 1mm (mesma grade) → alinham no Neuroglancer.
+Ambas as licenças permitem REDISTRIBUIÇÃO PÚBLICA (ho-sub com atribuição+ShareAlike).
+NOTA: o Brainstem Navigator (NITRC) foi avaliado e REMOVIDO — sua licença proíbe
+distribuir derivados fora da organização (ver docs/anatomia/ATTRIBUTION.md).
 Requer: cloud-volume, igneous-pipeline, nilearn, nibabel.
 """
 import warnings; warnings.filterwarnings("ignore")
@@ -86,35 +89,13 @@ def aan_brainstem():
     os.remove(nii); os.remove(lut)
 
 
-def brainstem_navigator(zip_path=None):
-    """Brainstem Navigator v1.0 (NITRC) — 76 máscaras binárias de núcleos do
-    tronco (atlas MNI). NITRC exige login/aceite → o .zip é baixado manualmente.
-    Empilha as máscaras numa labelmap única (idx por núcleo) → Precomputed.
-    """
-    import zipfile, tempfile, glob
-    zp = zip_path or os.path.expanduser("~/Downloads/BrainstemNavigatorv1.0.zip")
-    if not os.path.exists(zp):
-        print(f"[bsn] zip ausente ({zp}) — pulando (baixe do NITRC, login)."); return
-    inner = "BrainstemNavigatorv1.0/1.0/2a.BrainstemNucleiAtlas_MNI/labels_thresholded_binary_0.35/"
-    tmp = tempfile.mkdtemp()
-    with zipfile.ZipFile(zp) as z:
-        for n in z.namelist():
-            b = os.path.basename(n)
-            if n.startswith(inner) and b.endswith(".nii.gz") and not b.startswith("._"):
-                open(os.path.join(tmp, b), "wb").write(z.read(n))
-    files = sorted(glob.glob(os.path.join(tmp, "*.nii.gz")))
-    lab = None; zooms = None; names = {}
-    for i, f in enumerate(files, start=1):
-        img = nib.load(f); m = np.asarray(img.dataobj)
-        if lab is None:
-            lab = np.zeros(m.shape, dtype=np.uint32); zooms = img.header.get_zooms()[:3]
-        lab[m > 0] = i  # last-wins em sobreposição (núcleos distintos ~ não sobrepõem)
-        names[i] = os.path.basename(f).replace(".nii.gz", "")
-    build_layer("bsn-brainstem", lab, zooms, names)
+# NOTA: o Brainstem Navigator (NITRC) NÃO é construído aqui de propósito.
+# Sua licença (Copyright.txt, cláusula 2) proíbe distribuir cópias OU derivados
+# fora da organização — incompatível com a distribuição pública em /neuro.
+# Ver docs/anatomia/ATTRIBUTION.md. Não reintroduzir sem licença compatível.
 
 
 if __name__ == "__main__":
     harvard_oxford()
     aan_brainstem()
-    brainstem_navigator()
     print("DONE — camadas:", os.listdir(DATA))
