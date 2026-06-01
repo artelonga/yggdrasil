@@ -57,3 +57,12 @@ preenchido no `ContentRef`/`props` antes de publicar a instância.
 - **Licença: CC0** (domínio público) — via Zenodo (record 8161638).
 - MNI152 1mm → alinha com `ho-sub`. Labelmap NIfTI → Precomputed
   (`scripts/convert_atlas.py`).
+
+## Atlas de núcleos do tronco detalhado (camada bsn-brainstem)
+
+- **Brainstem Navigator v1.0** (Bianciardi lab / NITRC) — atlas in-vivo 7T,
+  76 máscaras de núcleos do tronco (MNI152 1mm). Empilhadas numa labelmap
+  (68 núcleos distintos após resolução de sobreposição) → Precomputed.
+- ⚠ **Licença/uso**: distribuído via NITRC (login/aceite de termos) — uso de
+  pesquisa; rever termos antes de uso comercial/público. Não redistribuir o
+  atlas bruto sem checar a licença.

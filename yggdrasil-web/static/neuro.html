@@ -19,23 +19,33 @@
   <iframe id="ng" allow="cross-origin-isolated"></iframe>
   <script>
     // Dados Precomputed servidos pela própria plataforma (CORS habilitado);
-    // renderizados pelo Neuroglancer (hosted). Self-host do bundle standalone
-    // é o próximo passo. Duas camadas alinhadas em MNI152 1mm:
-    //   ho-sub        — núcleos subcorticais (Harvard-Oxford)
-    //   aan-brainstem — núcleos do tronco (Harvard AAN v2.0, CC0)
+    // renderizados pelo Neuroglancer (hosted). Camadas alinhadas em MNI152 1mm:
+    //   ho-sub         — núcleos subcorticais (Harvard-Oxford)
+    //   aan-brainstem  — núcleos do tronco (Harvard AAN v2.0, CC0)
+    //   bsn-brainstem  — núcleos do tronco detalhados (Brainstem Navigator)
     const origin = location.origin;
-    const pre = (n) => 'precomputed://' + origin + '/static/neuro-data/' + n;
-    const hoSegs = Array.from({length:21}, (_,i)=>String(i+1));
-    const aanSegs = ['7201','7202','7203','7204','7301','7302','7303','7304',
-                     '7305','7306','7401','7402','7403','7404','7405','7406'];
-    const state = {
-      layers:[
-        {type:'segmentation', source:pre('ho-sub'),        name:'núcleos subcorticais', segments:hoSegs},
-        {type:'segmentation', source:pre('aan-brainstem'), name:'núcleos do tronco (AAN)', segments:aanSegs},
-      ],
-      layout:'3d', showSlices:false
-    };
-    document.getElementById('ng').src =
-      'https://neuroglancer-demo.appspot.com/#!' + encodeURIComponent(JSON.stringify(state));
+    const LAYERS = [
+      { dir: 'ho-sub',        name: 'núcleos subcorticais' },
+      { dir: 'aan-brainstem', name: 'núcleos do tronco (AAN)' },
+      { dir: 'bsn-brainstem', name: 'núcleos do tronco (Brainstem Navigator)' },
+    ];
+    async function segsOf(dir) {
+      // ids vêm do segment_properties (mesmo-origem) — robusto a ids esparsos.
+      try {
+        const r = await fetch('/static/neuro-data/' + dir + '/segment_properties/info');
+        return (await r.json()).inline.ids;
+      } catch (_) { return []; }
+    }
+    (async () => {
+      const layers = [];
+      for (const l of LAYERS) {
+        layers.push({ type: 'segmentation',
+          source: 'precomputed://' + origin + '/static/neuro-data/' + l.dir,
+          name: l.name, segments: await segsOf(l.dir) });
+      }
+      const state = { layers, layout: '3d', showSlices: false };
+      document.getElementById('ng').src =
+        'https://neuroglancer-demo.appspot.com/#!' + encodeURIComponent(JSON.stringify(state));
+    })();
   </script>
 </body></html>
