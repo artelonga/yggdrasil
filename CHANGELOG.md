@@ -2,6 +2,34 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.0.0] — 2026-06-01 — Plataforma de universos (primeiro release estável pós-v1.0)
+
+Marco maior: a plataforma deixou de ser "lobby + 4 jogos" e virou um ecossistema —
+editor de universos, atlas 3D de neuroanatomia, universos de comunicação/léxico,
+canal de feedback, índice filtrável e uma nova identidade visual ("Relic Archive").
+Consolida YG-73–91 num release estável. Detalhe por epic nas seções [1.2.0] e
+anteriores abaixo.
+
+### Breaking
+
+- **PointSet descontinuado como universo** — removido de `GET /api/v1/universos`,
+  do catálogo, do lobby e da telemetria. Consumidores que esperavam `pointset`
+  devem parar de referenciá-lo.
+- **`/` (raiz) agora serve a landing page** (antes redirecionava para `/lobby`).
+  O mapa em canvas continua acessível em `/lobby`.
+- `GET /api/v1/universos` ganhou campos `category`, `tag`, `description` (aditivo).
+
+### Added
+
+- **Categorias + descrições** dos universos (Arcade·Clássico, Mesa, Ferramentas,
+  Atlas) — agrupamento na barra lateral e descrição em hover/tooltip.
+- **`/universos`** — índice unificado e filtrável de todos os universos (YG-91).
+- **Comunicação** — universos de léxico cross-linguístico (salas, lexicon, galaxy).
+
+### Changed
+
+- Versão do workspace `1.2.0` → **`2.0.0`**.
+
 ## [1.2.0] — 2026-06-01 — Editor de universos + Godot/3D + neuro multiescala + Fale conosco
 
 ### Added — Landing page "Relic Archive" (UI revamp, fase 1) — YG-90
