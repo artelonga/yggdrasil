@@ -30,7 +30,13 @@ anteriores abaixo.
 
 - **Categorias + descrições** dos universos (Arcade·Clássico, Mesa, Ferramentas,
   Atlas) — agrupamento na barra lateral e descrição em hover/tooltip.
-- **`/universos`** — índice unificado e filtrável de todos os universos (YG-91).
+- **`/universos`** (YG-91) — índice unificado e filtrável de **todos** os
+  universos num só lugar: busca livre + filtros por categoria (arcade · atlas ·
+  língua · autorado), jogadores (solo/multiplayer) e idioma. Agrega no cliente
+  quatro fontes — arcade (`GET /api/v1/universos`), atlas estático anatomia, feed
+  público de salas de comunicação (`?published=true`, por língua) e instâncias
+  autoradas (`GET /api/v1/instances?published=true`); fontes ausentes degradam
+  sem quebrar o índice. Rota `GET /universos` → `static/universos/index.html`.
 - **Comunicação** — universos de léxico cross-linguístico (salas, lexicon, galaxy).
 
 ### Changed
