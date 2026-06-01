@@ -3,6 +3,7 @@
 mod api;
 mod auth;
 mod auth_co;
+pub mod comunicacao_routes;
 mod games;
 pub mod hint_engine;
 mod lobby;
@@ -40,6 +41,7 @@ use games::vim_routes::{
     create_session as vim_create_session, make_vim_state, send_key as vim_send_key,
 };
 use lobby::router as lobby_router;
+use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tracing::info;
 
@@ -136,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
     let auth_router = Router::new()
         .route("/api/v1/auth/code", post(auth::request_code))
         .route("/api/v1/auth/verify", post(auth::verify_code))
-        .with_state(auth_state);
+        .with_state(auth_state.clone());
 
     let snake_router = Router::new()
         .route("/api/v1/games/snake/start", get(snake_start))
@@ -217,6 +219,106 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(universos_state);
 
+    // YG-73: editor de universos data-driven — instâncias autoradas + anexos +
+    // templates. Conceito paralelo ao runtime WASM; nada de arcade é tocado.
+    let instances_dir =
+        std::env::var("YGGDRASIL_INSTANCES_DIR").unwrap_or_else(|_| "data/instances".to_string());
+    let instance_store = Arc::new(
+        yggdrasil_core::instance::InstanceStore::new(&instances_dir)
+            .map_err(|e| anyhow::anyhow!("instance store: {e}"))?,
+    );
+    let instances_state = Arc::new(api::instances::InstancesState::new(
+        auth_state.jwt_secret.clone(),
+        instance_store,
+    ));
+    let instances_router = Router::new()
+        .route(
+            "/api/v1/instances",
+            post(api::instances::create_instance).get(api::instances::list_instances),
+        )
+        .route(
+            "/api/v1/instances/{id}",
+            get(api::instances::get_instance)
+                .put(api::instances::put_instance)
+                .patch(api::instances::patch_instance)
+                .delete(api::instances::delete_instance),
+        )
+        .route(
+            "/api/v1/instances/{id}/attachments",
+            post(api::instances::upload_attachment),
+        )
+        .route(
+            "/api/v1/instances/{id}/attachments/{hash}",
+            get(api::instances::serve_attachment),
+        )
+        .route("/api/v1/instances/{id}/play", get(serve_instance_player))
+        .route("/api/v1/templates", get(api::instances::list_templates))
+        .route(
+            "/api/v1/templates/{slug}",
+            get(api::instances::get_template),
+        )
+        .with_state(instances_state);
+
+    // Universo `comunicacao` — salas interativas de léxico cross-linguístico
+    // (Mbyá Guaraní × Iorubá). Auto-contido: salas em disco + write-back de
+    // termos novos no repo `comunicacao` (markdown) + fila de revisão.
+    let comunicacao_rooms_dir = std::env::var("YGGDRASIL_COMUNICACAO_DIR")
+        .unwrap_or_else(|_| "data/comunicacao".to_string());
+    let comunicacao_lexicon_dir =
+        std::env::var("COMUNICACAO_DIR").unwrap_or_else(|_| "../comunicacao".to_string());
+    let comunicacao_store = Arc::new(
+        yggdrasil_core::comunicacao::RoomStore::new(&comunicacao_rooms_dir)
+            .map_err(|e| anyhow::anyhow!("comunicacao store: {e}"))?,
+    );
+    // (Re)gera as duas salas públicas (Iorubá + Mbyá) do léxico completo baked-in.
+    yggdrasil_core::comunicacao::ensure_public_rooms(
+        &comunicacao_store,
+        std::path::Path::new(&comunicacao_lexicon_dir),
+    );
+    let comunicacao_state = Arc::new(comunicacao_routes::ComunicacaoState {
+        jwt_secret: auth_state.jwt_secret.clone(),
+        store: comunicacao_store,
+        lexicon: Arc::new(yggdrasil_core::comunicacao::LexiconStore::new(
+            &comunicacao_lexicon_dir,
+        )),
+    });
+    let comunicacao_router = Router::new()
+        .route(
+            "/api/v1/comunicacao/salas",
+            post(comunicacao_routes::create_sala).get(comunicacao_routes::list_salas),
+        )
+        .route(
+            "/api/v1/comunicacao/salas/{id}",
+            get(comunicacao_routes::get_sala)
+                .patch(comunicacao_routes::patch_sala)
+                .delete(comunicacao_routes::delete_sala),
+        )
+        .route(
+            "/api/v1/comunicacao/salas/{id}/elementos/{eid}/publicar",
+            post(comunicacao_routes::publicar_elemento),
+        )
+        .route(
+            "/api/v1/comunicacao/salas/{id}/fork",
+            post(comunicacao_routes::fork_sala),
+        )
+        .route(
+            "/api/v1/comunicacao/lexico",
+            get(comunicacao_routes::consultar_lexico),
+        )
+        .route(
+            "/api/v1/comunicacao/templates",
+            get(comunicacao_routes::list_templates),
+        )
+        .route(
+            "/api/v1/comunicacao/revisao",
+            get(comunicacao_routes::get_revisao),
+        )
+        .route(
+            "/api/v1/comunicacao/revisao/nota",
+            post(comunicacao_routes::nota_revisao),
+        )
+        .with_state(comunicacao_state);
+
     let app = Router::new()
         .route("/openapi.json", get(openapi::serve_openapi_json))
         .route("/openapi.yaml", get(openapi::serve_openapi_yaml))
@@ -228,6 +330,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/universos/invaders", get(serve_invaders))
         .route("/universos/poker", get(serve_poker))
         .route("/universos/vim", get(serve_vim))
+        .route("/universos/comunicacao", get(serve_comunicacao))
         // 301 redirects para preservar bookmarks/links externos com a URL
         // antiga `/games/<slug>`. Remover quando todos os universos ativos
         // estiverem na nova URL por ≥ 1 release.
@@ -247,7 +350,26 @@ async fn main() -> anyhow::Result<()> {
         .merge(vim_router)
         .merge(poker_router)
         .merge(universos_router)
-        .nest_service("/static", ServeDir::new("yggdrasil-web/static"));
+        .merge(instances_router)
+        .merge(comunicacao_router)
+        .route("/universos/instance/{id}", get(serve_instance_player))
+        // YG-87: neuro = viewer multiescala Neuroglancer (atlas subcortical
+        // Precomputed servido mesmo-origem). O viewer Godot macro fica em /anatomia.
+        .route("/neuro", get(serve_neuro))
+        .route("/universos/neuro", get(serve_neuro))
+        // YG-84: visualizador 3D de anatomia (Godot Web export, single-thread →
+        // serve de qualquer host estático). Os arquivos do export ficam em
+        // static/anatomia/ e são servidos pelo ServeDir abaixo; /anatomia é só
+        // um atalho amigável.
+        .route("/anatomia", get(serve_anatomia))
+        // CORS aberto no estático: o Neuroglancer (hosted, outra origem) precisa
+        // buscar os dados Precomputed em /static/neuro-data/ via fetch cross-origin.
+        .nest_service(
+            "/static",
+            tower::ServiceBuilder::new()
+                .layer(CorsLayer::permissive())
+                .service(ServeDir::new("yggdrasil-web/static")),
+        );
 
     let addr: SocketAddr = "0.0.0.0:3030".parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -262,6 +384,24 @@ async fn root() -> impl IntoResponse {
 
 async fn serve_login() -> impl IntoResponse {
     Html(include_str!("../static/login.html"))
+}
+
+/// YG-78: player genérico de instâncias autoradas. A página busca a instância
+/// por `id` via `GET /api/v1/instances/{id}` e renderiza client-side.
+async fn serve_instance_player() -> impl IntoResponse {
+    Html(include_str!("../static/universos/instance.html"))
+}
+
+/// YG-84: atalho `/anatomia` → bundle do Godot Web export servido em
+/// `/static/anatomia/`.
+/// YG-87: viewer Neuroglancer (atlas multiescala). A página monta o estado do NG
+/// para a origem atual e carrega o bundle self-hosted em /static/ng/.
+async fn serve_neuro() -> impl IntoResponse {
+    Html(include_str!("../static/neuro.html"))
+}
+
+async fn serve_anatomia() -> impl IntoResponse {
+    Redirect::permanent("/static/anatomia/")
 }
 
 async fn serve_snake() -> impl IntoResponse {
@@ -282,6 +422,12 @@ async fn serve_poker() -> impl IntoResponse {
 
 async fn serve_vim() -> impl IntoResponse {
     Html(include_str!("../static/universos/vim.html"))
+}
+
+/// Página do universo `comunicacao` — mapa interativo de léxico (pan/zoom +
+/// elementos multilíngues). Busca a sala via `/api/v1/comunicacao/salas/{id}`.
+async fn serve_comunicacao() -> impl IntoResponse {
+    Html(include_str!("../static/universos/comunicacao.html"))
 }
 
 // ── Legacy redirects (YG-N rename `/games/*` → `/universos/*`) ─────────────

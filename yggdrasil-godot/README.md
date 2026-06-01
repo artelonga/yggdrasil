@@ -50,6 +50,45 @@ yggdrasil-godot/
   - Instalar via `Project → Tools → Manage Export Templates` no editor,
     ou descompactar em `~/.local/share/godot/export_templates/4.5.stable/`.
 
+> Atalho: `./scripts/godot.sh install` baixa o Godot 4.5 headless
+> automaticamente (sem GUI/sudo) para `.godot-bin/` — ver seção abaixo.
+
+## CLI (`scripts/godot.sh`)
+
+Integração CLI que **provisiona** o Godot 4.5 headless e **valida** todo o
+GDScript — usada em dev e no CI (`.github/workflows/ci.yml`, job `godot`).
+
+```bash
+cd yggdrasil-godot
+./scripts/godot.sh install     # baixa Godot 4.5 p/ .godot-bin/ (gitignored)
+./scripts/godot.sh check       # valida TODO .gd headless — falha no CI se houver erro
+./scripts/godot.sh editor      # abre o editor
+./scripts/godot.sh run [scene] # roda uma cena headless
+./scripts/godot.sh bin         # imprime o binário resolvido
+```
+
+Resolução do binário: `$GODOT_BIN` → cache `.godot-bin/` → `godot`/`godot4` no
+`$PATH` (o `build.sh` usa a mesma resolução). O `check` carrega cada script em
+**contexto de runtime** (autoloads registrados) via `scripts/dev/lint.gd`,
+cobrindo até scripts não referenciados por cena, sem falsos positivos de
+"Identifier not found". Em macOS, `install` remove a quarentena do Gatekeeper e
+assina o binário ad-hoc.
+
+## Login (editor de universos)
+
+O `ApiClient` autoload faz login magic-link (`request_login_code` + `verify_login`,
+espelhando `/api/v1/auth/{code,verify}`) e persiste o JWT no `SaveManager`. A cena
+`scenes/editor/grid_editor.tscn` mostra um painel de login quando não há sessão.
+
+Para dev/headless, pule o login passando um token via env:
+
+```bash
+GODOT_JWT="<jwt>" ./scripts/godot.sh run res://scenes/editor/grid_editor.tscn
+```
+
+(o servidor `yggdrasil-web` precisa estar no ar; o código de acesso vai para o
+log/SQLite do servidor — ver `scripts/e2e-editor.sh` na raiz do repo).
+
 ## Abrir no Godot Editor
 
 ```bash

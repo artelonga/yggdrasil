@@ -2,6 +2,146 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Unreleased]
+
+### Changed — Home/lobby: chips de universos, ícones SVG, painéis colapsáveis
+
+- Legenda estática (desatualizada) substituída por **chips clicáveis** de todos os
+  universos (Snake/Tetris/Invaders/Poker/Vim/Neuro/Comunicação) sob o mapa —
+  clicar entra direto no universo.
+- **Ícones SVG, não emojis** — conjunto de ícones vetoriais (`currentColor`) nos
+  chips (inline, herda a cor) e nos portais do canvas (recoloridos via data-URL).
+  Emojis removidos também dos rótulos de scores/atividade.
+- **HIGH SCORES**, **ATIVIDADE RECENTE** e **REVIEWS** agora são painéis
+  **colapsáveis** (`<details>`), fechados por padrão — sidebar mais limpa.
+
+### Added — Neuro multiescala: POC Neuroglancer em /neuro (YG-87)
+
+- `/neuro` agora é um viewer **Neuroglancer** (embarcado) do **atlas de núcleos
+  subcorticais** (Harvard-Oxford via nilearn → **Precomputed** com cloud-volume +
+  igneous), servido pela própria plataforma; 21 núcleos como segmentos 3D
+  selecionáveis (auto-mesh do labelmap). Viewer Godot macro fica em `/anatomia`.
+- `CorsLayer::permissive()` no `/static` (NG hosted busca os dados cross-origin).
+- `scripts/build-neuro-atlas.sh` + `convert_atlas.py` reproduzem os dados
+  (gitignored). Direção: viewer profundo = Neuroglancer/Precomputed, não Godot.
+- ⚠ Licença Harvard-Oxford (FMRIB/FSL) — rever p/ uso comercial.
+
+### Changed — Melhorias de navegação no viewer 3D (YG-86)
+
+- Scroll de zoom **menos agressivo** (passo suave por notch).
+- **Controles na tela** (HUD): girar (yaw ◄►), inclinar (pitch ▲▼), zoom (+/−),
+  reset (R) — botões com hold-to-repeat.
+- **Atalhos de teclado**: setas/WASD giram·inclinam, +/− zoom.
+- **Clicar numa estrutura centraliza** a câmera nela (e mostra o nome).
+- **Sem arrastar** para navegar (removido drag-to-orbit/pan) — navegação via
+  controles + atalhos + clique.
+
+### Added — Neuro como universo + deploy (YG-85)
+
+- **neuro** (atlas 3D) é um universo de verdade: portal no lobby `(20,10)` (core:
+  `lobby/grid.rs`/`portals.rs`/`mod.rs`, símbolo 🧠 no `lobby.js`), entrada no
+  catálogo `GET /api/v1/universos` (7 universos), e rota `/universos/neuro` →
+  o viewer Godot Web (`/static/anatomia/`).
+- Deploy Fly (`yggdrasil-artelonga`, gru) com o bundle 3D na imagem; domínio
+  `yggdrasil.artelonga.com.br` via `certs add` (DNS do dono).
+
+### Added — Visualizador 3D servido online (YG-84)
+
+- Export do visualizador 3D para a **web (Godot HTML5/WASM, single-thread)** →
+  servível por host estático sem COOP/COEP. Servido pelo `yggdrasil-web` em
+  **`/anatomia`** (308 → `/static/anatomia/`).
+- `scripts/build-anatomy-web.sh` (export → `static/anatomia/`) +
+  `godot.sh install-templates`. Bundle (~67 MB) gitignored, reproduzível.
+- Config: preset Web `thread_support=false`, `vram_texture_compression=false`;
+  `run/main_scene` → o visualizador 3D.
+- Verificado em Chrome real (WebGL 2.0, renderer Compatibility) servido localmente.
+
+### Added — Visualizador 3D interativo de anatomia (YG-83)
+
+Pivô para 3D (estilo TeachMeAnatomy) no cliente Godot, sobre malhas open-source
+reais:
+
+- `yggdrasil-godot/scenes/anatomy3d/anatomy_viewer.tscn` + script: câmera orbital
+  (girar/zoom/pan), corpo translúcido com **SNC (encéfalo + medula) por dentro**,
+  slider de transparência do corpo, e click-to-pick (raycast trimesh) com rótulo.
+- Malhas **BodyParts3D / DBCLS (CC-BY-SA 2.1 JP)**: pele, encéfalo (59 sub-malhas
+  mescladas), medula — compartilham coordenadas, então o SNC já fica no lugar.
+- `scripts/fetch-anatomy.sh` baixa/prepara as malhas (gitignored, ~37 MB);
+  `assets/anatomia/ATTRIBUTION.md` credita a fonte.
+- Verificado por render headless (corpo translúcido + encéfalo; toggle revela o
+  SNC; orbit confirmado em frame de perfil).
+
+## [1.1.0] — 2026-05-29 — Editor de universos data-driven (YG-73) + integração CLI do Godot (YG-82)
+
+### Added — Integração CLI do Godot + lint headless de GDScript (YG-82)
+
+- `yggdrasil-godot/scripts/godot.sh` — provisiona Godot 4.5 headless
+  (`install`, sem GUI/sudo; em macOS remove quarentena + assina ad-hoc) e valida
+  todo o GDScript (`check`) via harness `scripts/dev/lint.gd` em contexto de
+  runtime (autoloads registrados, cobre scripts não referenciados, sem falsos
+  positivos). Subcomandos `bin/version/import/editor/run` para dev.
+- `build.sh` compartilha a resolução de binário (`$GODOT_BIN` → `.godot-bin/` →
+  `$PATH`).
+- CI: novo job `godot` (`install` + `check`).
+- **Login no cliente Godot** (magic-link): `ApiClient.request_login_code` +
+  `verify_login` (espelham `/api/v1/auth/{code,verify}`), token decodificado e
+  persistido via `SaveManager`, restaurado no boot (`$GODOT_JWT` tem prioridade
+  para dev/headless). `scenes/editor/grid_editor.tscn` ganha painel de login —
+  surface Godot do editor agora é interativa ponta a ponta. Autoloads reordenados
+  (`SaveManager` antes de `ApiClient`).
+
+### Added — Review E2E (script + CI)
+
+- `scripts/e2e-editor.sh` — review ponta a ponta do editor contra um servidor
+  real com **autenticação real** (magic-link): login → criar de template →
+  upload de anexo → EditOps → persistência → restart → re-leitura do disco.
+  Aceita `$YGGDRASIL_WEB_BIN`. Rodado no CI (job `build`) sobre o binário release.
+
+### Fixed — Três quebras pré-existentes de GDScript sob Godot 4.5 (reveladas pelo lint)
+
+- `api_client.gd`: `_get`/`_post` renomeados para `_http_get`/`_http_post`
+  (`_get` colidia com o virtual `Object._get()`).
+- `invaders_game.gd` / `tetris_game.gd`: `var color :=` anotado como
+  `var color: Color =` (inferência de tipo mais estrita no 4.5).
+
+### Added — Editor de universos estilo Sims/Paralives (base + player/editor web + Godot)
+
+Novo conceito **paralelo** ao runtime WASM: universos autorados por usuário como
+**dados** (`UniverseInstance`) carregados em runtime, não crates compilados. Nada
+de arcade/WASM/registry foi tocado — tudo aditivo.
+
+- **YG-74** `yggdrasil-core/src/instance/schema.rs` — formato serde
+  (`UniverseInstance`, `Layer`, `Block`, `Connection`, `ContentRef`), projeção
+  2D/isométrica, `schema_version = 1`.
+- **YG-75** `instance/store.rs` — persistência em disco (escrita atômica) +
+  anexos content-addressed por SHA-256 com dedupe; disco é a fonte da verdade.
+- **YG-76** `yggdrasil-web/src/api/instances.rs` — REST CRUD + PATCH `EditOp`
+  granular (place/move/delete block, edit/add layer, add/del connection, attach),
+  validação num ponto único, auth por dono (JWT `sub`).
+- **YG-77** upload multipart → blob content-addressed (allowlist de MIME + cap de
+  tamanho) e serve com `Cache-Control: immutable`.
+- **YG-79** `instance/template.rs` — mecânica de templates (`seed` + `palette` +
+  `render_hints`) + endpoints `GET /api/v1/templates[/{slug}]`; template `blank`.
+- **YG-80** template `neuroanatomia` — silhueta + camada SNC (opacity 0.5 = toggle
+  de transparência) + landmarks + conexões; fontes open-source documentadas em
+  `docs/architecture/editor.md`.
+- Template `neuroanatomia` semeia assets de fundo embutidos (silhueta + SNC,
+  SVGs originais CC0) na criação — o toggle de transparência já revela/esconde o
+  SNC sobre o corpo sem upload prévio.
+- **YG-78/YG-81** player+editor web genérico (`static/universos/instance.html`
+  + `instance.js`): render de camadas/projeção/opacity/blocos/conexões, viewers de
+  anexo, e modo edição (paleta, place/move/delete, slider de opacity, conexões,
+  upload) via os endpoints REST.
+- **Godot** — `scripts/editor/instance_api.gd` + `scripts/editor/grid_editor.gd`
+  + `scenes/editor/grid_editor.tscn`: editor de grade consumindo o mesmo contrato
+  REST host-neutral.
+
+Verificado end-to-end ao vivo: criar de template → place block → toggle de opacity
+persiste → upload+serve de anexo → sobrevive a restart do servidor (reindex do
+disco). `cargo fmt`/`clippy -D warnings`/`test --workspace` limpos.
+
+---
+
 ## [1.0.1] — 2026-05-24
 
 ### Changed — Fly machines now suspend instead of stop on idle (CO-285)

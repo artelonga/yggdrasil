@@ -19,17 +19,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Detecta o binário do Godot. Aceita `godot` ou `godot4` no PATH.
-GODOT_BIN=""
-if command -v godot >/dev/null 2>&1; then
+# Detecta o binário do Godot, compartilhando a resolução com godot.sh:
+#   $GODOT_BIN  →  cache .godot-bin/ (godot.sh install)  →  `godot`/`godot4` no PATH.
+GODOT_CACHE="${SCRIPT_DIR}/../.godot-bin/${GODOT_VERSION:-4.5-stable}/godot"
+if [[ -n "${GODOT_BIN:-}" ]]; then
+  : # usa o override
+elif [[ -x "${GODOT_CACHE}" ]]; then
+  GODOT_BIN="${GODOT_CACHE}"
+elif command -v godot >/dev/null 2>&1; then
   GODOT_BIN="godot"
 elif command -v godot4 >/dev/null 2>&1; then
   GODOT_BIN="godot4"
 else
-  echo "ERRO: Godot não encontrado no \$PATH." >&2
+  echo "ERRO: Godot não encontrado." >&2
   echo "" >&2
-  echo "Instale Godot 4.5 headless e adicione ao PATH. Veja README.md para detalhes." >&2
-  echo "  - Linux: baixe de https://godotengine.org/download/linux/" >&2
+  echo "Rode './scripts/godot.sh install' para baixar o Godot 4.5 headless," >&2
+  echo "ou instale manualmente e adicione ao PATH (veja README.md)." >&2
   echo "  - Docker: o Dockerfile deste projeto já faz a instalação." >&2
   exit 1
 fi

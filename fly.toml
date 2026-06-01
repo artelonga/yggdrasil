@@ -13,6 +13,14 @@ primary_region = "gru"
 [env]
   YGGDRASIL_DB = "/data/yggdrasil.db"
   YGGDRASIL_SEMENTES_DB = "/data/yggdrasil-sementes.db"
+  # YG-85: instâncias do editor (e blobs) no volume persistente — /app não é
+  # gravável pelo usuário `ygg`.
+  YGGDRASIL_INSTANCES_DIR = "/data/instances"
+  # comunicacao: salas no volume persistente (mesmo motivo).
+  YGGDRASIL_COMUNICACAO_DIR = "/data/comunicacao"
+  # comunicacao: léxico curado — semente baked-in copiada para o volume no boot
+  # (entrypoint). Writes de contribuições (_users/) ficam no volume gravável.
+  COMUNICACAO_DIR = "/data/comunicacao-lexicon"
   RUST_LOG = "yggdrasil_web=info,tower_http=info"
   # SMTP — deixar vazios aqui; definir via `flyctl secrets set` (ver docs/DEPLOY.md)
   YGGDRASIL_SMTP_HOST = ""

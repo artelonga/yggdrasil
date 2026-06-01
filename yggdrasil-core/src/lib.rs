@@ -26,7 +26,9 @@ pub mod upstream_games {
     pub use game_core::games::*;
 }
 
+pub mod comunicacao;
 pub mod games;
+pub mod instance;
 pub mod lobby;
 pub mod sementes;
 pub mod universes;

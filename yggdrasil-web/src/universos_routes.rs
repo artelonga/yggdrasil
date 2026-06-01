@@ -97,6 +97,15 @@ pub fn universo_list() -> Vec<UniversoMeta> {
             max_players: 1,
             api_version: 1,
         },
+        // YG-85: neuro — atlas 3D de anatomia. Não é tick-based; a página é o
+        // viewer Godot em /universos/neuro. max_players alto = colaborativo.
+        UniversoMeta {
+            id: "neuro",
+            name: "Neuro — Atlas 3D",
+            version: "1.0",
+            max_players: 999,
+            api_version: 1,
+        },
     ]
 }
 
@@ -870,7 +879,7 @@ mod tests {
     // ── GET /api/v1/universos ────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn lista_retorna_6_universos() {
+    async fn lista_retorna_7_universos() {
         let (app, _) = make_app();
         let resp = app
             .oneshot(
@@ -885,10 +894,12 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let v = body_json(resp).await;
         let arr = v.as_array().unwrap();
-        assert_eq!(arr.len(), 6, "esperava 6 universos, got {}", arr.len());
+        assert_eq!(arr.len(), 7, "esperava 7 universos, got {}", arr.len());
 
         let ids: Vec<&str> = arr.iter().filter_map(|u| u["id"].as_str()).collect();
-        for expected in ["snake", "tetris", "invaders", "pointset", "poker", "vim"] {
+        for expected in [
+            "snake", "tetris", "invaders", "pointset", "poker", "vim", "neuro",
+        ] {
             assert!(ids.contains(&expected), "'{expected}' ausente na lista");
         }
 

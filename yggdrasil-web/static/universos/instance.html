@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Universo — Yggdrasil</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d12;
+      color: #e8e3d3;
+      font-family: system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex; align-items: baseline; gap: 1rem;
+      padding: 1rem 1.5rem; border-bottom: 1px solid #1a1a2e;
+    }
+    header h1 { font-weight: 300; letter-spacing: 0.15em; font-size: 1.3rem; }
+    header .desc { opacity: 0.5; font-size: 0.85rem; }
+    header .grow { flex: 1; }
+    button {
+      background: #1a1a2e; color: #e8e3d3; border: 1px solid #2a2a44;
+      padding: 0.45rem 0.8rem; border-radius: 4px; cursor: pointer;
+      font-size: 0.85rem;
+    }
+    button:hover { border-color: #d4af37; }
+    button.active { background: #d4af37; color: #0d0d12; border-color: #d4af37; }
+    .layout { display: flex; flex: 1; min-height: 0; }
+    .stage { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 1rem; }
+    canvas { border: 1px solid #1a1a2e; background: #07070b; image-rendering: auto; }
+    aside {
+      width: 290px; border-left: 1px solid #1a1a2e; padding: 1rem;
+      overflow-y: auto; display: flex; flex-direction: column; gap: 1.2rem;
+    }
+    aside h2 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; opacity: 0.55; margin-bottom: 0.5rem; }
+    .layer-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
+    .layer-row label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .layer-row input[type=range] { width: 80px; }
+    .palette-item {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.5rem;
+      border: 1px solid #2a2a44; border-radius: 4px; margin-bottom: 0.4rem; cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .palette-item.sel { border-color: #d4af37; background: #16161f; }
+    .palette-item .ico { font-size: 1.1rem; }
+    #inspector { font-size: 0.85rem; }
+    #inspector .att { margin-top: 0.5rem; padding: 0.5rem; background: #111119; border-radius: 4px; }
+    #inspector img { max-width: 100%; border-radius: 4px; }
+    #inspector .credit { opacity: 0.5; font-size: 0.72rem; margin-top: 0.3rem; }
+    .hint { opacity: 0.45; font-size: 0.78rem; line-height: 1.4; }
+    .edit-only { display: none; }
+    body.edit .edit-only { display: block; }
+    #toast {
+      position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+      background: #1a1a2e; border: 1px solid #d4af37; color: #e8a030;
+      padding: 0.5rem 1rem; border-radius: 4px; font-size: 0.85rem;
+      opacity: 0; transition: opacity 0.2s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+    a { color: #d4af37; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="title">Universo</h1>
+    <span class="desc" id="desc"></span>
+    <span class="grow"></span>
+    <button id="modeBtn" hidden>✏️ Editar</button>
+    <a href="/lobby"><button>← Lobby</button></a>
+  </header>
+  <div class="layout">
+    <div class="stage"><canvas id="canvas" width="640" height="360" aria-label="Universo"></canvas></div>
+    <aside>
+      <section>
+        <h2>Camadas</h2>
+        <div id="layers"></div>
+      </section>
+      <section class="edit-only">
+        <h2>Paleta</h2>
+        <div id="palette"></div>
+      </section>
+      <section class="edit-only">
+        <h2>Ferramentas</h2>
+        <div class="layer-row">
+          <button id="connBtn">🔗 Conectar</button>
+          <button id="delBtn">🗑️ Remover</button>
+        </div>
+        <input type="file" id="upload" hidden>
+        <p class="hint">Clique numa célula para colocar o bloco selecionado. Arraste para mover. Selecione um bloco e clique "Conectar" e depois outro bloco para criar uma via. Anexe arquivos pelo inspetor.</p>
+      </section>
+      <section>
+        <h2>Inspetor</h2>
+        <div id="inspector"><p class="hint">Clique num bloco para ver seu conteúdo.</p></div>
+      </section>
+    </aside>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/universos/instance.js"></script>
+</body>
+</html>

@@ -14,7 +14,7 @@
       padding: 2rem 1rem;
     }
     .top-bar {
-      max-width: 64rem;
+      max-width: 76rem;
       margin: 0 auto 2rem;
       display: flex;
       justify-content: space-between;
@@ -46,7 +46,7 @@
     .auth-area a:hover, .auth-area button:hover { background: rgba(212, 175, 55, 0.1); }
     .auth-user { opacity: 0.7; }
     .layout {
-      max-width: 64rem;
+      max-width: 76rem;
       margin: 0 auto;
       display: grid;
       grid-template-columns: 1fr 18rem;
@@ -134,6 +134,55 @@
       opacity: 0.4;
       margin-left: auto;
     }
+    /* Universos — chips clicáveis (substitui a legenda estática) */
+    .universos {
+      margin-top: 1.4rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      justify-content: center;
+      max-width: 44rem;
+    }
+    .universo-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      border: 1px solid #2a2a3e;
+      background: #14141e;
+      color: #e8e3d3;
+      padding: 0.55rem 1rem;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      letter-spacing: 0.03em;
+      text-decoration: none;
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .universo-chip:hover { border-color: #d4af37; background: #1a1a26; }
+    .universo-chip .ico { flex: 0 0 auto; }
+    /* Painéis colapsáveis (details/summary nativo) */
+    details.panel { padding: 0; }
+    details.panel > summary {
+      font-size: 0.75rem;
+      font-weight: 400;
+      letter-spacing: 0.2em;
+      color: #d4af37;
+      padding: 0.8rem 1rem;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    details.panel > summary::-webkit-details-marker { display: none; }
+    details.panel > summary::before {
+      content: '▸';
+      font-size: 0.7rem;
+      transition: transform 0.15s;
+    }
+    details.panel[open] > summary::before { transform: rotate(90deg); }
+    details.panel > summary:hover { color: #f0d77a; }
+    details.panel > .body { padding: 0 1rem 1rem; }
   </style>
 </head>
 <body>
@@ -149,25 +198,25 @@
         <span style="opacity: 0.6; font-size: 0.75rem;">Em breve: criar o seu universo.</span>
       </p>
       <canvas id="canvas" aria-label="Mapa do lobby"></canvas>
-      <p class="legenda">🐍 Snake &nbsp;·&nbsp; 🟦 Tetris &nbsp;·&nbsp; 👾 Invaders &nbsp;·&nbsp; 🃏 Poker</p>
+      <nav id="universos" class="universos" aria-label="Universos"></nav>
       <p id="rodape" class="rodape" aria-live="polite"></p>
     </div>
 
     <aside class="sidebar">
-      <section class="panel" id="panel-scores">
-        <h2>HIGH SCORES</h2>
-        <div id="scores-content" class="empty">Carregando…</div>
-      </section>
+      <details class="panel" id="panel-scores">
+        <summary>HIGH SCORES</summary>
+        <div class="body"><div id="scores-content" class="empty">Carregando…</div></div>
+      </details>
 
-      <section class="panel" id="panel-activity">
-        <h2>ATIVIDADE RECENTE</h2>
-        <div id="activity-content" class="empty">Carregando…</div>
-      </section>
+      <details class="panel" id="panel-activity">
+        <summary>ATIVIDADE RECENTE</summary>
+        <div class="body"><div id="activity-content" class="empty">Carregando…</div></div>
+      </details>
 
-      <section class="panel" id="panel-reviews">
-        <h2>REVIEWS</h2>
-        <div class="empty">Sistema de reviews em breve.<br>Cada universo poderá ser avaliado.</div>
-      </section>
+      <details class="panel" id="panel-reviews">
+        <summary>REVIEWS</summary>
+        <div class="body"><div class="empty">Sistema de reviews em breve.<br>Cada universo poderá ser avaliado.</div></div>
+      </details>
     </aside>
   </div>
 

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Neuro — Atlas 3D multiescala</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a0a0f}
+  header{height:36px;background:#0d0d12;color:#d4af37;font:13px system-ui;
+    display:flex;align-items:center;gap:1rem;padding:0 1rem;border-bottom:1px solid #1a1a2e}
+  header .muted{opacity:.55;color:#9aa} header .grow{flex:1}
+  header a{color:#9aa;text-decoration:none} header a:hover{color:#d4af37}
+  iframe{border:0;width:100%;height:calc(100% - 36px);display:block}
+</style></head>
+<body>
+  <header>
+    <b>🧠 Neuro — Atlas 3D</b>
+    <span class="muted">núcleos subcorticais (Harvard-Oxford) · Neuroglancer</span>
+    <span class="grow"></span>
+    <a href="/anatomia">viewer macro</a><a href="/lobby">lobby</a>
+  </header>
+  <iframe id="ng" allow="cross-origin-isolated"></iframe>
+  <script>
+    // Dados Precomputed servidos pela própria plataforma (CORS habilitado);
+    // renderizados pelo Neuroglancer (hosted). Self-host do bundle standalone
+    // é o próximo passo.
+    const src = 'precomputed://' + location.origin + '/static/neuro-data/ho-sub';
+    const segs = Array.from({length:21}, (_,i)=>String(i+1));
+    const state = {
+      layers:[{type:'segmentation', source:src, name:'núcleos subcorticais', segments:segs}],
+      layout:'3d', showSlices:false
+    };
+    document.getElementById('ng').src =
+      'https://neuroglancer-demo.appspot.com/#!' + encodeURIComponent(JSON.stringify(state));
+  </script>
+</body></html>
