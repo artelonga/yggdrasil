@@ -20,11 +20,19 @@
   <script>
     // Dados Precomputed servidos pela própria plataforma (CORS habilitado);
     // renderizados pelo Neuroglancer (hosted). Self-host do bundle standalone
-    // é o próximo passo.
-    const src = 'precomputed://' + location.origin + '/static/neuro-data/ho-sub';
-    const segs = Array.from({length:21}, (_,i)=>String(i+1));
+    // é o próximo passo. Duas camadas alinhadas em MNI152 1mm:
+    //   ho-sub        — núcleos subcorticais (Harvard-Oxford)
+    //   aan-brainstem — núcleos do tronco (Harvard AAN v2.0, CC0)
+    const origin = location.origin;
+    const pre = (n) => 'precomputed://' + origin + '/static/neuro-data/' + n;
+    const hoSegs = Array.from({length:21}, (_,i)=>String(i+1));
+    const aanSegs = ['7201','7202','7203','7204','7301','7302','7303','7304',
+                     '7305','7306','7401','7402','7403','7404','7405','7406'];
     const state = {
-      layers:[{type:'segmentation', source:src, name:'núcleos subcorticais', segments:segs}],
+      layers:[
+        {type:'segmentation', source:pre('ho-sub'),        name:'núcleos subcorticais', segments:hoSegs},
+        {type:'segmentation', source:pre('aan-brainstem'), name:'núcleos do tronco (AAN)', segments:aanSegs},
+      ],
       layout:'3d', showSlices:false
     };
     document.getElementById('ng').src =

@@ -49,3 +49,11 @@ preenchido no `ContentRef`/`props` antes de publicar a instância.
   (FSL / FMRIB, Harvard CMA). Labelmap NIfTI → Precomputed (cloud-volume+igneous).
 - ⚠ **Licença**: distribuído com o FSL sob a licença FMRIB — uso/redistribuição
   têm condições (academia/pesquisa). Revisar antes de uso comercial público.
+
+## Atlas de núcleos do tronco (camada aan-brainstem)
+
+- **Harvard Ascending Arousal Network (AAN) Atlas v2.0** — núcleos do tronco
+  encefálico (DR, MnR, PAG, VTA, LC, LDTg, mRt, PBC, PnO, PTg; L/R).
+- **Licença: CC0** (domínio público) — via Zenodo (record 8161638).
+- MNI152 1mm → alinha com `ho-sub`. Labelmap NIfTI → Precomputed
+  (`scripts/convert_atlas.py`).
