@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::room::{Element, Room};
 use super::store::RoomStore;
@@ -19,8 +19,12 @@ pub const PUBLIC_MBYA: &str = "public-mbya";
 /// nenhum usuário "é dono" (logo todas são read-only para todos).
 pub const SYSTEM_OWNER: &str = "__system__";
 
-/// Espaçamento (unidades de mundo) entre nós no grid de layout.
-const SPACING: f64 = 150.0;
+/// Quantos termos a sala pública mostra de início (top-N por popularidade).
+/// Os demais (~milhares) chegam sob demanda via [`lexicon_slice`].
+pub const DEFAULT_TOP_N: usize = 100;
+/// Constante de densidade da espiral (unidades de mundo). Distância radial do
+/// rank `i` ≈ `SPIRAL_C * sqrt(i)`.
+pub const SPIRAL_C: f64 = 40.0;
 
 #[derive(Deserialize)]
 struct LexEntry {
@@ -31,6 +35,9 @@ struct LexEntry {
     gloss: Option<String>,
     #[serde(default)]
     pron: Option<String>,
+    /// Popularidade (nº de exemplos no corpus). O JSON já vem ordenado por isto.
+    #[serde(default)]
+    pop: i64,
 }
 
 fn load_entries(root: &Path, rel: &str) -> Vec<LexEntry> {
@@ -40,31 +47,41 @@ fn load_entries(root: &Path, rel: &str) -> Vec<LexEntry> {
     }
 }
 
-/// Constrói uma sala pública a partir de entradas de léxico, em grid alfabético.
-fn build_room(id: &str, title: &str, lang: &str, mut entries: Vec<LexEntry>) -> Room {
-    entries.sort_by(|a, b| a.word.to_lowercase().cmp(&b.word.to_lowercase()));
-    let n = entries.len();
-    let cols = (n as f64).sqrt().ceil().max(1.0) as usize;
-    let rows = n.div_ceil(cols);
-    let x0 = -((cols.saturating_sub(1)) as f64) * SPACING / 2.0;
-    let y0 = -((rows.saturating_sub(1)) as f64) * SPACING / 2.0;
+/// Posição de mundo do termo de rank `i` — espiral de phyllotaxis (girassol):
+/// rank 0 (mais popular) ao centro, termos menos populares espiralando para
+/// fora pelo ângulo áureo. Layout orgânico ("galáxia"), estável e por rank.
+fn node_pos(i: usize) -> (f64, f64) {
+    let golden = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt()); // ~137.5°
+    let r = SPIRAL_C * (i as f64 + 0.5).sqrt();
+    let a = i as f64 * golden;
+    (r * a.cos(), r * a.sin())
+}
 
-    let mut elements = Vec::with_capacity(n);
-    for (i, e) in entries.into_iter().enumerate() {
-        let col = (i % cols) as f64;
-        let row = (i / cols) as f64;
+/// Arquivo de léxico baked por língua.
+pub fn lang_file(lang: &str) -> Option<&'static str> {
+    match lang {
+        "gn-mbya" | "gn" => Some("guarani-mbya/lexicon.mbya.json"),
+        "yo" => Some("yoruba/lexicon.yo.json"),
+        _ => None,
+    }
+}
+
+/// Sala pública = top-N do léxico (já ordenado por popularidade no JSON),
+/// posicionado por rank. O resto chega via [`lexicon_slice`] ("carregar mais").
+fn build_room(id: &str, title: &str, lang: &str, entries: Vec<LexEntry>) -> Room {
+    let mut elements = Vec::new();
+    for (i, e) in entries.into_iter().take(DEFAULT_TOP_N).enumerate() {
+        let (x, y) = node_pos(i);
         let lang_code = if e.lang.is_empty() {
             lang.to_string()
         } else {
             e.lang
         };
-        let mut el = Element::new(format!("e{i}"), e.word, lang_code)
-            .at(x0 + col * SPACING, y0 + row * SPACING);
+        let mut el = Element::new(format!("e{i}"), e.word, lang_code).at(x, y);
         el.gloss = e.gloss;
         el.pronunciation = e.pron;
         elements.push(el);
     }
-
     let mut room = Room::empty(id, SYSTEM_OWNER, title, lang);
     room.template = "publico".to_string();
     room.published = true;
@@ -88,6 +105,72 @@ pub fn public_rooms(root: &Path) -> Vec<Room> {
             load_entries(root, "guarani-mbya/lexicon.mbya.json"),
         ),
     ]
+}
+
+/// Uma entrada de "carregar mais" — já com posição de mundo (pelo rank global).
+#[derive(Serialize)]
+pub struct SliceEntry {
+    pub index: usize,
+    pub word: String,
+    pub lang: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gloss: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pron: Option<String>,
+    pub pop: i64,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Página do léxico ordenado por popularidade. `limit == 0` devolve só o `total`
+/// (útil para o cliente saber quantos termos existem ao todo).
+#[derive(Serialize)]
+pub struct LexSlice {
+    pub total: usize,
+    pub offset: usize,
+    pub limit: usize,
+    pub lang: String,
+    pub entries: Vec<SliceEntry>,
+}
+
+/// Lê o léxico baked e devolve a fatia `[offset, offset+limit)` por popularidade.
+pub fn lexicon_slice(root: &Path, lang: &str, offset: usize, limit: usize) -> LexSlice {
+    let all = match lang_file(lang) {
+        Some(rel) => load_entries(root, rel),
+        None => Vec::new(),
+    };
+    let total = all.len();
+    let entries = all
+        .into_iter()
+        .enumerate()
+        .skip(offset)
+        .take(limit)
+        .map(|(i, e)| {
+            let (x, y) = node_pos(i);
+            let lang_code = if e.lang.is_empty() {
+                lang.to_string()
+            } else {
+                e.lang
+            };
+            SliceEntry {
+                index: i,
+                word: e.word,
+                lang: lang_code,
+                gloss: e.gloss,
+                pron: e.pron,
+                pop: e.pop,
+                x,
+                y,
+            }
+        })
+        .collect();
+    LexSlice {
+        total,
+        offset,
+        limit,
+        lang: lang.to_string(),
+        entries,
+    }
 }
 
 /// `true` se o id é uma sala pública (read-only, fork-only).
@@ -125,18 +208,49 @@ mod tests {
     }
 
     #[test]
-    fn build_room_layout_grid() {
+    fn build_room_preserva_ordem_de_popularidade() {
+        // o JSON já vem ordenado por popularidade; build_room NÃO reordena
         let entries: Vec<LexEntry> =
-            serde_json::from_str(r#"[{"word":"b"},{"word":"a"},{"word":"c"},{"word":"d"}]"#)
-                .unwrap();
+            serde_json::from_str(r#"[{"word":"b","pop":9},{"word":"a","pop":2}]"#).unwrap();
         let room = build_room("public-x", "X", "yo", entries);
-        assert_eq!(room.elements.len(), 4);
+        assert_eq!(room.elements.len(), 2);
         assert_eq!(room.owner, SYSTEM_OWNER);
         assert!(room.published);
-        // ordenado alfabeticamente: a vem primeiro
-        assert_eq!(room.elements[0].word, "a");
-        // ids únicos e estáveis
+        assert_eq!(room.elements[0].word, "b"); // rank 0 = mais popular, não alfabético
         assert_eq!(room.elements[0].id, "e0");
+    }
+
+    #[test]
+    fn build_room_limita_ao_top_n() {
+        let entries: Vec<LexEntry> = (0..DEFAULT_TOP_N + 50)
+            .map(|i| serde_json::from_str(&format!(r#"{{"word":"w{i}"}}"#)).unwrap())
+            .collect();
+        let room = build_room("public-x", "X", "yo", entries);
+        assert_eq!(room.elements.len(), DEFAULT_TOP_N);
+    }
+
+    #[test]
+    fn lexicon_slice_pagina_por_rank() {
+        let dir = tempdir().unwrap();
+        let items: Vec<String> = (0..250)
+            .map(|i| format!(r#"{{"word":"w{i}","pop":{}}}"#, 250 - i))
+            .collect();
+        write_lex(
+            dir.path(),
+            "guarani-mbya/lexicon.mbya.json",
+            &format!("[{}]", items.join(",")),
+        );
+        let s = super::lexicon_slice(dir.path(), "gn-mbya", 100, 100);
+        assert_eq!(s.total, 250);
+        assert_eq!(s.entries.len(), 100);
+        assert_eq!(s.entries[0].index, 100);
+        assert_eq!(s.entries[0].lang, "gn-mbya");
+        // limit 0 → só total
+        let only_total = super::lexicon_slice(dir.path(), "gn-mbya", 0, 0);
+        assert_eq!(only_total.total, 250);
+        assert!(only_total.entries.is_empty());
+        // língua sem léxico → vazio
+        assert_eq!(super::lexicon_slice(dir.path(), "klingon", 0, 50).total, 0);
     }
 
     #[test]

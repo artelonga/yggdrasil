@@ -298,7 +298,16 @@ pub async fn publicar_elemento(
         return err_json(StatusCode::NOT_FOUND, "elemento_nao_encontrado");
     };
 
-    let contribution: Contribution = match state.lexicon.contribute(&user, &element) {
+    // parents (composição fractal): palavras dos termos-parente ligados por
+    // `compoe` a partir deste elemento → viram `parts:` na entrada de léxico.
+    let parts: Vec<String> = room
+        .links
+        .iter()
+        .filter(|l| l.is_compose() && l.from == eid)
+        .filter_map(|l| room.element(&l.to).map(|p| p.word.clone()))
+        .collect();
+
+    let contribution: Contribution = match state.lexicon.contribute(&user, &element, &parts) {
         Ok(c) => c,
         Err(e) => return map_lexicon_err(e),
     };
@@ -371,6 +380,37 @@ pub async fn consultar_lexico(
         .into_response(),
         Err(e) => map_lexicon_err(e),
     }
+}
+
+// ─── Léxico paginado ("carregar mais") ──────────────────────────────────────────
+
+fn default_lista_limit() -> usize {
+    100
+}
+
+#[derive(Deserialize)]
+pub struct ListaQuery {
+    pub lang: String,
+    #[serde(default)]
+    pub offset: usize,
+    #[serde(default = "default_lista_limit")]
+    pub limit: usize,
+}
+
+/// `GET /api/v1/comunicacao/lexico/lista?lang=&offset=&limit=` — fatia do léxico
+/// por popularidade (sem auth — navegação pública). `limit=0` devolve só o total.
+pub async fn lexico_lista(
+    State(state): ApiState,
+    Query(q): Query<ListaQuery>,
+) -> impl IntoResponse {
+    let limit = q.limit.min(500);
+    let slice = yggdrasil_core::comunicacao::public::lexicon_slice(
+        state.lexicon.root(),
+        &q.lang,
+        q.offset,
+        limit,
+    );
+    Json(slice).into_response()
 }
 
 // ─── Templates ──────────────────────────────────────────────────────────────────
@@ -481,6 +521,7 @@ mod tests {
             )
             .route("/api/v1/comunicacao/salas/{id}/fork", post(fork_sala))
             .route("/api/v1/comunicacao/lexico", get(consultar_lexico))
+            .route("/api/v1/comunicacao/lexico/lista", get(lexico_lista))
             .route("/api/v1/comunicacao/templates", get(list_templates))
             .route("/api/v1/comunicacao/revisao", get(get_revisao))
             .route("/api/v1/comunicacao/revisao/nota", post(nota_revisao))

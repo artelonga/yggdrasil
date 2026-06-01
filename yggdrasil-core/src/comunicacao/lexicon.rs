@@ -95,8 +95,14 @@ impl LexiconStore {
     }
 
     /// Publica um elemento no léxico. Idempotente: republicar liga ao arquivo
-    /// já criado sem reescrever.
-    pub fn contribute(&self, user: &str, el: &Element) -> Result<Contribution, LexiconError> {
+    /// já criado sem reescrever. `parts` são as palavras-parente (composição
+    /// fractal/etimológica) — viram `parts:` no frontmatter como wikilinks.
+    pub fn contribute(
+        &self,
+        user: &str,
+        el: &Element,
+        parts: &[String],
+    ) -> Result<Contribution, LexiconError> {
         if el.word.trim().is_empty() {
             return Err(LexiconError::EmptyWord);
         }
@@ -122,7 +128,7 @@ impl LexiconStore {
             if let Some(parent) = abs.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let md = render_term_markdown(user, el);
+            let md = render_term_markdown(user, el, parts);
             // escrita atômica: temp + rename no mesmo diretório
             let tmp = abs.with_extension("md.tmp");
             std::fs::write(&tmp, md)?;
@@ -138,7 +144,7 @@ impl LexiconStore {
 }
 
 /// Renderiza o Markdown de uma entrada `term` no formato do repo `comunicacao`.
-fn render_term_markdown(user: &str, el: &Element) -> String {
+fn render_term_markdown(user: &str, el: &Element, parts: &[String]) -> String {
     let mut fm = String::from("---\n");
     fm.push_str("type: term\n");
     fm.push_str(&format!("word: {}\n", yaml_scalar(&el.word)));
@@ -148,6 +154,16 @@ fn render_term_markdown(user: &str, el: &Element) -> String {
     }
     if let Some(c) = &el.concept {
         fm.push_str(&format!("concept: {}\n", yaml_scalar(c)));
+    }
+    // parts: morfemas/termos-parente (composição fractal) como wikilinks
+    if !parts.is_empty() {
+        fm.push_str("parts:\n");
+        for p in parts {
+            fm.push_str(&format!(
+                "- {}\n",
+                yaml_scalar(&format!("[[terms/{}.md]]", slugify(p)))
+            ));
+        }
     }
     fm.push_str("seed_status: stub\n");
     fm.push_str(&format!("author: {}\n", yaml_scalar(user)));
@@ -299,7 +315,7 @@ mod tests {
         let (store, _d) = seeded_repo();
         let el = Element::new("e1", "Qapla'", "klingon");
         assert!(matches!(
-            store.contribute("alice", &el),
+            store.contribute("alice", &el, &[]),
             Err(LexiconError::UnsupportedLang(_))
         ));
     }
@@ -308,7 +324,7 @@ mod tests {
     fn contribute_palavra_existente_liga_sem_duplicar() {
         let (store, _d) = seeded_repo();
         let el = Element::new("e1", "iemanjá", "yo");
-        let c = store.contribute("alice", &el).unwrap();
+        let c = store.contribute("alice", &el, &[]).unwrap();
         assert!(!c.created, "não deve criar — já existe no compartilhado");
         assert_eq!(c.scope, LexiconScope::Shared);
         assert_eq!(c.relative_path, "yoruba/terms/iemanja.md");
@@ -324,7 +340,7 @@ mod tests {
             .with_gloss("força vital; 'assim seja'")
             .with_pronunciation("[à.ʃɛ]")
             .with_concept("co://concepts/word.md");
-        let c = store.contribute("yuri@x.com", &el).unwrap();
+        let c = store.contribute("yuri@x.com", &el, &[]).unwrap();
         assert!(c.created);
         assert_eq!(c.scope, LexiconScope::User);
         assert_eq!(c.relative_path, "yoruba/terms/_users/yuri-x-com/ase.md");
@@ -344,14 +360,28 @@ mod tests {
     fn contribute_idempotente() {
         let (store, _d) = seeded_repo();
         let el = Element::new("e1", "tekoa", "gn-mbya").with_gloss("aldeia");
-        let first = store.contribute("alice", &el).unwrap();
+        let first = store.contribute("alice", &el, &[]).unwrap();
         assert!(first.created);
-        let second = store.contribute("alice", &el).unwrap();
+        let second = store.contribute("alice", &el, &[]).unwrap();
         assert!(!second.created, "republicar não recria");
         assert_eq!(first.relative_path, second.relative_path);
         assert_eq!(
             first.relative_path,
             "guarani-mbya/terms/_users/alice/tekoa.md"
         );
+    }
+
+    #[test]
+    fn contribute_com_parts_escreve_wikilinks() {
+        let (store, _d) = seeded_repo();
+        // kuarahy ← kuaa + ra + hy (composição/etimologia fractal)
+        let el = Element::new("e1", "kuarahy", "gn-mbya").with_gloss("sol");
+        let parts = vec!["kuaa".to_string(), "ra".to_string(), "hy".to_string()];
+        let c = store.contribute("alice", &el, &parts).unwrap();
+        let md = std::fs::read_to_string(store.root().join(&c.relative_path)).unwrap();
+        assert!(md.contains("parts:"), "frontmatter deve ter parts\n{md}");
+        assert!(md.contains("[[terms/kuaa.md]]"));
+        assert!(md.contains("[[terms/ra.md]]"));
+        assert!(md.contains("[[terms/hy.md]]"));
     }
 }

@@ -225,11 +225,18 @@ pub struct Link {
     /// `true` desenha seta from→to; `false` é relação simétrica.
     #[serde(default = "default_true_link")]
     pub directed: bool,
+    /// Tipo da relação: `None`/"relacao" = livre; "compoe" = composição
+    /// (from é composto por to → estrutura fractal/etimológica).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 fn default_true_link() -> bool {
     true
 }
+
+/// Marca de link composicional (termo `from` é composto pelo morfema `to`).
+pub const KIND_COMPOSE: &str = "compoe";
 
 impl Link {
     pub fn new(id: impl Into<String>, from: impl Into<String>, to: impl Into<String>) -> Self {
@@ -239,6 +246,7 @@ impl Link {
             to: to.into(),
             label: None,
             directed: true,
+            kind: None,
         }
     }
 
@@ -247,9 +255,18 @@ impl Link {
         self
     }
 
+    pub fn with_kind(mut self, kind: impl Into<String>) -> Self {
+        self.kind = Some(kind.into());
+        self
+    }
+
     pub fn undirected(mut self) -> Self {
         self.directed = false;
         self
+    }
+
+    pub fn is_compose(&self) -> bool {
+        self.kind.as_deref() == Some(KIND_COMPOSE)
     }
 }
 
@@ -299,6 +316,8 @@ pub enum EditError {
     LinkEndpointMissing(String),
     #[error("link não pode ligar um elemento a si mesmo")]
     SelfLink,
+    #[error("composição precisa de ao menos um termo-parente")]
+    ComposeNoParents,
 }
 
 /// Patch atômico sobre a sala. Tagged por `"op"` no JSON (mesmo padrão do
@@ -330,6 +349,18 @@ pub enum RoomEdit {
     AddLink { link: Link },
     /// Remove uma relação.
     DeleteLink { id: String },
+    /// Compõe um termo novo a partir de elementos existentes (estrutura
+    /// fractal/etimológica): cria o elemento `word` e um link `compoe` dele
+    /// para cada parente (ex.: `ayvu rapyta` ← `ayvu` + `rapyta`).
+    Compose {
+        id: String,
+        word: String,
+        #[serde(default)]
+        lang: Option<String>,
+        x: f64,
+        y: f64,
+        parents: Vec<String>,
+    },
     /// Persiste o estado de câmera (pan/zoom).
     SetViewport { pan_x: f64, pan_y: f64, zoom: f64 },
     /// Define visibilidade pública da sala.
@@ -427,6 +458,44 @@ impl RoomEdit {
                 room.links.retain(|l| l.id != id);
                 if room.links.len() == before {
                     return Err(EditError::LinkNotFound(id));
+                }
+            }
+            RoomEdit::Compose {
+                id,
+                word,
+                lang,
+                x,
+                y,
+                parents,
+            } => {
+                if word.trim().is_empty() {
+                    return Err(EditError::EmptyWord);
+                }
+                if room.has_element(&id) {
+                    return Err(EditError::ElementExists(id));
+                }
+                if parents.is_empty() {
+                    return Err(EditError::ComposeNoParents);
+                }
+                finite(x)?;
+                finite(y)?;
+                for p in &parents {
+                    if !room.has_element(p) {
+                        return Err(EditError::ElementNotFound(p.clone()));
+                    }
+                }
+                let lang = lang.unwrap_or_else(|| room.lang.clone());
+                room.elements.push(Element::new(&id, word, lang).at(x, y));
+                // um link `compoe` do novo termo para cada parente (fractal)
+                for p in parents {
+                    let link_id = format!("{id}~{p}");
+                    if !room.has_link(&link_id) {
+                        room.links.push(
+                            Link::new(link_id, id.clone(), p)
+                                .with_label("compõe-se de")
+                                .with_kind(KIND_COMPOSE),
+                        );
+                    }
                 }
             }
             RoomEdit::SetViewport { pan_x, pan_y, zoom } => {
@@ -691,5 +760,63 @@ mod tests {
         assert!(json.contains("\"op\":\"add_link\""));
         let back: RoomEdit = serde_json::from_str(&json).unwrap();
         assert_eq!(op, back);
+    }
+
+    #[test]
+    fn compose_cria_termo_e_links_compoe_para_parents() {
+        let mut r = room_with_two(); // a = ayvu, b = nhe'ẽ
+        RoomEdit::Compose {
+            id: "c".into(),
+            word: "ayvu rapyta".into(),
+            lang: None,
+            x: 0.0,
+            y: -120.0,
+            parents: vec!["a".into(), "b".into()],
+        }
+        .apply(&mut r)
+        .unwrap();
+        assert!(r.has_element("c"));
+        // herda a língua da sala quando lang=None
+        assert_eq!(r.element("c").unwrap().lang, "yo");
+        let compose: Vec<_> = r
+            .links
+            .iter()
+            .filter(|l| l.is_compose() && l.from == "c")
+            .collect();
+        assert_eq!(compose.len(), 2, "um link compoe por parente");
+        assert!(compose.iter().all(|l| l.directed));
+        let alvos: Vec<&str> = compose.iter().map(|l| l.to.as_str()).collect();
+        assert!(alvos.contains(&"a") && alvos.contains(&"b"));
+    }
+
+    #[test]
+    fn compose_sem_parents_falha() {
+        let mut r = room_with_two();
+        let op = RoomEdit::Compose {
+            id: "c".into(),
+            word: "x".into(),
+            lang: None,
+            x: 0.0,
+            y: 0.0,
+            parents: vec![],
+        };
+        assert_eq!(op.apply(&mut r), Err(EditError::ComposeNoParents));
+    }
+
+    #[test]
+    fn compose_parent_inexistente_falha() {
+        let mut r = room_with_two();
+        let op = RoomEdit::Compose {
+            id: "c".into(),
+            word: "x".into(),
+            lang: None,
+            x: 0.0,
+            y: 0.0,
+            parents: vec!["zzz".into()],
+        };
+        assert_eq!(
+            op.apply(&mut r),
+            Err(EditError::ElementNotFound("zzz".into()))
+        );
     }
 }

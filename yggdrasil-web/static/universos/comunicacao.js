@@ -13,15 +13,20 @@ const state = {
   room: null,
   selectedId: null,
   selectedLinkId: null,
+  hoverId: null,
   view: { panX: 0, panY: 0, zoom: 1 },
   // modo de ligação (relações)
   linkMode: false,
   linkFrom: null,
+  // modo de composição (formar termo a partir de parents → estrutura fractal)
+  composeMode: false,
+  composeParents: [],
   // interação por ponteiro
   pointers: new Map(),
   drag: null, // { kind:'pan'|'elem', id?, ox?, oy?, moved?, sx0, sy0 }
   pinch: null,
   review: { items: [], idx: 0, revealed: false },
+  lexTotal: 0, // total do léxico (paginação das salas públicas)
 };
 
 const ZOOM_MIN = 0.1, ZOOM_MAX = 8;
@@ -84,8 +89,21 @@ function elementById(id) {
   return state.room && state.room.elements.find((e) => e.id === id);
 }
 function nodeRadius() {
-  // nós bem maiores e legíveis; não encolhem demais ao dar zoom out
-  return 40 * Math.min(1.5, Math.max(0.85, state.view.zoom));
+  // o "ponto" do nó escala com o zoom (sem floor/cap exagerado → sem scallops)
+  return Math.max(2.5, Math.min(13, 8 * state.view.zoom));
+}
+// raio de clique generoso (acerta o rótulo mesmo com ponto pequeno)
+function hitRadius() {
+  return Math.max(16, Math.min(38, 26 * state.view.zoom));
+}
+// fator de tamanho por popularidade: salas públicas usam id "e<rank>" (rank 0 =
+// mais popular = maior). Nós sem rank (curados/usuário) → fator médio.
+const RANK_RE = /^e(\d+)$/;
+function rankFactor(el) {
+  const m = RANK_RE.exec(el.id);
+  if (!m) return 1.4;
+  const rank = +m[1];
+  return 1 + 2.4 / (1 + rank / 35); // rank0≈3.4 · rank35≈2.2 · rank350≈1.2 · →1
 }
 function snapToGrid(v) {
   return Math.round(v / GRID) * GRID;
@@ -96,7 +114,7 @@ function drawArrow(ax, ay, bx, by, nodeR) {
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len, uy = dy / len;
   const tx = bx - ux * nodeR, ty = by - uy * nodeR; // ponta encosta na borda do nó
-  const s = 9, w = 0.55;
+  const s = 8, w = 0.55;
   ctx.beginPath();
   ctx.moveTo(tx, ty);
   ctx.lineTo(tx - ux * s - uy * s * w, ty - uy * s + ux * s * w);
@@ -105,74 +123,106 @@ function drawArrow(ax, ay, bx, by, nodeR) {
   ctx.fill();
 }
 
+// Encurta `s` com reticências para caber em `maxW` px (usa a fonte atual do ctx).
+function ellipsize(s, maxW) {
+  if (ctx.measureText(s).width <= maxW) return s;
+  let lo = 1, hi = s.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(s.slice(0, mid) + '…').width <= maxW) lo = mid; else hi = mid - 1;
+  }
+  return s.slice(0, lo) + '…';
+}
+
+const LABEL_Z = 0.5;  // zoom mínimo p/ mostrar rótulos (abaixo disso, só pontos)
+const GLOSS_Z = 1.25; // ...e a glosa
+
 function draw() {
   ctx.clearRect(0, 0, cw, ch);
   if (!state.room) return;
   const z = state.view.zoom;
 
-  // grade de fundo — alinhada ao grid de mundo (reforça "mapa editável")
-  ctx.strokeStyle = 'rgba(212,175,55,0.07)';
-  ctx.lineWidth = 1;
+  // grade de fundo (some quando muito reduzida)
   const step = GRID * z;
-  if (step > 10) {
+  if (step > 14) {
+    ctx.strokeStyle = 'rgba(212,175,55,0.06)';
+    ctx.lineWidth = 1;
     const [ox, oy] = worldToScreen(0, 0);
     for (let x = ((ox % step) + step) % step; x < cw; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke(); }
     for (let y = ((oy % step) + step) % step; y < ch; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
   }
 
-  // relações (links) — desenhadas sob os nós
-  const r = nodeRadius();
+  const rd = nodeRadius();
+  const showGloss = z >= GLOSS_Z;
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+
+  // relações (sob os nós)
   for (const l of (state.room.links || [])) {
     const a = elementById(l.from), b = elementById(l.to);
     if (!a || !b) continue;
     const [ax, ay] = worldToScreen(a.x, a.y);
     const [bx, by] = worldToScreen(b.x, b.y);
     const sel = l.id === state.selectedLinkId;
-    ctx.strokeStyle = sel ? '#d4af37' : 'rgba(212,175,55,0.38)';
+    const compose = l.kind === 'compoe';
+    ctx.strokeStyle = sel ? '#d4af37' : (compose ? 'rgba(76,175,114,0.6)' : 'rgba(212,175,55,0.35)');
     ctx.fillStyle = ctx.strokeStyle;
-    ctx.lineWidth = sel ? 3 : 1.5;
+    ctx.lineWidth = sel ? 3 : (compose ? 2 : 1.4);
     ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    if (l.directed !== false) drawArrow(ax, ay, bx, by, r);
-    if (l.label && z > 0.45) {
+    if (l.directed !== false) drawArrow(ax, ay, bx, by, rd + 2);
+    if (l.label && z > 0.7) {
       ctx.fillStyle = sel ? '#d4af37' : '#8c8674';
-      ctx.font = `${Math.max(9, 10 * z)}px system-ui`;
+      ctx.font = `${Math.max(9, 11 * Math.min(1.5, z))}px system-ui`;
       ctx.fillText(l.label, (ax + bx) / 2, (ay + by) / 2 - 5);
     }
   }
 
-  // nós (só a frase — sem ícones)
-  const wordSize = Math.max(15, 20 * z);
+  // nós: tamanho ∝ popularidade (rank); rótulo nos termos prominentes mesmo com
+  // zoom baixo (LOD por importância → "galáxia" legível, não poeira uniforme).
+  const margin = 80;
   for (const el of state.room.elements) {
     const [sx, sy] = worldToScreen(el.x, el.y);
-    if (sx < -160 || sx > cw + 160 || sy < -160 || sy > ch + 160) continue;
+    if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin) continue;
     const sel = el.id === state.selectedId;
-    const linking = state.linkFrom === el.id;
+    const hov = el.id === state.hoverId;
+    const picking = state.linkFrom === el.id || state.composeParents.includes(el.id);
     const color = LEX_COLOR[el.lexicon ? el.lexicon.state : 'local'] || LEX_COLOR.local;
+    const eff = rd * rankFactor(el); // raio efetivo (mais popular = maior)
 
     ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, Math.PI * 2);
-    ctx.fillStyle = sel || linking ? 'rgba(212,175,55,0.20)' : 'rgba(22,22,30,0.95)';
+    ctx.arc(sx, sy, eff, 0, Math.PI * 2);
+    ctx.fillStyle = sel ? '#d4af37' : (picking ? '#4caf72' : color);
     ctx.fill();
-    ctx.lineWidth = sel || linking ? 3.5 : 2;
-    ctx.strokeStyle = linking ? '#4caf72' : (sel ? '#d4af37' : color);
-    ctx.stroke();
+    if (sel || picking || hov) {
+      ctx.beginPath(); ctx.arc(sx, sy, eff + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = picking ? '#4caf72' : '#d4af37'; ctx.lineWidth = 2; ctx.stroke();
+    }
 
-    ctx.fillStyle = '#f3eee0';
-    ctx.font = `600 ${wordSize}px system-ui, sans-serif`;
-    ctx.fillText(el.word, sx, sy + wordSize * 0.34);
-    if (z > 0.7 && el.gloss) {
-      ctx.fillStyle = '#a59d86';
-      ctx.font = `${Math.max(11, 13 * z)}px system-ui`;
-      const g = el.gloss.length > 32 ? el.gloss.slice(0, 30) + '…' : el.gloss;
-      ctx.fillText(g, sx, sy + r + 16 * Math.min(1.4, z));
+    // rótulo: nós prominentes (raio efetivo grande), ao dar zoom, ou hover/seleção
+    if (eff >= 6 || z >= LABEL_Z || sel || hov || picking) {
+      const wordPx = Math.max(10, Math.min(30, Math.max(eff * 1.25, 17 * z)));
+      ctx.font = `600 ${wordPx}px system-ui, sans-serif`;
+      const maxW = Math.max(110, GRID * z);
+      const label = ellipsize(el.word, maxW);
+      const tw = ctx.measureText(label).width;
+      const ty = sy + eff + 3;
+      ctx.fillStyle = 'rgba(13,13,18,0.74)'; // fundo p/ legibilidade
+      ctx.fillRect(sx - tw / 2 - 3, ty, tw + 6, wordPx + 4);
+      ctx.fillStyle = sel || hov ? '#f3eee0' : '#e8e3d3';
+      ctx.fillText(label, sx, ty + wordPx);
+      if ((showGloss || hov) && el.gloss) {
+        const gpx = Math.max(9, Math.min(15, 12 * Math.min(1.6, z)));
+        ctx.font = `${gpx}px system-ui`;
+        ctx.fillStyle = '#9a937f';
+        ctx.fillText(ellipsize(el.gloss, maxW * 1.6), sx, ty + wordPx + gpx + 3);
+      }
     }
   }
 }
 
 function elementAt(sx, sy) {
   if (!state.room) return null;
-  const hit = nodeRadius() + 6;
+  const hit = hitRadius();
   let best = null, bestD = hit * hit;
   for (const el of state.room.elements) {
     const [ex, ey] = worldToScreen(el.x, el.y);
@@ -190,7 +240,9 @@ canvas.addEventListener('pointerdown', (e) => {
   const rect = canvas.getBoundingClientRect();
   const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
   const el = elementAt(sx, sy);
-  if (el && (state.canEdit || state.linkMode)) {
+  if (el && state.composeMode) {
+    toggleComposeParent(el.id); // escolher parents para compor
+  } else if (el && (state.canEdit || state.linkMode)) {
     // arrastar/mover só faz sentido se a sala é editável; em read-only,
     // o pointerdown vira só seleção (drag não inicia)
     const [wx, wy] = screenToWorld(sx, sy);
@@ -261,7 +313,11 @@ canvas.addEventListener('mousemove', (e) => {
   if (state.drag || state.pinch) return;
   const rect = canvas.getBoundingClientRect();
   const over = elementAt(e.clientX - rect.left, e.clientY - rect.top);
-  canvas.style.cursor = state.linkMode ? 'crosshair' : (over ? 'move' : 'grab');
+  const overId = over ? over.id : null;
+  if (overId !== state.hoverId) { state.hoverId = overId; draw(); } // foco no hover
+  canvas.style.cursor = state.composeMode ? 'cell'
+    : state.linkMode ? 'crosshair'
+    : (over ? (state.canEdit ? 'move' : 'pointer') : 'grab');
 });
 
 // ─── Relações (links) ──────────────────────────────────────────────────────────
@@ -391,8 +447,49 @@ function applyMode() {
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
   show('btn-add', !ro);
   show('btn-link', !ro);
+  show('btn-compor', !ro);
   show('btn-sugerir', ro);
   if (ro && state.linkMode) setLinkMode(false);
+  if (ro && state.composeMode) setComposeMode(false);
+  // paginação só nas salas públicas (top-N + carregar mais)
+  const paginated = !!state.room && state.room.template === 'publico';
+  show('btn-more', paginated);
+  show('lex-count', paginated);
+  if (paginated) refreshLexCount();
+}
+
+function renderLexCount() {
+  const el = document.getElementById('lex-count');
+  if (el && state.room) el.textContent = `${state.room.elements.length} / ${state.lexTotal || '…'} termos`;
+}
+async function refreshLexCount() {
+  renderLexCount();
+  try {
+    const data = await api('GET', `/lexico/lista?lang=${encodeURIComponent(state.room.lang)}&offset=0&limit=0`);
+    state.lexTotal = data.total;
+    renderLexCount();
+  } catch (_) {}
+}
+async function loadMore() {
+  if (!state.room) return;
+  const loaded = state.room.elements.length;
+  if (state.lexTotal && loaded >= state.lexTotal) { toast('Todos os termos já carregados'); return; }
+  try {
+    const data = await api('GET', `/lexico/lista?lang=${encodeURIComponent(state.room.lang)}&offset=${loaded}&limit=100`);
+    const have = new Set(state.room.elements.map((e) => e.id));
+    for (const en of data.entries) {
+      const id = 'e' + en.index;
+      if (have.has(id)) continue;
+      state.room.elements.push({
+        id, word: en.word, lang: en.lang, x: en.x, y: en.y,
+        gloss: en.gloss || null, pronunciation: en.pron || null,
+      });
+    }
+    state.lexTotal = data.total;
+    cacheRoom();
+    renderLexCount();
+    draw();
+  } catch (err) { toast('Erro: ' + err.message); }
 }
 
 function centerOn(el) {
@@ -565,13 +662,57 @@ function setLinkMode(on) {
 }
 btnLink.addEventListener('click', () => setLinkMode(!state.linkMode));
 
-// Teclas: Delete remove relação selecionada; Esc sai do modo ligação.
+// ─── Modo de composição (formar termo a partir de parents) ───────────────────────
+const btnCompor = document.getElementById('btn-compor');
+function setComposeMode(on) {
+  state.composeMode = on;
+  state.composeParents = [];
+  if (on && state.linkMode) setLinkMode(false);
+  btnCompor.classList.toggle('primary', on);
+  btnCompor.textContent = on ? 'Compor (0)' : 'Compor';
+  canvas.style.cursor = on ? 'cell' : 'grab';
+  toast(on ? 'Escolha os termos-parente; depois clique Compor' : 'Composição cancelada');
+  draw();
+}
+function toggleComposeParent(id) {
+  const i = state.composeParents.indexOf(id);
+  if (i >= 0) state.composeParents.splice(i, 1);
+  else state.composeParents.push(id);
+  btnCompor.textContent = `Compor (${state.composeParents.length})`;
+  draw();
+}
+async function finalizeCompose() {
+  const parents = state.composeParents.slice();
+  if (!parents.length) { setComposeMode(false); return; }
+  const words = parents.map((pid) => (elementById(pid) || {}).word).filter(Boolean);
+  const word = prompt('Novo termo composto (a partir de: ' + words.join(' + ') + '):', words.join(' '));
+  if (!word || !word.trim()) return; // mantém o modo p/ ajustar a seleção
+  let cx = 0, cy = 0, n = 0;
+  for (const pid of parents) { const e = elementById(pid); if (e) { cx += e.x; cy += e.y; n++; } }
+  cx = n ? cx / n : 0; cy = (n ? cy / n : 0) - 120; // acima dos parents
+  const id = 'c' + Math.random().toString(36).slice(2, 9);
+  try {
+    const room = await api('PATCH', `/salas/${state.roomId}`, {
+      op: 'compose', id, word: word.trim(), lang: state.room.lang, x: cx, y: cy, parents,
+    });
+    setComposeMode(false);
+    setRoom(room);
+    select(id);
+    toast('Termo composto criado (ligado aos parents)');
+  } catch (err) { toast('Erro: ' + err.message); }
+}
+btnCompor.addEventListener('click', () => {
+  if (state.composeMode) finalizeCompose(); else setComposeMode(true);
+});
+
+// Teclas: Delete remove relação selecionada; Esc sai dos modos.
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedLinkId) {
     e.preventDefault(); deleteLink(state.selectedLinkId);
   } else if (e.key === 'Escape') {
-    if (state.linkMode) setLinkMode(false);
+    if (state.composeMode) setComposeMode(false);
+    else if (state.linkMode) setLinkMode(false);
     else { state.selectedLinkId = null; select(null); }
   }
 });
@@ -639,6 +780,8 @@ document.getElementById('search').addEventListener('input', (e) => {
   const el = state.room.elements.find((x) => x.word.toLowerCase().includes(q));
   if (el) centerOn(el);
 });
+
+document.getElementById('btn-more').addEventListener('click', loadMore);
 
 // ─── Revisão ──────────────────────────────────────────────────────────────────
 document.getElementById('btn-review').addEventListener('click', openReview);

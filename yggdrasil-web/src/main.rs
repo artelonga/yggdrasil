@@ -347,6 +347,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(root))
         .merge(lobby_router())
         .route("/login", get(serve_login))
+        .route("/universos", get(serve_universos_index))
         .route("/universos/snake", get(serve_snake))
         .route("/universos/tetris", get(serve_tetris))
         .route("/universos/invaders", get(serve_invaders))
@@ -461,6 +462,13 @@ async fn serve_vim() -> impl IntoResponse {
 /// elementos multilíngues). Busca a sala via `/api/v1/comunicacao/salas/{id}`.
 async fn serve_comunicacao() -> impl IntoResponse {
     Html(include_str!("../static/universos/comunicacao.html"))
+}
+
+/// Índice `/universos` — catálogo unificado e filtrável de todos os universos
+/// (arcade + atlas + salas de comunicação + instâncias autoradas). A agregação
+/// das fontes acontece no cliente (`/static/universos/index.js`).
+async fn serve_universos_index() -> impl IntoResponse {
+    Html(include_str!("../static/universos/index.html"))
 }
 
 // ── Legacy redirects (YG-N rename `/games/*` → `/universos/*`) ─────────────
