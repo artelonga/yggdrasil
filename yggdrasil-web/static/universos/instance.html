@@ -7,8 +7,8 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #0d0d12;
-      color: #e8e3d3;
+      background: #1c1b1b;
+      color: #e5e2e1;
       font-family: system-ui, sans-serif;
       min-height: 100vh;
       display: flex;
@@ -16,23 +16,23 @@
     }
     header {
       display: flex; align-items: baseline; gap: 1rem;
-      padding: 1rem 1.5rem; border-bottom: 1px solid #1a1a2e;
+      padding: 1rem 1.5rem; border-bottom: 1px solid #201f1f;
     }
     header h1 { font-weight: 300; letter-spacing: 0.15em; font-size: 1.3rem; }
     header .desc { opacity: 0.5; font-size: 0.85rem; }
     header .grow { flex: 1; }
     button {
-      background: #1a1a2e; color: #e8e3d3; border: 1px solid #2a2a44;
+      background: #201f1f; color: #e5e2e1; border: 1px solid #2a2a44;
       padding: 0.45rem 0.8rem; border-radius: 4px; cursor: pointer;
       font-size: 0.85rem;
     }
-    button:hover { border-color: #d4af37; }
-    button.active { background: #d4af37; color: #0d0d12; border-color: #d4af37; }
+    button:hover { border-color: #e9c349; }
+    button.active { background: #e9c349; color: #1c1b1b; border-color: #e9c349; }
     .layout { display: flex; flex: 1; min-height: 0; }
     .stage { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 1rem; }
-    canvas { border: 1px solid #1a1a2e; background: #07070b; image-rendering: auto; }
+    canvas { border: 1px solid #201f1f; background: #07070b; image-rendering: auto; }
     aside {
-      width: 290px; border-left: 1px solid #1a1a2e; padding: 1rem;
+      width: 290px; border-left: 1px solid #201f1f; padding: 1rem;
       overflow-y: auto; display: flex; flex-direction: column; gap: 1.2rem;
     }
     aside h2 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; opacity: 0.55; margin-bottom: 0.5rem; }
@@ -44,7 +44,7 @@
       border: 1px solid #2a2a44; border-radius: 4px; margin-bottom: 0.4rem; cursor: pointer;
       font-size: 0.85rem;
     }
-    .palette-item.sel { border-color: #d4af37; background: #16161f; }
+    .palette-item.sel { border-color: #e9c349; background: #16161f; }
     .palette-item .ico { font-size: 1.1rem; }
     #inspector { font-size: 0.85rem; }
     #inspector .att { margin-top: 0.5rem; padding: 0.5rem; background: #111119; border-radius: 4px; }
@@ -55,13 +55,18 @@
     body.edit .edit-only { display: block; }
     #toast {
       position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
-      background: #1a1a2e; border: 1px solid #d4af37; color: #e8a030;
+      background: #201f1f; border: 1px solid #e9c349; color: #e8a030;
       padding: 0.5rem 1rem; border-radius: 4px; font-size: 0.85rem;
       opacity: 0; transition: opacity 0.2s; pointer-events: none;
     }
     #toast.show { opacity: 1; }
-    a { color: #d4af37; }
+    a { color: #e9c349; }
   </style>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/ui/relic.css">
+<style>/* relic theme normalization */
+body{font-family:'Manrope',system-ui,sans-serif}
+h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
 </head>
 <body>
   <header>

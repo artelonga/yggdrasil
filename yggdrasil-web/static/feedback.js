@@ -25,33 +25,33 @@
   // ── estilos ────────────────────────────────────────────────────────────────
   var css =
     ".fc-btn{position:fixed;right:18px;bottom:18px;z-index:99998;border:0;cursor:pointer;" +
-      "background:#0d0d12;color:#d4af37;border:1px solid #2a2a44;border-radius:999px;" +
+      "background:#1c1b1b;color:#e9c349;border:1px solid #2a2a44;border-radius:999px;" +
       "padding:.6rem .95rem;font:600 14px system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.35);" +
       "display:flex;align-items:center;gap:.45rem;transition:transform .12s,background .12s}" +
     ".fc-btn:hover{transform:translateY(-1px);background:#15151f}" +
     ".fc-ov{position:fixed;inset:0;z-index:99999;background:rgba(6,6,10,.62);" +
       "display:flex;align-items:center;justify-content:center;padding:1rem}" +
     ".fc-card{width:min(460px,100%);max-height:90vh;overflow:auto;background:#0f0f16;" +
-      "color:#e8e3d3;border:1px solid #2a2a44;border-radius:14px;padding:1.25rem 1.25rem 1.1rem;" +
+      "color:#e5e2e1;border:1px solid #2a2a44;border-radius:14px;padding:1.25rem 1.25rem 1.1rem;" +
       "font-family:system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.5)}" +
-    ".fc-card h2{margin:0 0 .15rem;font-size:1.15rem;color:#d4af37;font-weight:700}" +
+    ".fc-card h2{margin:0 0 .15rem;font-size:1.15rem;color:#e9c349;font-weight:700}" +
     ".fc-sub{margin:0 0 .9rem;font-size:.82rem;color:#9a9aab}" +
     ".fc-kinds{display:flex;gap:.4rem;margin-bottom:.7rem}" +
     ".fc-kind{flex:1;text-align:center;padding:.45rem;border:1px solid #2a2a44;border-radius:8px;" +
       "background:#14141d;color:#c9c9d6;cursor:pointer;font-size:.85rem;user-select:none}" +
-    ".fc-kind.on{border-color:#d4af37;color:#d4af37;background:#1c1c12}" +
+    ".fc-kind.on{border-color:#e9c349;color:#e9c349;background:#1c1c12}" +
     ".fc-card label{display:block;font-size:.74rem;color:#9a9aab;margin:.6rem 0 .25rem}" +
     ".fc-card textarea,.fc-card input{width:100%;box-sizing:border-box;background:#08080c;" +
-      "color:#e8e3d3;border:1px solid #2a2a44;border-radius:8px;padding:.55rem .65rem;" +
+      "color:#e5e2e1;border:1px solid #2a2a44;border-radius:8px;padding:.55rem .65rem;" +
       "font:inherit;font-size:.9rem}" +
     ".fc-card textarea{min-height:96px;resize:vertical}" +
-    ".fc-card input:focus,.fc-card textarea:focus{outline:0;border-color:#d4af37}" +
+    ".fc-card input:focus,.fc-card textarea:focus{outline:0;border-color:#e9c349}" +
     ".fc-hint{font-size:.72rem;color:#7e7e8c;margin-top:.25rem}" +
     ".fc-who{font-size:.74rem;color:#7e7e8c;margin:.55rem 0 0}" +
     ".fc-actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem}" +
     ".fc-actions button{border-radius:8px;padding:.5rem .9rem;font:600 .88rem system-ui;cursor:pointer}" +
     ".fc-cancel{background:transparent;color:#9a9aab;border:1px solid #2a2a44}" +
-    ".fc-send{background:#d4af37;color:#1a1a10;border:0}" +
+    ".fc-send{background:#e9c349;color:#1a1a10;border:0}" +
     ".fc-send[disabled]{opacity:.55;cursor:default}" +
     ".fc-msg{font-size:.85rem;margin-top:.7rem}" +
     ".fc-ok{color:#7bd88f}.fc-err{color:#e06c6c}";
@@ -94,7 +94,7 @@
         '<input id="fc-email" type="email" maxlength="200" placeholder="voce@exemplo.com">' +
         '<div class="fc-hint">Se gostar de receber resposta, deixe seu e-mail.</div>' +
         '<div class="fc-hint">Sua mensagem e seu nome podem aparecer no ' +
-          '<a href="/feedback" target="_blank" rel="noopener" style="color:#d4af37">mural público</a>' +
+          '<a href="/feedback" target="_blank" rel="noopener" style="color:#e9c349">mural público</a>' +
           '; seu e-mail <b>nunca</b> é exibido.</div>' +
         '<p class="fc-who"></p>' +
         '<div class="fc-msg" aria-live="polite"></div>' +

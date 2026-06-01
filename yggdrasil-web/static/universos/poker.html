@@ -7,8 +7,8 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #0d0d12;
-      color: #e8e3d3;
+      background: #1c1b1b;
+      color: #e5e2e1;
       font-family: system-ui, monospace;
       min-height: 100vh;
       padding: 2rem 1rem;
@@ -36,12 +36,12 @@
       gap: 0.1rem;
     }
     .saldo-label { font-size: 0.65rem; opacity: 0.5; letter-spacing: 0.15em; }
-    .saldo-value { color: #d4af37; font-size: 1.2rem; font-weight: 500; }
+    .saldo-value { color: #e9c349; font-size: 1.2rem; font-weight: 500; }
     .saldo-unit { font-size: 0.7rem; opacity: 0.5; letter-spacing: 0.1em; }
     .badge {
       display: inline-block;
-      border: 1px solid #d4af37;
-      color: #d4af37;
+      border: 1px solid #e9c349;
+      color: #e9c349;
       padding: 0.2rem 0.6rem;
       font-size: 0.7rem;
       letter-spacing: 0.15em;
@@ -55,8 +55,8 @@
     #cta-login p { opacity: 0.7; max-width: 32rem; margin: 0 auto 2rem; line-height: 1.6; }
     .btn-primary {
       display: inline-block;
-      background: #d4af37;
-      color: #0d0d12;
+      background: #e9c349;
+      color: #1c1b1b;
       padding: 0.8rem 2rem;
       text-decoration: none;
       letter-spacing: 0.1em;
@@ -77,10 +77,10 @@
       cursor: pointer;
       transition: border-color 0.15s;
     }
-    .lobby-card:hover { border-color: #d4af37; }
+    .lobby-card:hover { border-color: #e9c349; }
     .lobby-card h3 { font-weight: 400; font-size: 1.1rem; margin-bottom: 0.8rem; }
     .lobby-card .meta { font-size: 0.85rem; opacity: 0.7; }
-    .lobby-card .meta strong { color: #d4af37; }
+    .lobby-card .meta strong { color: #e9c349; }
 
     /* Table view */
     .table-view { display: none; }
@@ -94,7 +94,7 @@
     .voltar {
       background: none;
       border: 1px solid #2a2a3e;
-      color: #e8e3d3;
+      color: #e5e2e1;
       padding: 0.4rem 1rem;
       font-family: inherit;
       font-size: 0.85rem;
@@ -119,18 +119,18 @@
     }
     .seat .seat-num { font-size: 0.75rem; opacity: 0.4; letter-spacing: 0.15em; }
     .seat.empty { cursor: pointer; }
-    .seat.empty:hover { border-color: #d4af37; }
+    .seat.empty:hover { border-color: #e9c349; }
     .seat.empty .seat-label { opacity: 0.4; font-size: 0.9rem; }
     .seat.bot { border-style: dashed; opacity: 0.7; }
     .seat.bot .seat-label { color: #888; font-size: 0.85rem; }
-    .seat.human { border-color: #d4af37; }
-    .seat.human .seat-label { color: #d4af37; font-size: 0.85rem; word-break: break-all; }
+    .seat.human { border-color: #e9c349; }
+    .seat.human .seat-label { color: #e9c349; font-size: 0.85rem; word-break: break-all; }
     .seat.self { background: rgba(212, 175, 55, 0.08); }
     .seat.self .seat-label::after { content: ' (você)'; opacity: 0.6; }
 
     /* CTA: invite friend */
     .cta-invite {
-      border: 1px solid #d4af37;
+      border: 1px solid #e9c349;
       background: rgba(212, 175, 55, 0.05);
       padding: 1.2rem;
       text-align: center;
@@ -140,11 +140,11 @@
     .cta-invite .url-share {
       display: inline-block;
       font-family: monospace;
-      background: #0d0d12;
+      background: #1c1b1b;
       border: 1px solid #2a2a3e;
       padding: 0.5rem 0.8rem;
       font-size: 0.85rem;
-      color: #d4af37;
+      color: #e9c349;
       cursor: pointer;
       user-select: all;
     }
@@ -161,7 +161,7 @@
     /* Game area */
     .community-area { margin-bottom: 1.5rem; }
     .game-info { display: flex; gap: 1.5rem; margin-bottom: 0.8rem; font-size: 0.85rem; align-items: center; }
-    .round-badge { background: #d4af37; color: #0d0d12; padding: 0.15rem 0.5rem; font-size: 0.75rem; letter-spacing: 0.1em; }
+    .round-badge { background: #e9c349; color: #1c1b1b; padding: 0.15rem 0.5rem; font-size: 0.75rem; letter-spacing: 0.1em; }
     .pot-label, .bet-label { opacity: 0.8; }
     .card-row { display: flex; gap: 0.6rem; flex-wrap: wrap; min-height: 4rem; }
     .playing-card {
@@ -197,29 +197,29 @@
       font-family: inherit; font-size: 0.9rem;
       cursor: pointer; letter-spacing: 0.05em;
     }
-    .btn-fold   { background: #6b2121; color: #e8e3d3; }
-    .btn-check  { background: #1e4d2b; color: #e8e3d3; }
-    .btn-call   { background: #1e3a4d; color: #e8e3d3; }
-    .btn-raise  { background: #4d3a1e; color: #e8e3d3; }
+    .btn-fold   { background: #6b2121; color: #e5e2e1; }
+    .btn-check  { background: #1e4d2b; color: #e5e2e1; }
+    .btn-call   { background: #1e3a4d; color: #e5e2e1; }
+    .btn-raise  { background: #4d3a1e; color: #e5e2e1; }
     .action-btn:hover { opacity: 0.85; }
     .raise-row { display: flex; gap: 0.4rem; align-items: center; }
     .raise-input {
       width: 5rem; padding: 0.45rem 0.5rem;
       background: #14141e; border: 1px solid #2a2a3e;
-      color: #e8e3d3; font-family: inherit; font-size: 0.85rem;
+      color: #e5e2e1; font-family: inherit; font-size: 0.85rem;
     }
     .sua-vez-banner {
       background: rgba(212, 175, 55, 0.12);
-      border: 1px solid #d4af37;
-      color: #d4af37;
+      border: 1px solid #e9c349;
+      color: #e9c349;
       padding: 0.6rem 1rem;
       font-size: 0.9rem;
       margin-bottom: 0.8rem;
     }
     .winner-banner {
       background: rgba(212, 175, 55, 0.1);
-      border: 1px solid #d4af37;
-      color: #d4af37;
+      border: 1px solid #e9c349;
+      color: #e9c349;
       padding: 0.8rem 1rem;
       font-size: 1rem;
       text-align: center;
@@ -227,7 +227,7 @@
     }
     .players-list { font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem; }
     .players-list .player-row { display: flex; gap: 1rem; margin-bottom: 0.3rem; }
-    .players-list .dealer-chip { color: #d4af37; }
+    .players-list .dealer-chip { color: #e9c349; }
     .players-list .folded { opacity: 0.4; text-decoration: line-through; }
 
     /* Status bar */
@@ -247,6 +247,11 @@
       margin-bottom: 1rem;
     }
   </style>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/ui/relic.css">
+<style>/* relic theme normalization */
+body{font-family:'Manrope',system-ui,sans-serif}
+h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
 </head>
 <body>
   <div class="container">

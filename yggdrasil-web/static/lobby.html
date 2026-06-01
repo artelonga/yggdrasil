@@ -7,8 +7,8 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #0d0d12;
-      color: #e8e3d3;
+      background: #1c1b1b;
+      color: #e5e2e1;
       font-family: system-ui, monospace;
       min-height: 100vh;
       padding: 2rem 1rem;
@@ -34,8 +34,8 @@
     }
     .auth-area a, .auth-area button {
       background: none;
-      border: 1px solid #d4af37;
-      color: #d4af37;
+      border: 1px solid #e9c349;
+      color: #e9c349;
       padding: 0.4rem 1rem;
       font-family: inherit;
       font-size: 0.85rem;
@@ -69,7 +69,7 @@
     canvas {
       display: block;
       image-rendering: pixelated;
-      border: 1px solid #1a1a2e;
+      border: 1px solid #201f1f;
       cursor: pointer;
     }
     .legenda {
@@ -92,7 +92,7 @@
       gap: 1.5rem;
     }
     .panel {
-      border: 1px solid #1a1a2e;
+      border: 1px solid #201f1f;
       background: #14141e;
       padding: 1rem;
     }
@@ -100,7 +100,7 @@
       font-size: 0.75rem;
       font-weight: 400;
       letter-spacing: 0.2em;
-      color: #d4af37;
+      color: #e9c349;
       margin-bottom: 0.8rem;
       border-bottom: 1px solid #2a2a3e;
       padding-bottom: 0.5rem;
@@ -120,7 +120,7 @@
     }
     .score-row .game { width: 4.5rem; opacity: 0.6; font-size: 0.7rem; letter-spacing: 0.1em; }
     .score-row .user { flex: 1; opacity: 0.85; word-break: break-all; }
-    .score-row .score { color: #d4af37; font-weight: 500; }
+    .score-row .score { color: #e9c349; font-weight: 500; }
     .group-label {
       font-size: 0.7rem;
       letter-spacing: 0.15em;
@@ -149,7 +149,7 @@
       gap: 0.55rem;
       border: 1px solid #2a2a3e;
       background: #14141e;
-      color: #e8e3d3;
+      color: #e5e2e1;
       padding: 0.55rem 1rem;
       border-radius: 999px;
       font-size: 0.95rem;
@@ -158,7 +158,7 @@
       cursor: pointer;
       transition: border-color 0.12s, background 0.12s;
     }
-    .universo-chip:hover { border-color: #d4af37; background: #1a1a26; }
+    .universo-chip:hover { border-color: #e9c349; background: #1a1a26; }
     .universo-chip .ico { flex: 0 0 auto; }
     /* Painéis colapsáveis (details/summary nativo) */
     details.panel { padding: 0; }
@@ -166,7 +166,7 @@
       font-size: 0.75rem;
       font-weight: 400;
       letter-spacing: 0.2em;
-      color: #d4af37;
+      color: #e9c349;
       padding: 0.8rem 1rem;
       cursor: pointer;
       list-style: none;
@@ -184,6 +184,11 @@
     details.panel > summary:hover { color: #f0d77a; }
     details.panel > .body { padding: 0 1rem 1rem; }
   </style>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/ui/relic.css">
+<style>/* relic theme normalization */
+body{font-family:'Manrope',system-ui,sans-serif}
+h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
 </head>
 <body>
   <div class="top-bar">
