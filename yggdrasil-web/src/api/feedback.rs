@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
@@ -27,6 +27,9 @@ const UNIVERSE_MAX: usize = 64;
 pub struct FeedbackState {
     pub jwt_secret: String,
     pub db: Arc<FeedbackDb>,
+    /// Token de administração (`YGGDRASIL_ADMIN_TOKEN`) que libera a resolução
+    /// de mensagens. `None` → endpoint sempre 401. Mesmo padrão do analytics.
+    pub admin_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -129,6 +132,72 @@ pub async fn list_feedback(State(state): State<Arc<FeedbackState>>) -> Json<Vec<
     Json(state.db.list_public(LIST_LIMIT))
 }
 
+#[derive(Deserialize)]
+pub struct ResolveBody {
+    /// Estado desejado. Ausente = `true` (marcar como resolvido).
+    #[serde(default = "default_true")]
+    pub resolved: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// `POST /api/v1/feedback/{id}/resolve` — marca uma mensagem como resolvida
+/// (YG-92). Gated por `YGGDRASIL_ADMIN_TOKEN` (mesmo padrão do analytics):
+/// `Authorization: Bearer <token>`. 401 sem token/ inválido, 404 id inexistente.
+pub async fn resolve_feedback(
+    State(state): State<Arc<FeedbackState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Option<Json<ResolveBody>>,
+) -> axum::response::Response {
+    let admin_token = match &state.admin_token {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorBody {
+                    error: "admin_token_nao_configurado".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let provided = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if provided != admin_token {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorBody {
+                error: "token_invalido".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    let resolved = body.map(|b| b.0.resolved).unwrap_or(true);
+    if state.db.set_resolved(&id, resolved) {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({ "ok": true, "id": id, "resolved": resolved })),
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorBody {
+                error: "nao_encontrado".to_string(),
+            }),
+        )
+            .into_response()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,12 +207,18 @@ mod tests {
     use tower::ServiceExt;
 
     fn app() -> (Router, Arc<FeedbackState>) {
+        app_with_admin(Some("sekret".to_string()))
+    }
+
+    fn app_with_admin(admin_token: Option<String>) -> (Router, Arc<FeedbackState>) {
         let state = Arc::new(FeedbackState {
             jwt_secret: "dev".to_string(),
             db: Arc::new(FeedbackDb::in_memory().unwrap()),
+            admin_token,
         });
         let router = Router::new()
             .route("/api/v1/feedback", post(submit_feedback).get(list_feedback))
+            .route("/api/v1/feedback/{id}/resolve", post(resolve_feedback))
             .with_state(state.clone());
         (router, state)
     }
@@ -267,5 +342,77 @@ mod tests {
         .await;
         assert_eq!(st, StatusCode::CREATED);
         assert_eq!(state.db.count(), 1);
+    }
+
+    // ── resolução (YG-92) ────────────────────────────────────────────────────
+
+    async fn post_resolve(app: &Router, id: &str, auth: Option<&str>) -> StatusCode {
+        let mut req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/v1/feedback/{id}/resolve"))
+            .header("content-type", "application/json");
+        if let Some(t) = auth {
+            req = req.header("authorization", format!("Bearer {t}"));
+        }
+        app.clone()
+            .oneshot(req.body(Body::from("{}")).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+
+    fn seed(state: &Arc<FeedbackState>) -> String {
+        state.db.submit(&NewFeedback {
+            universe: "root",
+            kind: "feedback",
+            message: "precisa de volta no /universos",
+            name: Some("yuri"),
+            email: None,
+            user_sub: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn resolve_sem_admin_token_configurado_401() {
+        let (app, state) = app_with_admin(None);
+        let id = seed(&state);
+        assert_eq!(
+            post_resolve(&app, &id, Some("qualquer")).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_token_errado_401() {
+        let (app, state) = app();
+        let id = seed(&state);
+        assert_eq!(
+            post_resolve(&app, &id, Some("nope")).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_id_inexistente_404() {
+        let (app, _state) = app();
+        assert_eq!(
+            post_resolve(&app, "nao-existe", Some("sekret")).await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_ok_marca_e_aparece_no_mural() {
+        let (app, state) = app();
+        let id = seed(&state);
+        assert_eq!(
+            post_resolve(&app, &id, Some("sekret")).await,
+            StatusCode::OK
+        );
+
+        // a listagem pública agora reflete resolved = true para aquele id
+        let rows = state.db.list_public(10);
+        let row = rows.iter().find(|r| r.id == id).expect("linha existe");
+        assert!(row.resolved, "deve estar resolvido após o POST");
     }
 }

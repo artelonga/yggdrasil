@@ -21,6 +21,8 @@
   .b-feedback{color:#7bd88f;border-color:#2f5d3c}
   .b-duvida{color:#e0b86c;border-color:#5d4a2f}
   .b-sugestao{color:#8fb8ff;border-color:#2f425d}
+  .b-ok{color:#e9c349;border-color:#5d4f2f;background:rgba(233,195,73,.08)}
+  .item.is-resolved{border-color:#3a3a2a}
   .uni{font-size:.72rem;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:.1rem .5rem}
   .who{font-size:.82rem;color:var(--gold)}
   .when{font-size:.72rem;color:var(--mut);margin-left:auto}
@@ -51,10 +53,12 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
     function item(f){
       const k = KIND[f.kind] || [f.kind, "b-feedback"];
       const nome = f.name && f.name.trim() ? esc(f.name) : "Anônimo";
-      return '<div class="item">' +
+      const sel = f.resolved ? '<span class="badge b-ok">✓ resolvido</span>' : '';
+      return '<div class="item'+(f.resolved?' is-resolved':'')+'">' +
         '<div class="meta">' +
           '<span class="badge '+k[1]+'">'+k[0]+'</span>' +
           '<span class="uni">'+esc(f.universe)+'</span>' +
+          sel +
           '<span class="who">'+nome+'</span>' +
           '<span class="when">'+quando(f.created_at)+'</span>' +
         '</div>' +
@@ -69,5 +73,6 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
       document.getElementById("feed").innerHTML = '<div class="empty">Não foi possível carregar o feedback.</div>';
     });
   </script>
+  <script defer src="/static/nav.js"></script>
   <script defer src="/static/feedback.js"></script>
 </body></html>

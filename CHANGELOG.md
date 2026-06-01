@@ -2,6 +2,47 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.1.0] — 2026-06-01 — Navegação unificada + feedback resolvível — YG-92
+
+Origem: feedback do mural (de *yuri*) — _"unificar UI entre paginas, Universos
+nao tem opcao para voltar, muito desconexo por enquanto"_.
+
+### Added — barra de navegação global (`static/nav.js`)
+
+- Nova barra fixa, **auto-injetável e sem dependências** (mesmo padrão de
+  `feedback.js`), presente em **todas** as páginas: lobby, `/universos`,
+  `/universos/*`, `/neuro` e o mural `/feedback`. Sempre oferece volta para
+  **Início**, **Lobby/Mapa**, **Universos** e **Comunidade**, marcando o destino
+  atual como ativo. Primeira fatia da visão "site como mapa navegável".
+- Detecta páginas com cabeçalho próprio (a landing `/` tem `header.top`) e **não
+  duplica** a barra. Slot de conta é ciente de login (`localStorage`): "Entrar"
+  para anônimo, "Conta" para logado.
+
+### Added — feedback resolvível — `POST /api/v1/feedback/{id}/resolve`
+
+- Coluna `resolved` na tabela `feedback`, com **migração idempotente** via
+  `ALTER TABLE` (bancos antigos ganham a coluna sem perder linhas; re-boot não
+  falha).
+- Endpoint admin para marcar/desmarcar uma mensagem como resolvida, protegido
+  pelo mesmo `YGGDRASIL_ADMIN_TOKEN` do analytics (401 sem token, 404 id
+  inexistente). O mural público exibe selo **"✓ resolvido"**; e-mail e `user_sub`
+  continuam nunca expostos.
+
+## [1.3.0] — 2026-06-01 — Índice `/universos` filtrável
+
+### Added — `/universos`: catálogo unificado e filtrável — YG-91
+
+- Nova página **`/universos`** — índice de **todos** os universos num só lugar,
+  com **busca livre** e filtros por **categoria** (arcade · atlas · língua ·
+  autorado), **jogadores** (solo/multiplayer) e **idioma**.
+- Agrega no cliente quatro fontes: a lista de arcade (`GET /api/v1/universos`), o
+  atlas estático **anatomia** (`/static/anatomia/`), o feed público de **salas de
+  comunicação** (`GET /api/v1/comunicacao/salas?published=true`, por língua) e as
+  **instâncias autoradas** (`GET /api/v1/instances?published=true`). Fontes
+  ausentes degradam sem quebrar o índice.
+- Rota `GET /universos` → `static/universos/index.html` + `index.js`; segue o
+  padrão de páginas embutidas (`include_str!`) e o visual do `/lobby`.
+
 ## [1.2.0] — 2026-06-01 — Editor de universos + Godot/3D + neuro multiescala + Fale conosco
 
 ### Added — Landing page "Relic Archive" (UI revamp, fase 1) — YG-90

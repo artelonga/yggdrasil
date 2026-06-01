@@ -269,11 +269,17 @@ async fn main() -> anyhow::Result<()> {
             feedback::FeedbackDb::open(&db_path)
                 .map_err(|e| anyhow::anyhow!("feedback db: {e}"))?,
         ),
+        // YG-92: mesma chave de admin do analytics libera resolver feedback.
+        admin_token: std::env::var("YGGDRASIL_ADMIN_TOKEN").ok(),
     });
     let feedback_router = Router::new()
         .route(
             "/api/v1/feedback",
             post(api::feedback::submit_feedback).get(api::feedback::list_feedback),
+        )
+        .route(
+            "/api/v1/feedback/{id}/resolve",
+            post(api::feedback::resolve_feedback),
         )
         .with_state(feedback_state);
 
@@ -362,6 +368,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/games/invaders", get(redirect_to_universo_invaders))
         .route("/games/poker", get(redirect_to_universo_poker))
         .route("/health", get(health))
+        .route("/version", get(version))
         .merge(auth_router)
         .merge(co_handover_router)
         .merge(me_router)
@@ -488,6 +495,15 @@ async fn redirect_to_universo_poker() -> impl IntoResponse {
 
 async fn health() -> impl IntoResponse {
     "ok"
+}
+
+/// `GET /version` — versão do binário (`CARGO_PKG_VERSION`), para verificar
+/// qual release está no ar sem depender do contador interno do Fly.
+async fn version() -> impl IntoResponse {
+    axum::Json(serde_json::json!({
+        "name": env!("CARGO_PKG_NAME"),
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
 }
 
 // ── CO handover receiver ───────────────────────────────────────────────────
