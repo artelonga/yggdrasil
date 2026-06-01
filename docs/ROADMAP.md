@@ -39,8 +39,9 @@ após YG-67):
 
 ### O que funciona hoje
 
-- 6 universes embedados (WASM, ABI v1, fuel-limited 10M instr/tick):
-  snake, tetris, invaders, pointset, poker, vim
+- 5 universes jogáveis no catálogo (WASM, ABI v1, fuel-limited 10M instr/tick):
+  snake, tetris, invaders, poker, vim — mais **neuro** (atlas 3D)
+  (PointSet foi descontinuado como universo.)
 - API unificada `GET /api/v1/universos` + session CRUD + WebSocket
 - Legacy `/api/v1/games/{game}/start` preservados (backwards-compat)
 - Universo Vim com hints adaptativos via Claude API
