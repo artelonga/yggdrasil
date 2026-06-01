@@ -7,11 +7,15 @@
     display:flex;align-items:center;gap:1rem;padding:0 1rem;border-bottom:1px solid #1a1a2e}
   header .muted{opacity:.55;color:#9aa} header .grow{flex:1}
   header a{color:#9aa;text-decoration:none} header a:hover{color:#d4af37}
+  header .pill{background:#1a1a2e;color:#d4af37;border:1px solid #2a2a44;
+    border-radius:999px;padding:2px 10px;font-size:12px;white-space:nowrap}
+  header .pill a{color:#9aa;margin-left:8px}
   iframe{border:0;width:100%;height:calc(100% - 36px);display:block}
 </style></head>
 <body>
   <header>
     <b>🧠 Neuro — Atlas 3D</b>
+    <span id="focuspill" class="pill" hidden></span>
     <span class="muted">subcorticais:
       <a href="https://identifiers.org/neurovault.collection:262" target="_blank" rel="noopener">Harvard-Oxford</a>
       (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>) ·
@@ -34,6 +38,23 @@
       { dir: 'ho-sub',        name: 'núcleos subcorticais' },
       { dir: 'aan-brainstem', name: 'núcleos do tronco (AAN)' },
     ];
+    // Deep-link de região (índice externo → atlas):
+    //   /neuro?focus=<dir>:<seg,seg>;<dir>:<seg,seg>&label=<texto>
+    // Quando presente, só os segmentos pedidos ficam selecionados (região em
+    // foco); sem focus, mostra todos os núcleos de cada camada.
+    const qs = new URLSearchParams(location.search);
+    const focusMap = {};   // dir -> [segIds]  (vazio = sem foco)
+    (qs.get('focus') || '').split(';').filter(Boolean).forEach(g => {
+      const [dir, segs] = g.split(':');
+      if (dir) focusMap[dir] = (segs || '').split(',').filter(Boolean);
+    });
+    const hasFocus = Object.keys(focusMap).length > 0;
+    if (hasFocus) {
+      const pill = document.getElementById('focuspill');
+      pill.hidden = false;
+      pill.innerHTML = '🎯 ' + ((qs.get('label') || 'região em foco')
+        .replace(/[<>]/g, '')) + '<a href="/neuro">ver tudo ✕</a>';
+    }
     async function segsOf(dir) {
       // ids vêm do segment_properties (mesmo-origem) — robusto a ids esparsos.
       try {
@@ -44,9 +65,10 @@
     (async () => {
       const layers = [];
       for (const l of LAYERS) {
+        const segments = hasFocus ? (focusMap[l.dir] || []) : await segsOf(l.dir);
         layers.push({ type: 'segmentation',
           source: 'precomputed://' + origin + '/static/neuro-data/' + l.dir,
-          name: l.name, segments: await segsOf(l.dir) });
+          name: l.name, segments });
       }
       const state = { layers, layout: '3d', showSlices: false };
       document.getElementById('ng').src =
