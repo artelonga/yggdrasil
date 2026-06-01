@@ -13,7 +13,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::auth::verify_jwt;
-use crate::feedback::{FeedbackDb, KINDS, NewFeedback};
+use crate::feedback::{FeedbackDb, KINDS, NewFeedback, PublicFeedback};
+
+/// Máximo de mensagens devolvidas na listagem pública.
+const LIST_LIMIT: usize = 200;
 
 const MSG_MAX: usize = 5_000;
 const NAME_MAX: usize = 120;
@@ -120,6 +123,12 @@ pub async fn submit_feedback(
     (StatusCode::CREATED, Json(FeedbackOk { ok: true, id })).into_response()
 }
 
+/// `GET /api/v1/feedback` — listagem pública (mais recentes primeiro).
+/// Sem auth; **nunca** devolve e-mail nem `user_sub` (ver [`PublicFeedback`]).
+pub async fn list_feedback(State(state): State<Arc<FeedbackState>>) -> Json<Vec<PublicFeedback>> {
+    Json(state.db.list_public(LIST_LIMIT))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,7 +143,7 @@ mod tests {
             db: Arc::new(FeedbackDb::in_memory().unwrap()),
         });
         let router = Router::new()
-            .route("/api/v1/feedback", post(submit_feedback))
+            .route("/api/v1/feedback", post(submit_feedback).get(list_feedback))
             .with_state(state.clone());
         (router, state)
     }
@@ -216,6 +225,35 @@ mod tests {
         )
         .await;
         assert_eq!(st, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn get_lista_publica_200_sem_email() {
+        let (app, _) = app();
+        post_json(
+            &app,
+            serde_json::json!({"universe":"root","kind":"feedback","message":"oi","name":"Ana","email":"ana@x.com"}),
+            None,
+        )
+        .await;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/feedback")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8_lossy(&bytes);
+        assert!(body.contains("Ana"), "deve mostrar o nome");
+        assert!(!body.contains("ana@x.com"), "não pode vazar e-mail");
+        assert!(!body.contains("email"));
     }
 
     #[tokio::test]

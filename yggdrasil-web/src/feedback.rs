@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use nanoid::nanoid;
 use rusqlite::{Connection, params};
+use serde::Serialize;
 
 /// Tipos de mensagem aceitos (allowlist; validado na rota).
 pub const KINDS: [&str; 3] = ["feedback", "duvida", "sugestao"];
@@ -43,6 +44,19 @@ pub struct NewFeedback<'a> {
     pub email: Option<&'a str>,
     /// `Some(sub)` se o caller estava logado (JWT válido); `None` = anônimo.
     pub user_sub: Option<&'a str>,
+}
+
+/// Linha exibível publicamente em `/feedback`. **Nunca** inclui `email` nem
+/// `user_sub` — só os campos abaixo saem do banco.
+#[derive(Serialize)]
+pub struct PublicFeedback {
+    pub universe: String,
+    pub kind: String,
+    pub message: String,
+    /// `None` quando anônimo ou sem nome → exibido como "Anônimo".
+    pub name: Option<String>,
+    pub anonymous: bool,
+    pub created_at: i64,
 }
 
 pub struct FeedbackDb {
@@ -82,6 +96,34 @@ impl FeedbackDb {
             ],
         );
         id
+    }
+
+    /// Mensagens recentes para exibição pública (`/feedback`), mais novas
+    /// primeiro. A query seleciona **apenas** colunas públicas — `email` e
+    /// `user_sub` jamais são lidos, então não há como vazarem.
+    pub fn list_public(&self, limit: usize) -> Vec<PublicFeedback> {
+        let conn = self.db.lock().unwrap();
+        let mut stmt = match conn.prepare(
+            "SELECT universe, kind, message, name, anonymous, created_at
+             FROM feedback ORDER BY created_at DESC LIMIT ?1",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params![limit as i64], |r| {
+            Ok(PublicFeedback {
+                universe: r.get(0)?,
+                kind: r.get(1)?,
+                message: r.get(2)?,
+                name: r.get::<_, Option<String>>(3)?,
+                anonymous: r.get::<_, i64>(4)? == 1,
+                created_at: r.get(5)?,
+            })
+        });
+        match rows {
+            Ok(it) => it.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
     }
 }
 
@@ -180,5 +222,37 @@ mod tests {
     #[test]
     fn kinds_allowlist_tem_os_tres() {
         assert_eq!(KINDS, ["feedback", "duvida", "sugestao"]);
+    }
+
+    #[test]
+    fn list_public_traz_nome_nunca_email_e_ordena_recente_primeiro() {
+        let db = FeedbackDb::in_memory().unwrap();
+        db.submit(&NewFeedback {
+            universe: "root",
+            kind: "feedback",
+            message: "primeira",
+            name: Some("Ana"),
+            email: Some("ana@x.com"),
+            user_sub: None,
+        });
+        db.submit(&NewFeedback {
+            universe: "neuro",
+            kind: "sugestao",
+            message: "segunda",
+            name: None,
+            email: None,
+            user_sub: Some("u-1"),
+        });
+        let rows = db.list_public(10);
+        assert_eq!(rows.len(), 2);
+        // mais nova primeiro
+        assert_eq!(rows[0].message, "segunda");
+        assert_eq!(rows[0].name, None); // anônima/sem nome
+        assert_eq!(rows[1].name.as_deref(), Some("Ana"));
+        // serializa sem nenhum campo de e-mail (PublicFeedback não tem email)
+        let json = serde_json::to_string(&rows).unwrap();
+        assert!(!json.contains("ana@x.com"));
+        assert!(!json.contains("email"));
+        assert!(!json.contains("user_sub"));
     }
 }

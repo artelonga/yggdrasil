@@ -270,7 +270,10 @@ async fn main() -> anyhow::Result<()> {
         ),
     });
     let feedback_router = Router::new()
-        .route("/api/v1/feedback", post(api::feedback::submit_feedback))
+        .route(
+            "/api/v1/feedback",
+            post(api::feedback::submit_feedback).get(api::feedback::list_feedback),
+        )
         .with_state(feedback_state);
 
     // Universo `comunicacao` — salas interativas de léxico cross-linguístico
@@ -376,6 +379,8 @@ async fn main() -> anyhow::Result<()> {
         // Precomputed servido mesmo-origem). O viewer Godot macro fica em /anatomia.
         .route("/neuro", get(serve_neuro))
         .route("/universos/neuro", get(serve_neuro))
+        // Mural público de feedback (Fale conosco) — nome sim, e-mail nunca.
+        .route("/feedback", get(serve_feedback))
         // YG-84: visualizador 3D de anatomia (Godot Web export, single-thread →
         // serve de qualquer host estático). Os arquivos do export ficam em
         // static/anatomia/ e são servidos pelo ServeDir abaixo; /anatomia é só
@@ -417,6 +422,12 @@ async fn serve_instance_player() -> impl IntoResponse {
 /// para a origem atual e carrega o bundle self-hosted em /static/ng/.
 async fn serve_neuro() -> impl IntoResponse {
     Html(include_str!("../static/neuro.html"))
+}
+
+/// Mural público de feedback. Busca `GET /api/v1/feedback` (sem e-mail) e
+/// renderiza client-side.
+async fn serve_feedback() -> impl IntoResponse {
+    Html(include_str!("../static/feedback-mural.html"))
 }
 
 async fn serve_anatomia() -> impl IntoResponse {

@@ -93,6 +93,9 @@
         '<label for="fc-email">E-mail <span style="opacity:.6">(opcional)</span></label>' +
         '<input id="fc-email" type="email" maxlength="200" placeholder="voce@exemplo.com">' +
         '<div class="fc-hint">Se gostar de receber resposta, deixe seu e-mail.</div>' +
+        '<div class="fc-hint">Sua mensagem e seu nome podem aparecer no ' +
+          '<a href="/feedback" target="_blank" rel="noopener" style="color:#d4af37">mural público</a>' +
+          '; seu e-mail <b>nunca</b> é exibido.</div>' +
         '<p class="fc-who"></p>' +
         '<div class="fc-msg" aria-live="polite"></div>' +
         '<div class="fc-actions">' +
