@@ -4,6 +4,18 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [1.2.0] — 2026-06-01 — Editor de universos + Godot/3D + neuro multiescala + Fale conosco
 
+### Added — Landing page "Relic Archive" (UI revamp, fase 1) — YG-90
+
+- Nova **landing page** em `/` (design `docs/mock/` — padrão preto "Relic
+  Archive": superfície `#131313`, ouro `#e9c349`, CTA rosa/borgonha, Newsreader +
+  Manrope, camadas tonais sem bordas 1px). O mapa em canvas segue em `/lobby`.
+- **Visitante (não logado)**: barra esquerda lista os **universos** (com o melhor
+  placar de cada), CTA **"Criar universo"**, **stats anônimas** (universos,
+  sessões 24h, jogando agora, maior placar) e grade de **placares por jogo** —
+  ícone + pontuação + quem fez.
+- `GET /api/v1/stats` — endpoint **público** de agregados sem PII (sessões 24h +
+  jogando agora); evita expor o `/api/v1/admin/analytics` (que continua com token).
+
 ### Fixed — neuro: licenças revisadas (distribuição pública) + deep-link de região
 
 - **Brainstem Navigator removido** de `/neuro`: o `Copyright.txt` (NITRC/MGH)

@@ -194,6 +194,7 @@ async fn main() -> anyhow::Result<()> {
     universos_routes::spawn_cleanup_job(universos_state.clone());
     let universos_router = Router::new()
         .route("/api/v1/universos", get(universos_routes::list_universos))
+        .route("/api/v1/stats", get(universos_routes::get_stats))
         .route(
             "/api/v1/universos/{id}",
             get(universos_routes::get_universo),
@@ -402,8 +403,10 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Landing page (Relic Archive) — universos na barra esquerda, stats anônimas e
+/// placares por jogo. O mapa em canvas continua em `/lobby`.
 async fn root() -> impl IntoResponse {
-    Redirect::to("/lobby")
+    Html(include_str!("../static/landing.html"))
 }
 
 async fn serve_login() -> impl IntoResponse {

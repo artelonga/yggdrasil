@@ -425,6 +425,18 @@ pub async fn list_universos(_state: State<Arc<UniversosState>>) -> impl IntoResp
     Json(universo_list())
 }
 
+/// `GET /api/v1/stats` — stats públicas/anônimas para a landing. Só agregados,
+/// sem PII: quantas sessões ativas agora e quantas iniciadas nas últimas 24h.
+pub async fn get_stats(State(state): State<Arc<UniversosState>>) -> impl IntoResponse {
+    let jogando_agora = state.sessions.lock().map(|s| s.len()).unwrap_or(0);
+    let since = chrono::Utc::now().timestamp_millis() - 24 * 60 * 60 * 1000;
+    let sessoes_24h = state.telemetria.sessions_since(since);
+    Json(serde_json::json!({
+        "jogando_agora": jogando_agora,
+        "sessoes_24h": sessoes_24h,
+    }))
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/universos/{id}",

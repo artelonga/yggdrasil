@@ -158,6 +158,18 @@ impl TelemetriaDb {
         self.emit_event("UNIVERSE_VIEW", None, None, Some(universe_id), None);
     }
 
+    /// Contagem pública de sessões iniciadas desde `since_ms` (para stats
+    /// anônimas da landing). Só um número agregado — sem PII.
+    pub fn sessions_since(&self, since_ms: i64) -> i64 {
+        let conn = self.db.lock().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM session_records WHERE started_at >= ?1",
+            params![since_ms],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
     /// Returns analytics report covering the window [since_ms, now).
     pub fn get_analytics(
         &self,
@@ -461,6 +473,16 @@ mod tests {
     }
 
     // ── UNIVERSE_VIEW ────────────────────────────────────────────────────────
+
+    #[test]
+    fn sessions_since_conta_apenas_dentro_da_janela() {
+        let db = TelemetriaDb::in_memory().unwrap();
+        let now = chrono::Utc::now().timestamp_millis();
+        db.session_create("s-old", "snake", now - 48 * 60 * 60 * 1000); // fora de 24h
+        db.session_create("s-new", "tetris", now - 60 * 1000); // dentro
+        let since = now - 24 * 60 * 60 * 1000;
+        assert_eq!(db.sessions_since(since), 1);
+    }
 
     #[test]
     fn universe_view_registra_evento() {
