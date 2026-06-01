@@ -47,6 +47,15 @@ pub struct UniversoMeta {
     pub id: &'static str,
     #[schema(value_type = String)]
     pub name: &'static str,
+    /// Categoria de topo (ex.: "Arcade", "Mesa", "Atlas").
+    #[schema(value_type = String)]
+    pub category: &'static str,
+    /// Coleção/etiqueta dentro da categoria (ex.: "Clássico").
+    #[schema(value_type = String)]
+    pub tag: &'static str,
+    /// Descrição curta (poucas palavras) — usada em hover/tooltip.
+    #[schema(value_type = String)]
+    pub description: &'static str,
     #[schema(value_type = String)]
     pub version: &'static str,
     pub max_players: u32,
@@ -54,10 +63,15 @@ pub struct UniversoMeta {
 }
 
 pub fn universo_list() -> Vec<UniversoMeta> {
+    // PointSet foi descontinuado como universo (decisão de produto) — não entra
+    // mais no catálogo.
     vec![
         UniversoMeta {
             id: "snake",
             name: "Snake",
+            category: "Arcade",
+            tag: "Clássico",
+            description: "A cobra que cresce a cada bocado.",
             version: "1.0",
             max_players: 1,
             api_version: 1,
@@ -65,6 +79,9 @@ pub fn universo_list() -> Vec<UniversoMeta> {
         UniversoMeta {
             id: "tetris",
             name: "Tetris",
+            category: "Arcade",
+            tag: "Clássico",
+            description: "Encaixe as peças que caem.",
             version: "1.0",
             max_players: 1,
             api_version: 1,
@@ -72,13 +89,9 @@ pub fn universo_list() -> Vec<UniversoMeta> {
         UniversoMeta {
             id: "invaders",
             name: "Space Invaders",
-            version: "1.0",
-            max_players: 1,
-            api_version: 1,
-        },
-        UniversoMeta {
-            id: "pointset",
-            name: "Pointset",
+            category: "Arcade",
+            tag: "Clássico",
+            description: "Defenda a Terra dos invasores.",
             version: "1.0",
             max_players: 1,
             api_version: 1,
@@ -86,6 +99,9 @@ pub fn universo_list() -> Vec<UniversoMeta> {
         UniversoMeta {
             id: "poker",
             name: "Pôquer",
+            category: "Mesa",
+            tag: "Cartas",
+            description: "Texas Hold'em multiplayer com sementes.",
             version: "1.0",
             max_players: 6,
             api_version: 1,
@@ -93,6 +109,9 @@ pub fn universo_list() -> Vec<UniversoMeta> {
         UniversoMeta {
             id: "vim",
             name: "Vim",
+            category: "Ferramentas",
+            tag: "Editor",
+            description: "Domine o editor modal, nível a nível.",
             version: "1.0",
             max_players: 1,
             api_version: 1,
@@ -102,6 +121,9 @@ pub fn universo_list() -> Vec<UniversoMeta> {
         UniversoMeta {
             id: "neuro",
             name: "Neuro — Atlas 3D",
+            category: "Atlas",
+            tag: "Ciência",
+            description: "Atlas 3D do cérebro, do macro aos núcleos.",
             version: "1.0",
             max_players: 999,
             api_version: 1,
@@ -110,10 +132,7 @@ pub fn universo_list() -> Vec<UniversoMeta> {
 }
 
 fn is_known(id: &str) -> bool {
-    matches!(
-        id,
-        "snake" | "tetris" | "invaders" | "pointset" | "poker" | "vim"
-    )
+    matches!(id, "snake" | "tetris" | "invaders" | "poker" | "vim")
 }
 
 // ─── Session trait ───────────────────────────────────────────────────────────
@@ -245,7 +264,7 @@ impl UniversoSession for InvadersSession {
     }
 }
 
-// ─── Stub (pointset, vim) ────────────────────────────────────────────────────
+// ─── Stub (vim) ──────────────────────────────────────────────────────────────
 
 struct StubSession {
     ticks: u32,
@@ -279,7 +298,6 @@ fn make_session(id: &str) -> Option<Box<dyn UniversoSession>> {
         "snake" => Some(Box::new(SnakeSession::new())),
         "tetris" => Some(Box::new(TetrisSession::new())),
         "invaders" => Some(Box::new(InvadersSession::new())),
-        "pointset" => Some(Box::new(StubSession::new())),
         "vim" => Some(Box::new(StubSession::new())),
         _ => None,
     }
@@ -891,7 +909,7 @@ mod tests {
     // ── GET /api/v1/universos ────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn lista_retorna_7_universos() {
+    async fn lista_retorna_6_universos() {
         let (app, _) = make_app();
         let resp = app
             .oneshot(
@@ -906,14 +924,17 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let v = body_json(resp).await;
         let arr = v.as_array().unwrap();
-        assert_eq!(arr.len(), 7, "esperava 7 universos, got {}", arr.len());
+        assert_eq!(arr.len(), 6, "esperava 6 universos, got {}", arr.len());
 
         let ids: Vec<&str> = arr.iter().filter_map(|u| u["id"].as_str()).collect();
-        for expected in [
-            "snake", "tetris", "invaders", "pointset", "poker", "vim", "neuro",
-        ] {
+        for expected in ["snake", "tetris", "invaders", "poker", "vim", "neuro"] {
             assert!(ids.contains(&expected), "'{expected}' ausente na lista");
         }
+        // PointSet foi descontinuado — não pode aparecer no catálogo.
+        assert!(
+            !ids.contains(&"pointset"),
+            "pointset não deve mais ser um universo"
+        );
 
         for u in arr {
             assert_eq!(u["api_version"], 1);

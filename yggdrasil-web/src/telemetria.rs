@@ -179,7 +179,7 @@ impl TelemetriaDb {
         let generated_at = chrono::Utc::now().to_rfc3339();
         let conn = self.db.lock().unwrap();
 
-        let universo_ids = ["snake", "tetris", "invaders", "pointset", "vim"];
+        let universo_ids = ["snake", "tetris", "invaders", "vim"];
         let universos: Vec<UniversoStats> = universo_ids
             .iter()
             .map(|&uid| {
@@ -512,7 +512,7 @@ mod tests {
 
         assert_eq!(report.period, "24h");
         assert!(!report.generated_at.is_empty());
-        assert_eq!(report.universos.len(), 5);
+        assert_eq!(report.universos.len(), 4);
 
         let snake = report.universos.iter().find(|u| u.id == "snake").unwrap();
         assert_eq!(snake.sessions_today, 2);

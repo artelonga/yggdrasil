@@ -111,6 +111,7 @@
   .gcard.has .gicon{color:var(--secondary);box-shadow:inset 0 0 16px rgba(233,195,73,.12)}
   .gcard .gname{font-family:var(--head);font-size:1.15rem;font-style:italic}
   .gcard .gmeta{font-size:11px;color:var(--on-var);text-transform:uppercase;letter-spacing:.1em}
+  .gcard .gdesc{font-size:12.5px;color:var(--on-var);opacity:.78;line-height:1.35}
   .gcard .score{display:flex;align-items:baseline;gap:.5rem;margin-top:auto}
   .gcard .score .v{font-family:var(--head);font-size:1.8rem;color:var(--secondary)}
   .gcard .score .who{font-size:12px;color:var(--on-var)}
@@ -191,11 +192,12 @@
       poker:'<path fill="currentColor" d="M12 3C9.2 7 4 9 4 13a3.6 3.6 0 0 0 6.2 2.6c-.2 1.7-1 2.9-2.2 3.4h8c-1.2-.5-2-1.7-2.2-3.4A3.6 3.6 0 0 0 20 13c0-4-5.2-6-8-10z"/>',
       vim:'<path fill="currentColor" opacity="0.22" d="M12 2 22 12 12 22 2 12z"/><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8 9l4 7 4-7"/>',
       neuro:'<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5.5a3 3 0 0 0-3 3 3 3 0 0 0-2 5.2c0 2 1.6 3.3 3.5 3.3H12m0-11.5a3 3 0 0 1 3 3 3 3 0 0 1 2 5.2c0 2-1.6 3.3-3.5 3.3H12m0-11.5v11.5"/>',
-      pointset:'<g fill="currentColor"><circle cx="7" cy="8" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="17" cy="14" r="1.7"/><circle cx="9" cy="16" r="1.7"/></g>',
+      _default:'<g fill="currentColor"><circle cx="7" cy="8" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="17" cy="14" r="1.7"/><circle cx="9" cy="16" r="1.7"/></g>',
       comunicacao:'<path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
     };
     const TROPHY = '<svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h12v2h3v2a4 4 0 0 1-4 4 5 5 0 0 1-4 3v2h3v2H8v-2h3v-2a5 5 0 0 1-4-3 4 4 0 0 1-4-4V6h3V4Zm0 4H5a2 2 0 0 0 1 1.7V8Zm12 0v1.7A2 2 0 0 0 19 8h-1Z"/></svg>';
-    const ico = (s,n=22)=>`<svg class="ico" viewBox="0 0 24 24" width="${n}" height="${n}" aria-hidden="true">${ICONS[s]||ICONS.pointset}</svg>`;
+    const ico = (s,n=22)=>`<svg class="ico" viewBox="0 0 24 24" width="${n}" height="${n}" aria-hidden="true">${ICONS[s]||ICONS._default}</svg>`;
+    const esc = t => String(t==null?'':t).replace(/"/g,'&quot;').replace(/</g,'&lt;');
     const href = s => s==='neuro' ? '/neuro' : '/universos/'+s;
     const who = id => !id ? '' : String(id).split('@')[0];
     const fmt = n => (n==null?'—':Number(n).toLocaleString('pt-BR'));
@@ -211,11 +213,17 @@
       const scores = (top && top.scores) || [];
       const byGame = {}; scores.forEach(s=>{ if(!byGame[s.game]||s.score>byGame[s.game].score) byGame[s.game]=s; });
 
-      // sidebar nav
+      // sidebar nav — agrupado por categoria, com hover (title) descrevendo o jogo
+      const cats = {};
+      universos.forEach(u=>{ (cats[u.category||'Universos'] = cats[u.category||'Universos']||[]).push(u); });
       const nav = document.getElementById('nav');
-      nav.innerHTML = '<div class="lbl">Universos</div>' + universos.map(u=>{
-        const hi = byGame[u.id] ? `<span class="hi">${fmt(byGame[u.id].score)}</span>` : '';
-        return `<a href="${href(u.id)}">${ico(u.id,20)}<span class="nm">${u.name}</span>${hi}</a>`;
+      nav.innerHTML = Object.keys(cats).map(cat=>{
+        const items = cats[cat].map(u=>{
+          const hi = byGame[u.id] ? `<span class="hi">${fmt(byGame[u.id].score)}</span>` : '';
+          const tt = [u.tag, u.description].filter(Boolean).join(' — ');
+          return `<a href="${href(u.id)}" title="${esc(tt)}">${ico(u.id,20)}<span class="nm">${esc(u.name)}</span>${hi}</a>`;
+        }).join('');
+        return `<div class="lbl">${esc(cat)}</div>${items}`;
       }).join('');
 
       // placares grid (icons display top score in each game)
@@ -225,10 +233,12 @@
         const body = s
           ? `<div class="score"><span class="v">${fmt(s.score)}</span><span class="who">por ${who(s.user_id)||'anônimo'}</span></div>`
           : `<div class="empty">sem placar ainda — seja a primeira pessoa</div>`;
-        return `<a class="gcard ${s?'has':''}" href="${href(u.id)}">
+        const meta = [u.category, u.tag].filter(Boolean).join(' · ') || 'universo';
+        return `<a class="gcard ${s?'has':''}" href="${href(u.id)}" title="${esc(u.description||'')}">
             ${s?('<span class="trophy">'+TROPHY+'</span>'):''}
             <div class="top-row"><span class="gicon">${ico(u.id,24)}</span>
-              <div><div class="gname">${u.name}</div><div class="gmeta">universo</div></div></div>
+              <div><div class="gname">${esc(u.name)}</div><div class="gmeta">${esc(meta)}</div></div></div>
+            ${u.description?`<div class="gdesc">${esc(u.description)}</div>`:''}
             ${body}</a>`;
       }).join('');
 
