@@ -4,6 +4,7 @@ mod api;
 mod auth;
 mod auth_co;
 pub mod comunicacao_routes;
+pub mod feedback;
 mod games;
 pub mod hint_engine;
 mod lobby;
@@ -259,6 +260,19 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(instances_state);
 
+    // Fale conosco — canal de feedback/dúvida/sugestão por universo e na raiz.
+    // JWT opcional (anônimo vs usuário); grava na mesma SQLite (`YGGDRASIL_DB`).
+    let feedback_state = Arc::new(api::feedback::FeedbackState {
+        jwt_secret: auth_state.jwt_secret.clone(),
+        db: Arc::new(
+            feedback::FeedbackDb::open(&db_path)
+                .map_err(|e| anyhow::anyhow!("feedback db: {e}"))?,
+        ),
+    });
+    let feedback_router = Router::new()
+        .route("/api/v1/feedback", post(api::feedback::submit_feedback))
+        .with_state(feedback_state);
+
     // Universo `comunicacao` — salas interativas de léxico cross-linguístico
     // (Mbyá Guaraní × Iorubá). Auto-contido: salas em disco + write-back de
     // termos novos no repo `comunicacao` (markdown) + fila de revisão.
@@ -306,6 +320,10 @@ async fn main() -> anyhow::Result<()> {
             get(comunicacao_routes::consultar_lexico),
         )
         .route(
+            "/api/v1/comunicacao/lexico/lista",
+            get(comunicacao_routes::lexico_lista),
+        )
+        .route(
             "/api/v1/comunicacao/templates",
             get(comunicacao_routes::list_templates),
         )
@@ -351,6 +369,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(poker_router)
         .merge(universos_router)
         .merge(instances_router)
+        .merge(feedback_router)
         .merge(comunicacao_router)
         .route("/universos/instance/{id}", get(serve_instance_player))
         // YG-87: neuro = viewer multiescala Neuroglancer (atlas subcortical

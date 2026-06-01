@@ -4,6 +4,16 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added — Fale conosco: canal de feedback por universo (YG-89)
+
+- Botão flutuante **"💬 Fale conosco"** em todos os universos e na raiz/lobby
+  (`static/feedback.js`, auto-injetado): feedback, dúvida ou sugestão.
+- `POST /api/v1/feedback` — **JWT opcional**: mensagem de usuário logado grava
+  `user_sub`; sem token, é anônima. **Nome e e-mail opcionais** ("se gostar de
+  receber resposta, deixe seu e-mail"). Validação de tipo/mensagem/e-mail.
+- Persistência na mesma SQLite (`YGGDRASIL_DB`): tabela `feedback` criada
+  idempotentemente no boot (`feedback.rs`), indexada por universo e data.
+
 ### Added — Drill-down macro→núcleos + camada do tronco (YG-88)
 
 - **Clicar no encéfalo** no viewer Godot (`/anatomia`) abre o viewer de núcleos
