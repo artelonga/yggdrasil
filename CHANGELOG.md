@@ -2,7 +2,20 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
-## [Unreleased]
+## [1.2.0] — 2026-06-01 — Editor de universos + Godot/3D + neuro multiescala + Fale conosco
+
+### Fixed — neuro: licenças revisadas (distribuição pública) + deep-link de região
+
+- **Brainstem Navigator removido** de `/neuro`: o `Copyright.txt` (NITRC/MGH)
+  proíbe distribuir cópias **ou derivados** fora da organização — incompatível
+  com servir publicamente. `convert_atlas.py` não o constrói mais.
+- **Licenças corrigidas/atestadas** para distribuição pública: Harvard-Oxford é
+  **CC BY-SA 4.0** (não a licença FMRIB restritiva — atribuição+ShareAlike,
+  creditado no header de `/neuro`); AAN v2.0 é **CC0**. Registro em
+  `docs/anatomia/ATTRIBUTION.md`.
+- **Deep-link de região**: `/neuro?focus=<dir>:<segs>&label=` foca um núcleo/
+  região específico (resto oculto) — permite índices externos abrirem o atlas
+  já focado.
 
 ### Added — Fale conosco: canal de feedback por universo (YG-89)
 
@@ -21,8 +34,8 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 - `/neuro` ganha 2ª camada: **núcleos do tronco — Harvard AAN v2.0 (CC0)**, 16
   núcleos nomeados (DR, MnR, PAG, VTA, LC, LDTg, mRt, PBC, PnO, PTg; L/R),
   alinhada (MNI152 1mm) com a camada subcortical. `convert_atlas.py` constrói as
-  duas via Zenodo/nilearn. Brainstem Navigator (31 núcleos) fica para depois
-  (NITRC exige login). Desenvolvido em worktree `feat/YG-88-...`, merge FF.
+  duas via Zenodo/nilearn. (Brainstem Navigator avaliado e **não** incluído —
+  ver Fixed acima.) Desenvolvido em worktree `feat/YG-88-...`, merge FF.
 
 ### Changed — Home/lobby: chips de universos, ícones SVG, painéis colapsáveis
 
@@ -44,7 +57,7 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 - `CorsLayer::permissive()` no `/static` (NG hosted busca os dados cross-origin).
 - `scripts/build-neuro-atlas.sh` + `convert_atlas.py` reproduzem os dados
   (gitignored). Direção: viewer profundo = Neuroglancer/Precomputed, não Godot.
-- ⚠ Licença Harvard-Oxford (FMRIB/FSL) — rever p/ uso comercial.
+- Licença Harvard-Oxford: **CC BY-SA 4.0** (ver Fixed em [1.2.0]).
 
 ### Changed — Melhorias de navegação no viewer 3D (YG-86)
 
