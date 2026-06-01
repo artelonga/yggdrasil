@@ -183,6 +183,19 @@ func _pick(pos: Vector2) -> void:
 		_update_cam()
 	if body.has_meta("part_label"):
 		label_pick.text = "> " + str(body.get_meta("part_label"))
+	# Drill-down multiescala: clicar no encéfalo abre o viewer de núcleos (/neuro).
+	if mi is MeshInstance3D and mi.name == "brain":
+		_drill_to_nuclei()
+
+
+## Do encéfalo (macro) → viewer de núcleos subcorticais (Neuroglancer em /neuro).
+## No export web navega o browser; no desktop só registra (sem navegação).
+func _drill_to_nuclei() -> void:
+	label_pick.text = "> Encéfalo — abrindo núcleos…"
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.location.href = '/neuro'", true)
+	else:
+		print("[neuro] drill-down → /neuro (núcleos) — disponível no export web")
 
 
 func _reset_view() -> void:
