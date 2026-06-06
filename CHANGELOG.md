@@ -2,6 +2,26 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Unreleased] — alvo v2.2.0 (Content + Messaging GA) — épico YG-94
+
+> SemVer: as mudanças abaixo são `feat` → bump **minor** (2.1.0 → 2.2.0), aplicado no
+> release commit que consolida os fragmentos de `CHANGELOG-PENDING/`.
+
+### Added — Notas de universo (Phase 0) — YG-95
+
+- Notas em **Markdown canônico** (`/data/instances/<id>/notes/<slug>.md`) ligadas por
+  `[[wikilinks]]` (semântica idêntica ao `co`), com backlinks e grafo. `NoteStore`
+  (escrita atômica) + 4 rotas REST `/api/v1/instances/{id}/notes[/{slug}]` + editor
+  (render Markdown, wikilinks clicáveis, arestas de wikilink no canvas, sidebar Notas).
+  `SCHEMA_VERSION` 1→2 (aditivo; instâncias v1 carregam sem migração). Já em prod
+  desde 2026-06-06; agora sob controle de versão.
+
+### Added — Roadmap + specs Content + Messaging — YG-94
+
+- Specs YG-93..103, ADR de sync event-driven (`docs/architecture/event-driven-sync.md`,
+  topologia "CO is hub") e `docs/content-messaging-roadmap.md`. Convenção
+  `CHANGELOG-PENDING/` para waves paralelas (sem conflito em `Cargo.toml`/`CHANGELOG.md`).
+
 ## [2.1.0] — 2026-06-01 — Navegação unificada + feedback resolvível — YG-92
 
 Origem: feedback do mural (de *yuri*) — _"unificar UI entre paginas, Universos
