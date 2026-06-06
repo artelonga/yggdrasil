@@ -2,10 +2,11 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
-## [Unreleased] — alvo v2.2.0 (Content + Messaging GA) — épico YG-94
+## [2.2.0] — 2026-06-06 — Content + Messaging GA — épico YG-94
 
-> SemVer: as mudanças abaixo são `feat` → bump **minor** (2.1.0 → 2.2.0), aplicado no
-> release commit que consolida os fragmentos de `CHANGELOG-PENDING/`.
+Os dois sistemas que o Yuri enquadrou como "conteúdo / mensageria" graduam de
+shadow-shipped para oficialmente rastreados + suportados. (Round-trip editável de
+notas — YG-97 — e federação de mensageria — YG-103 — ficam para a v2.3.0 / CO v3.1.)
 
 ### Added — Notas de universo (Phase 0) — YG-95
 
@@ -13,14 +14,37 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
   `[[wikilinks]]` (semântica idêntica ao `co`), com backlinks e grafo. `NoteStore`
   (escrita atômica) + 4 rotas REST `/api/v1/instances/{id}/notes[/{slug}]` + editor
   (render Markdown, wikilinks clicáveis, arestas de wikilink no canvas, sidebar Notas).
-  `SCHEMA_VERSION` 1→2 (aditivo; instâncias v1 carregam sem migração). Já em prod
-  desde 2026-06-06; agora sob controle de versão.
+  `SCHEMA_VERSION` 1→2 (aditivo; instâncias v1 carregam sem migração).
+
+### Added — UX jardim — YG-96
+
+- Template `jardim` (notes-first): paleta só-`note`, registrado em `GET /api/v1/templates`;
+  busca de notas client-side na sidebar "Notas"; **visão grafo** (toggle) com notas como
+  nós e wikilinks como arestas (reusa `state.graph`/`drawWikiEdge`).
+
+### Added — Mensageria (comunicação): write-back + portal + e2e — YG-99/100/102
+
+- **Write-back** (`comunicacao/writeback.rs`, YG-100): versiona as contribuições `_users/`
+  no checkout `comunicacao` via git (env-gated por `YGGDRASIL_COMUNICACAO_WRITEBACK`,
+  idempotente, disparo não-bloqueante após `publicar` + rede de segurança a cada 5 min),
+  para que termos publicados persistam num redeploy.
+- **Portal no lobby** (YG-99): verificado — já shipado no merge YG-73–91; pendência
+  desatualizada corrigida em `docs/architecture/comunicacao.md`.
+- **`scripts/e2e-comunicacao.sh`** (YG-102): review ponta-a-ponta das salas de léxico
+  (login → criar sala → publicar termo → revisar) contra servidor real, com casos negativos.
+
+### Added — Bridge event-driven Yggdrasil → CO (Fase P-A, build+unit) — YG-93
+
+- Producer (`yggdrasil-web/src/co_bridge_producer.rs`) que publica notas ao hub do CO via
+  `FederatedEvent` (CO-384): hook de emissão no `NoteStore` (canal `tokio::broadcast`),
+  `event_log` com `last_delivered_event_id` + cold-start (seed das notas Fase 0), reconnect
+  com backoff, loop-guard `hop_count`, **env-gated** (no-op sem `YGG_CO_BRIDGE_URL/TOKEN`).
+  Nova dep `tokio-tungstenite` (rustls). **E2E pende CO-384** (hub `events/bridge` ainda não existe).
 
 ### Added — Roadmap + specs Content + Messaging — YG-94
 
-- Specs YG-93..103, ADR de sync event-driven (`docs/architecture/event-driven-sync.md`,
-  topologia "CO is hub") e `docs/content-messaging-roadmap.md`. Convenção
-  `CHANGELOG-PENDING/` para waves paralelas (sem conflito em `Cargo.toml`/`CHANGELOG.md`).
+- Specs YG-93..103, ADR de sync event-driven (`docs/architecture/event-driven-sync.md`),
+  `docs/content-messaging-roadmap.md`, e a convenção `CHANGELOG-PENDING/` para waves paralelas.
 
 ## [2.1.0] — 2026-06-01 — Navegação unificada + feedback resolvível — YG-92
 
