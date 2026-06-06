@@ -38,8 +38,9 @@ jobs:
       # workspace. Pulando, o build.rs gera stubs mínimos e o workspace mantido
       # (core/web) compila normalmente. Restaurar `bash scripts/build-universes.sh`
       # quando YG-104 reparar as crates.
-      - name: Build universe WASM crates (skipped — YG-104)
-        run: echo "skip: WASM v1.0 rotted (YG-104); workspace uses build.rs stubs"
+      - name: Build universe WASM crates (skipped, YG-104)
+        run: |
+          echo "skipped build-universes.sh (WASM v1.0 rotted, YG-104) - workspace uses build.rs stubs"
 
       - name: Build workspace
         run: cargo build --release
