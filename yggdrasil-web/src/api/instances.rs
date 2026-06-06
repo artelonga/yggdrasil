@@ -20,6 +20,7 @@ use yggdrasil_core::instance::{
 };
 
 use crate::auth::verify_jwt;
+use crate::co_bridge_producer::{NoteKind, NoteWritten};
 
 /// Estado compartilhado das rotas de instâncias.
 pub struct InstancesState {
@@ -27,6 +28,9 @@ pub struct InstancesState {
     pub store: Arc<InstanceStore>,
     /// Tamanho máximo de anexo em bytes.
     pub max_attachment_bytes: usize,
+    /// Canal de eventos de nota para o producer do CO (YG-93). `None` quando o
+    /// producer está desligado (gate de env não configurado) — emitir é no-op.
+    pub note_events: Option<tokio::sync::broadcast::Sender<NoteWritten>>,
 }
 
 impl InstancesState {
@@ -39,6 +43,21 @@ impl InstancesState {
             jwt_secret,
             store,
             max_attachment_bytes,
+            note_events: None,
+        }
+    }
+
+    /// Liga o canal de eventos de nota do producer do CO (YG-93).
+    pub fn with_note_events(mut self, sender: tokio::sync::broadcast::Sender<NoteWritten>) -> Self {
+        self.note_events = Some(sender);
+        self
+    }
+
+    /// Publica um [`NoteWritten`] no canal do producer, se ligado. Falha de
+    /// envio (sem assinantes) é benigna e ignorada — não afeta a resposta HTTP.
+    fn emit_note(&self, event: NoteWritten) {
+        if let Some(tx) = &self.note_events {
+            let _ = tx.send(event);
         }
     }
 }
@@ -497,8 +516,25 @@ pub async fn put_note(
     } else {
         body.title
     };
-    match note_store(&state, &id).save(&slug, &title, &body.markdown) {
-        Ok(n) => Json(n).into_response(),
+    let store_for_notes = note_store(&state, &id);
+    // created vs updated: a nota já existia em disco antes deste save?
+    let existed = store_for_notes.load(&slug).is_ok();
+    match store_for_notes.save(&slug, &title, &body.markdown) {
+        Ok(n) => {
+            state.emit_note(NoteWritten {
+                instance: id.clone(),
+                slug: n.slug.clone(),
+                kind: if existed {
+                    NoteKind::Updated
+                } else {
+                    NoteKind::Created
+                },
+                title: n.title.clone(),
+                body: n.body.clone(),
+                updated_at: Some(n.updated.to_rfc3339()),
+            });
+            Json(n).into_response()
+        }
         Err(e) => map_note_err(e),
     }
 }
@@ -556,7 +592,17 @@ pub async fn delete_note(
         return r;
     }
     match note_store(&state, &id).delete(&slug) {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => {
+            state.emit_note(NoteWritten {
+                instance: id.clone(),
+                slug: slug.clone(),
+                kind: NoteKind::Deleted,
+                title: String::new(),
+                body: String::new(),
+                updated_at: None,
+            });
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => map_note_err(e),
     }
 }
@@ -584,6 +630,7 @@ mod tests {
             jwt_secret: SECRET.into(),
             store,
             max_attachment_bytes: 1024,
+            note_events: None,
         });
         let router = Router::new()
             .route(
@@ -606,6 +653,32 @@ mod tests {
             .route("/api/v1/templates/{slug}", get(get_template))
             .with_state(state);
         (router, dir)
+    }
+
+    /// Variante de [`app`] com o canal do producer do CO ligado (YG-93): devolve
+    /// também um receiver para assertar os [`NoteWritten`] emitidos.
+    fn app_with_events() -> (
+        Router,
+        TempDir,
+        tokio::sync::broadcast::Receiver<NoteWritten>,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(InstanceStore::new(dir.path()).unwrap());
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        let state = Arc::new(InstancesState {
+            jwt_secret: SECRET.into(),
+            store,
+            max_attachment_bytes: 1024,
+            note_events: Some(tx),
+        });
+        let router = Router::new()
+            .route("/api/v1/instances", post(create_instance))
+            .route(
+                "/api/v1/instances/{id}/notes/{slug}",
+                get(get_note).put(put_note).delete(delete_note),
+            )
+            .with_state(state);
+        (router, dir, rx)
     }
 
     fn token(user: &str) -> String {
@@ -856,6 +929,84 @@ mod tests {
             )
             .await
             .unwrap()
+    }
+
+    /// YG-93: o hook de emissão publica exatamente 1 `NoteWritten` por
+    /// save/delete, com o `kind` correto (created → updated → deleted).
+    #[tokio::test]
+    async fn save_delete_emite_um_note_written_por_operacao() {
+        let (app, _d, mut rx) = app_with_events();
+        let id = create_blank(&app, "alice").await;
+
+        // CREATE
+        let resp = put_note_req(
+            &app,
+            &id,
+            "alice",
+            "Minha-Nota",
+            serde_json::json!({ "title": "Minha Nota", "markdown": "corpo [[outra]]" }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ev = rx.try_recv().expect("1 evento no create");
+        assert_eq!(ev.kind, NoteKind::Created);
+        assert_eq!(ev.slug, "minha-nota");
+        assert_eq!(ev.instance, id);
+        assert_eq!(ev.title, "Minha Nota");
+        assert!(ev.body.contains("[[outra]]"));
+        assert!(ev.updated_at.is_some());
+        assert_eq!(ev.path(), "notes/minha-nota.md");
+        assert!(rx.try_recv().is_err(), "exatamente 1 evento por save");
+
+        // UPDATE (mesma nota já existe → updated)
+        let resp = put_note_req(
+            &app,
+            &id,
+            "alice",
+            "minha-nota",
+            serde_json::json!({ "title": "Minha Nota", "markdown": "corpo v2" }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ev = rx.try_recv().expect("1 evento no update");
+        assert_eq!(ev.kind, NoteKind::Updated);
+        assert!(rx.try_recv().is_err());
+
+        // DELETE
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/v1/instances/{id}/notes/minha-nota"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        let ev = rx.try_recv().expect("1 evento no delete");
+        assert_eq!(ev.kind, NoteKind::Deleted);
+        assert_eq!(ev.slug, "minha-nota");
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// Sem o producer ligado (`note_events: None`, gate de env desligado) o
+    /// save/delete segue funcionando — emitir é no-op (não quebra o boot).
+    #[tokio::test]
+    async fn save_sem_producer_ligado_nao_quebra() {
+        let (app, _d) = app(); // note_events: None
+        let id = create_blank(&app, "alice").await;
+        let resp = put_note_req(
+            &app,
+            &id,
+            "alice",
+            "n",
+            serde_json::json!({ "title": "N", "markdown": "x" }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]

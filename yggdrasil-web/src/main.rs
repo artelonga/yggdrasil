@@ -3,6 +3,7 @@
 mod api;
 mod auth;
 mod auth_co;
+pub mod co_bridge_producer;
 pub mod comunicacao_routes;
 pub mod feedback;
 mod games;
@@ -229,10 +230,21 @@ async fn main() -> anyhow::Result<()> {
         yggdrasil_core::instance::InstanceStore::new(&instances_dir)
             .map_err(|e| anyhow::anyhow!("instance store: {e}"))?,
     );
-    let instances_state = Arc::new(api::instances::InstancesState::new(
-        auth_state.jwt_secret.clone(),
-        instance_store,
-    ));
+    // YG-93: producer de eventos p/ a federated bus do CO (Fase P-A). O canal
+    // `broadcast` é sempre criado (barato); a task de fundo só sobe se
+    // `YGG_CO_BRIDGE_URL` + `YGG_CO_BRIDGE_TOKEN` estiverem setados (gate). Sem
+    // eles, `spawn` é no-op e o `sender` fica sem assinantes — emitir é benigno.
+    // E2E aguarda o hub CO-384.
+    let co_bridge = co_bridge_producer::Producer::new();
+    let co_bridge_spawned = co_bridge_producer::spawn(&co_bridge, instance_store.clone());
+    if co_bridge_spawned {
+        info!("co-bridge producer ativo (Fase P-A) — emitindo notas ao hub do CO");
+    }
+
+    let instances_state = Arc::new(
+        api::instances::InstancesState::new(auth_state.jwt_secret.clone(), instance_store)
+            .with_note_events(co_bridge.sender()),
+    );
     let instances_router = Router::new()
         .route(
             "/api/v1/instances",
