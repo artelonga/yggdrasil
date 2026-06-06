@@ -311,13 +311,21 @@ async fn main() -> anyhow::Result<()> {
         &comunicacao_store,
         std::path::Path::new(&comunicacao_lexicon_dir),
     );
+    // YG-100: write-back das contribuições `_users/` → git (env-gated por
+    // YGGDRASIL_COMUNICACAO_WRITEBACK). Convive com as rotas de notas (Phase 0).
+    let comunicacao_writeback = Arc::new(yggdrasil_core::comunicacao::Writeback::new(
+        yggdrasil_core::comunicacao::WritebackConfig::from_env(),
+    ));
     let comunicacao_state = Arc::new(comunicacao_routes::ComunicacaoState {
         jwt_secret: auth_state.jwt_secret.clone(),
         store: comunicacao_store,
         lexicon: Arc::new(yggdrasil_core::comunicacao::LexiconStore::new(
             &comunicacao_lexicon_dir,
         )),
+        writeback: comunicacao_writeback,
     });
+    // Rede de segurança periódica (no-op se o write-back estiver desligado).
+    comunicacao_routes::spawn_writeback_sweeper(comunicacao_state.clone());
     let comunicacao_router = Router::new()
         .route(
             "/api/v1/comunicacao/salas",
