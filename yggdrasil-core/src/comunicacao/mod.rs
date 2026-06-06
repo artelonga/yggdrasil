@@ -19,6 +19,7 @@ pub mod review;
 pub mod room;
 pub mod store;
 pub mod templates;
+pub mod writeback;
 
 pub use lexicon::{Contribution, LexiconError, LexiconScope, LexiconStore};
 pub use public::{PUBLIC_MBYA, PUBLIC_YORUBA, SYSTEM_OWNER, ensure_public_rooms, is_public_id};
@@ -26,3 +27,4 @@ pub use review::{ReviewItem, ReviewQueue};
 pub use room::{EditError, Element, LexiconLink, Link, Reference, Room, RoomEdit, Viewport};
 pub use store::{RoomStore, StoreError};
 pub use templates::{TemplateSummary, instantiate as template_instantiate, template_summaries};
+pub use writeback::{Writeback, WritebackConfig, WritebackError, WritebackOutcome};

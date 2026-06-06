@@ -26,8 +26,9 @@ use axum::{
 use nanoid::nanoid;
 use serde::Deserialize;
 use yggdrasil_core::comunicacao::{
-    LexiconError, LexiconStore, ReviewItem, Room, RoomEdit, RoomStore, lexicon::Contribution,
-    room::EditError, store::StoreError, template_instantiate, template_summaries,
+    LexiconError, LexiconStore, ReviewItem, Room, RoomEdit, RoomStore, Writeback,
+    lexicon::Contribution, room::EditError, store::StoreError, template_instantiate,
+    template_summaries,
 };
 
 use crate::auth::verify_jwt;
@@ -37,6 +38,8 @@ pub struct ComunicacaoState {
     pub jwt_secret: String,
     pub store: Arc<RoomStore>,
     pub lexicon: Arc<LexiconStore>,
+    /// Motor de write-back das contribuições `_users/` → git (YG-100).
+    pub writeback: Arc<Writeback>,
 }
 
 type ApiState = State<Arc<ComunicacaoState>>;
@@ -337,6 +340,14 @@ pub async fn publicar_elemento(
         return map_store_err(e);
     }
 
+    // YG-100: write-back não-bloqueante. Só dispara quando o `publicar` CRIOU
+    // um arquivo novo em `_users/` — ligar a termo já existente não muda nada
+    // em disco. O git roda em `spawn_blocking` (Command é síncrono) dentro de
+    // `tokio::spawn` p/ não atrasar a resposta ao cliente.
+    if contribution.created {
+        spawn_writeback(state.writeback.clone(), contribution.relative_path.clone());
+    }
+
     let scope = match contribution.scope {
         yggdrasil_core::comunicacao::LexiconScope::Shared => "compartilhado",
         yggdrasil_core::comunicacao::LexiconScope::User => "usuario",
@@ -349,6 +360,113 @@ pub async fn publicar_elemento(
         "elemento": room.element(&eid),
     }))
     .into_response()
+}
+
+// ─── Write-back de contribuições → git (YG-100) ─────────────────────────────────
+
+/// Dispara o write-back de UMA contribuição recém-criada, sem bloquear o
+/// request. O motor é env-gated: desligado → no-op silencioso. Falhas (git
+/// ausente, dir não-git, conflito) são logadas em `warn` e nunca propagadas —
+/// a publicação já gravou o arquivo em disco; o git é a camada de persistência.
+fn spawn_writeback(writeback: Arc<Writeback>, relative_path: String) {
+    tokio::spawn(async move {
+        let message = format!(
+            "feat(comunicacao): contribuição de léxico {relative_path}\n\n\
+             Write-back automático via Yggdrasil (YG-100).\n\
+             Co-Authored-By: Claude <noreply@anthropic.com>"
+        );
+        let res =
+            tokio::task::spawn_blocking(move || writeback.run(&[relative_path], &message)).await;
+        match res {
+            Ok(Ok(outcome)) => {
+                tracing::debug!(?outcome, "comunicacao write-back");
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(erro = %e, "comunicacao write-back falhou");
+            }
+            Err(e) => {
+                tracing::warn!(erro = %e, "comunicacao write-back: task join falhou");
+            }
+        }
+    });
+}
+
+/// Rede de segurança periódica: percorre todas as contribuições `_users/` em
+/// disco e faz write-back das que ainda não estão commitadas. Pega casos onde o
+/// disparo por evento falhou (ex.: git temporariamente indisponível) ou
+/// arquivos que entraram no volume por outra via. Idempotente: o próprio
+/// [`Writeback::run`] não cria commit vazio.
+pub async fn run_writeback_sweep(state: &ComunicacaoState) {
+    let lex_root = state.lexicon.root().to_path_buf();
+    let writeback = state.writeback.clone();
+    // gate barato: se desligado, nem varre o disco.
+    if !writeback.config().enabled {
+        return;
+    }
+    let res = tokio::task::spawn_blocking(move || {
+        let paths = collect_user_contributions(&lex_root);
+        if paths.is_empty() {
+            return Ok(yggdrasil_core::comunicacao::WritebackOutcome::NothingToCommit);
+        }
+        writeback.run(
+            &paths,
+            "feat(comunicacao): sync periódico de contribuições de léxico\n\n\
+             Rede de segurança (YG-100).\n\
+             Co-Authored-By: Claude <noreply@anthropic.com>",
+        )
+    })
+    .await;
+    match res {
+        Ok(Ok(outcome)) => tracing::debug!(?outcome, "comunicacao write-back sweep"),
+        Ok(Err(e)) => tracing::warn!(erro = %e, "comunicacao write-back sweep falhou"),
+        Err(e) => tracing::warn!(erro = %e, "comunicacao write-back sweep: join falhou"),
+    }
+}
+
+/// Spawna a rede de segurança periódica do write-back (default a cada 5 min).
+pub fn spawn_writeback_sweeper(state: Arc<ComunicacaoState>) {
+    if !state.writeback.config().enabled {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            run_writeback_sweep(&state).await;
+        }
+    });
+}
+
+/// Lista os caminhos relativos (`<lang>/terms/_users/.../*.md`) de todas as
+/// contribuições de usuário sob a raiz do léxico. Tolera ausência de pastas.
+fn collect_user_contributions(lex_root: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(langs) = std::fs::read_dir(lex_root) else {
+        return out;
+    };
+    for lang in langs.flatten() {
+        let users_dir = lang.path().join("terms").join("_users");
+        collect_md_under(&users_dir, lex_root, &mut out);
+    }
+    out
+}
+
+/// Coleta recursivamente os `*.md` sob `dir`, devolvendo caminhos relativos a
+/// `base` com separador `/`.
+fn collect_md_under(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            collect_md_under(&p, base, out);
+        } else if p.extension().is_some_and(|x| x == "md")
+            && let Ok(rel) = p.strip_prefix(base)
+        {
+            out.push(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
 }
 
 // ─── Léxico (lookup) ────────────────────────────────────────────────────────────
@@ -501,10 +619,16 @@ mod tests {
 
         let store = Arc::new(RoomStore::new(rooms_dir.path()).unwrap());
         let lexicon = Arc::new(LexiconStore::new(lex_dir.path()));
+        // write-back desligado nos testes de rota (não há repo git no tempdir);
+        // o motor é exercitado em `writeback.rs`. Aqui só garante no-op.
+        let mut wb_cfg = yggdrasil_core::comunicacao::WritebackConfig::for_testing(lex_dir.path());
+        wb_cfg.enabled = false;
+        let writeback = Arc::new(Writeback::new(wb_cfg));
         let state = Arc::new(ComunicacaoState {
             jwt_secret: SECRET.into(),
             store,
             lexicon,
+            writeback,
         });
         let router = Router::new()
             .route(
