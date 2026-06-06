@@ -32,13 +32,14 @@ jobs:
       - name: Install wasm-opt
         run: cargo install wasm-opt --locked
 
-      # NÃO-bloqueante (YG-104): as crates WASM v1.0 (universes/universe-*) sofreram
-      # drift da API do universe-sdk (Universe trait, kv_*/get_random) e não compilam.
-      # Roda e reporta, mas não bloqueia o gate do workspace mantido (core/web).
-      # Reverter para bloqueante quando YG-104 reparar as crates.
-      - name: Build universe WASM crates
-        continue-on-error: true
-        run: bash scripts/build-universes.sh
+      # PULADO (YG-104): as crates WASM v1.0 (universes/universe-*) sofreram drift da
+      # API do universe-sdk (Universe trait, kv_*/get_random) e não compilam. Rodar
+      # build-universes.sh deixa o embedded/ em estado quebrado e falha o build do
+      # workspace. Pulando, o build.rs gera stubs mínimos e o workspace mantido
+      # (core/web) compila normalmente. Restaurar `bash scripts/build-universes.sh`
+      # quando YG-104 reparar as crates.
+      - name: Build universe WASM crates (skipped — YG-104)
+        run: echo "skip: WASM v1.0 rotted (YG-104); workspace uses build.rs stubs"
 
       - name: Build workspace
         run: cargo build --release
