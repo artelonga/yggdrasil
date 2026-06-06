@@ -22,6 +22,9 @@ const state = {
   deleteMode: false,
   images: {},           // hash -> HTMLImageElement (object URLs)
   drag: null,           // { blockId, layerId }
+  notes: [],            // [{ slug, title, body, links, ... }]
+  backlinks: {},        // slug -> [{ source, label }]
+  graph: {},            // slug -> [slug-alvo] (wikilinks resolvidos)
 };
 
 const canvas = document.getElementById('canvas');
@@ -69,10 +72,78 @@ async function load() {
   }
 
   await loadImages();
+  await loadNotes();
   sizeCanvas();
   renderLayers();
   renderPalette();
+  renderNotesList();
   render();
+}
+
+async function loadNotes() {
+  try {
+    const r = await fetch(`${API}/instances/${state.id}/notes`, { headers: authHeaders() });
+    if (!r.ok) return;
+    const d = await r.json();
+    state.notes = d.notes || [];
+    state.backlinks = d.backlinks || {};
+    state.graph = d.graph || {};
+  } catch { /* notas opcionais */ }
+}
+
+function noteBySlug(slug) { return state.notes.find((n) => n.slug === slug) || null; }
+
+// Bloco-nota (de qualquer camada) cujo props.note_slug bate com o slug.
+function noteBlock(slug) {
+  for (const { block } of allBlocks()) {
+    if (block.props?.note_slug === slug) return block;
+  }
+  return null;
+}
+
+function noteTitle(slug) { return noteBySlug(slug)?.title || slug; }
+
+// ─── Markdown + slug (espelha o slugify do servidor para ASCII/PT) ────────────
+
+function slugifyJs(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Renderizador Markdown mínimo. Escapa HTML PRIMEIRO (anti-XSS), depois aplica
+// wikilinks, inline e blocos. Sem dependência externa (canvas/vanilla, CLAUDE.md).
+function renderMarkdown(src) {
+  let s = escapeHtml(src);
+  // wikilinks [[alvo|alias]] / [[alvo]] — marca .missing se a nota não existe
+  s = s.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, target, alias) => {
+    const slug = slugifyJs(target.trim());
+    const text = escapeHtml((alias || target).trim());
+    const missing = noteBySlug(slug) ? '' : ' missing';
+    return `<a class="wikilink${missing}" data-slug="${slug}">${text}</a>`;
+  });
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // blocos linha-a-linha
+  const out = [];
+  let inUl = false;
+  const closeUl = () => { if (inUl) { out.push('</ul>'); inUl = false; } };
+  for (const line of s.split(/\r?\n/)) {
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (h) { closeUl(); out.push(`<h${h[1].length + 2}>${h[2]}</h${h[1].length + 2}>`); continue; }
+    const li = line.match(/^[-*]\s+(.*)$/);
+    if (li) { if (!inUl) { out.push('<ul>'); inUl = true; } out.push(`<li>${li[1]}</li>`); continue; }
+    if (line.trim() === '') { closeUl(); continue; }
+    out.push(`<p>${line}</p>`);
+  }
+  closeUl();
+  return out.join('');
 }
 
 async function loadImages() {
@@ -188,6 +259,17 @@ function render() {
     drawEdge(p, q, conn.directed, conn.label);
   }
 
+  // arestas de wikilink entre blocos-nota (tracejadas, derivadas do grafo)
+  for (const [from, targets] of Object.entries(state.graph || {})) {
+    const a = noteBlock(from);
+    if (!a) continue;
+    for (const to of targets) {
+      const b = noteBlock(to);
+      if (!b || b.id === a.id) continue;
+      drawWikiEdge(cellCenter(a.pos.x, a.pos.y), cellCenter(b.pos.x, b.pos.y));
+    }
+  }
+
   // blocos
   for (const { block } of allBlocks()) drawBlock(block);
 }
@@ -263,6 +345,19 @@ function drawEdge(p, q, directed, label) {
   }
 }
 
+// Aresta de wikilink: tracejada, cor distinta das conexões manuais.
+function drawWikiEdge(p, q) {
+  ctx.save();
+  ctx.strokeStyle = '#b48eadaa';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(p.cx, p.cy);
+  ctx.lineTo(q.cx, q.cy);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
 function renderLayers() {
@@ -307,7 +402,8 @@ function renderPalette() {
 function showInspector(b) {
   const el = document.getElementById('inspector');
   if (!b) { el.innerHTML = '<p class="hint">Clique num bloco para ver seu conteúdo.</p>'; return; }
-  el.innerHTML = `<strong>${b.label || b.block_type}</strong>`;
+  if (b.props?.note_slug) { showNoteInspector(el, b, b.props.note_slug); return; }
+  el.innerHTML = `<strong>${escapeHtml(b.label || b.block_type)}</strong>`;
   for (const a of (b.attachments || [])) {
     const div = document.createElement('div');
     div.className = 'att';
@@ -336,6 +432,93 @@ function showInspector(b) {
     up.onclick = () => triggerUpload(b.id);
     el.append(up);
   }
+}
+
+// Inspetor de uma nota: Markdown renderizado, wikilinks clicáveis, backlinks e
+// (em edição) editor de corpo.
+function showNoteInspector(el, b, slug) {
+  const note = noteBySlug(slug);
+  el.innerHTML = `<strong>${escapeHtml(note?.title || b.label || slug)}</strong>`;
+
+  const view = document.createElement('div');
+  view.className = 'att note-view';
+  view.innerHTML = renderMarkdown(note?.body || '_(nota vazia)_');
+  view.querySelectorAll('a.wikilink').forEach((a) => {
+    a.addEventListener('click', (e) => { e.preventDefault(); openNote(a.dataset.slug); });
+  });
+  el.append(view);
+
+  const back = state.backlinks?.[slug] || [];
+  if (back.length) {
+    const bl = document.createElement('div');
+    bl.className = 'backlinks';
+    bl.innerHTML = 'Mencionado em: ' + back.map((x) =>
+      `<a class="wikilink" data-slug="${x.source}">${escapeHtml(noteTitle(x.source))}</a>`).join(', ');
+    bl.querySelectorAll('a').forEach((a) =>
+      a.addEventListener('click', (e) => { e.preventDefault(); openNote(a.dataset.slug); }));
+    el.append(bl);
+  }
+
+  if (state.edit) {
+    const ta = document.createElement('textarea');
+    ta.value = note?.body || '';
+    ta.placeholder = 'Escreva em Markdown. Use [[outra-nota]] para ligar.';
+    const save = document.createElement('button');
+    save.textContent = '💾 Salvar nota';
+    save.style.marginTop = '0.4rem';
+    save.onclick = () => saveNote(slug, note?.title || b.label || slug, ta.value);
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'Ligue notas com [[slug]] ou [[slug|texto]].';
+    el.append(ta, save, hint);
+  }
+}
+
+// Abre a nota: seleciona o bloco que a referencia (se houver) e mostra no inspetor.
+function openNote(slug) {
+  const blk = noteBlock(slug);
+  if (blk) {
+    state.selectedBlock = blk.id;
+    showInspector(blk);
+    render();
+  } else {
+    toast(`Nota "${slug}" ainda não tem bloco no mapa`);
+  }
+}
+
+async function saveNote(slug, title, markdown) {
+  const res = await fetch(`${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ title, markdown }),
+  });
+  if (!res.ok) {
+    let msg = 'Falha ao salvar nota';
+    try { msg = (await res.json()).erro || msg; } catch {}
+    toast('⚠ ' + msg);
+    return;
+  }
+  await loadNotes();
+  renderNotesList();
+  const blk = noteBlock(slug);
+  if (blk) showInspector(blk);
+  render();
+  toast('Nota salva');
+}
+
+// Lista de notas na sidebar; clique abre a nota.
+function renderNotesList() {
+  const el = document.getElementById('notes-list');
+  if (!el) return;
+  el.innerHTML = '';
+  if (!state.notes.length) { el.innerHTML = '<p class="hint">Sem notas ainda.</p>'; return; }
+  state.notes.forEach((n) => {
+    const d = document.createElement('div');
+    d.className = 'palette-item';
+    d.innerHTML = `<span class="ico">📝</span> ${escapeHtml(n.title)}`;
+    d.onclick = () => openNote(n.slug);
+    el.append(d);
+  });
 }
 
 // ─── Edição (EditOps via PATCH) ──────────────────────────────────────────────
@@ -372,16 +555,32 @@ async function placeBlock(cell) {
   const layer = targetBlocksLayer();
   const item = (state.template?.palette || []).find((p) => p.block_type === state.selectedType);
   const id = `${state.selectedType}-${Date.now().toString(36)}`;
-  await patch({
-    op: 'place_block',
-    layer,
-    block: {
-      id,
-      block_type: state.selectedType,
-      pos: { x: cell.x, y: cell.y },
-      props: item?.default_props || {},
-    },
-  });
+  const props = { ...(item?.default_props || {}) };
+  let label;
+
+  // Bloco-nota: cria o arquivo Markdown canônico e amarra via props.note_slug.
+  if (state.selectedType === 'note') {
+    const title = prompt('Título da nota:');
+    if (title === null || title.trim() === '') return; // cancelou
+    label = title.trim();
+    let slug = slugifyJs(label) || id;
+    const res = await fetch(`${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ title: label, markdown: '' }),
+    });
+    if (!res.ok) { toast('⚠ Falha ao criar nota'); return; }
+    slug = (await res.json()).slug; // slug canônico do servidor
+    props.note_slug = slug;
+    if (!props.icon) props.icon = '📝';
+  }
+
+  const block = { id, block_type: state.selectedType, pos: { x: cell.x, y: cell.y }, props };
+  if (label) block.label = label;
+  await patch({ op: 'place_block', layer, block });
+  await loadNotes();
+  renderNotesList();
+  render();
 }
 
 async function moveBlock(blockId, layerId, cell) {

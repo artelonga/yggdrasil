@@ -254,6 +254,18 @@ async fn main() -> anyhow::Result<()> {
             get(api::instances::serve_attachment),
         )
         .route("/api/v1/instances/{id}/play", get(serve_instance_player))
+        // Notas (jardim): Markdown canônico ligado por wikilinks, referenciado
+        // pelo grafo da instância via `Block.props.note_slug`.
+        .route(
+            "/api/v1/instances/{id}/notes",
+            get(api::instances::list_notes),
+        )
+        .route(
+            "/api/v1/instances/{id}/notes/{slug}",
+            get(api::instances::get_note)
+                .put(api::instances::put_note)
+                .delete(api::instances::delete_note),
+        )
         .route("/api/v1/templates", get(api::instances::list_templates))
         .route(
             "/api/v1/templates/{slug}",

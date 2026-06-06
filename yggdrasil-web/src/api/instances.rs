@@ -15,8 +15,8 @@ use axum::{
 use nanoid::nanoid;
 use serde::Deserialize;
 use yggdrasil_core::instance::{
-    AttachmentKind, ContentRef, EditError, EditOp, InstanceStore, StoreError, UniverseInstance,
-    template_by_slug, template_summaries,
+    AttachmentKind, ContentRef, EditError, EditOp, InstanceStore, NoteError, NoteStore, StoreError,
+    UniverseInstance, note, template_by_slug, template_summaries,
 };
 
 use crate::auth::verify_jwt;
@@ -436,6 +436,131 @@ pub async fn get_template(Path(slug): Path<String>) -> impl IntoResponse {
     }
 }
 
+// ─── Notas (jardim — Markdown canônico ligado por wikilinks) ──────────────────
+
+fn map_note_err(e: NoteError) -> axum::response::Response {
+    match e {
+        NoteError::NotFound(_) => err_json(StatusCode::NOT_FOUND, "nota_nao_encontrada"),
+        NoteError::InvalidSlug => err_json(StatusCode::UNPROCESSABLE_ENTITY, "slug_invalido"),
+        NoteError::Io(_) => err_json(StatusCode::INTERNAL_SERVER_ERROR, "erro_io"),
+    }
+}
+
+fn note_store(state: &InstancesState, id: &str) -> NoteStore {
+    NoteStore::for_instance(state.store.root(), id)
+}
+
+/// Carrega a instância para **leitura**: pública se `published`, senão owner-only.
+/// Espelha o gating de [`get_instance`]/[`serve_attachment`].
+#[allow(clippy::result_large_err)] // o `Err` é uma `Response` axum por design
+fn load_readable(
+    state: &InstancesState,
+    id: &str,
+    headers: &HeaderMap,
+) -> Result<UniverseInstance, axum::response::Response> {
+    let inst = state.store.load(id).map_err(map_store_err)?;
+    if !inst.published {
+        match require_user(state, headers) {
+            Ok(u) if u == inst.owner => {}
+            Ok(_) => return Err(err_json(StatusCode::FORBIDDEN, "nao_e_dono")),
+            Err(r) => return Err(r),
+        }
+    }
+    Ok(inst)
+}
+
+#[derive(Deserialize)]
+pub struct NoteBody {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub markdown: String,
+}
+
+/// `PUT /api/v1/instances/{id}/notes/{slug}` — cria/atualiza uma nota (owner-only).
+/// O `slug` é normalizado server-side; a resposta traz o slug canônico.
+pub async fn put_note(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path((id, slug)): Path<(String, String)>,
+    Json(body): Json<NoteBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+    let title = if body.title.trim().is_empty() {
+        slug.clone()
+    } else {
+        body.title
+    };
+    match note_store(&state, &id).save(&slug, &title, &body.markdown) {
+        Ok(n) => Json(n).into_response(),
+        Err(e) => map_note_err(e),
+    }
+}
+
+/// `GET /api/v1/instances/{id}/notes/{slug}` — lê uma nota (gating de leitura).
+pub async fn get_note(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path((id, slug)): Path<(String, String)>,
+) -> impl IntoResponse {
+    if let Err(r) = load_readable(&state, &id, &headers) {
+        return r;
+    }
+    match note_store(&state, &id).load(&slug) {
+        Ok(n) => Json(n).into_response(),
+        Err(e) => map_note_err(e),
+    }
+}
+
+/// `GET /api/v1/instances/{id}/notes` — lista + backlinks + grafo de wikilinks.
+pub async fn list_notes(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if let Err(r) = load_readable(&state, &id, &headers) {
+        return r;
+    }
+    match note_store(&state, &id).list() {
+        Ok(notes) => {
+            let backlinks = note::backlinks(&notes);
+            let graph = note::graph(&notes);
+            Json(serde_json::json!({
+                "notes": notes,
+                "backlinks": backlinks,
+                "graph": graph,
+            }))
+            .into_response()
+        }
+        Err(e) => map_note_err(e),
+    }
+}
+
+/// `DELETE /api/v1/instances/{id}/notes/{slug}` — remove uma nota (owner-only).
+pub async fn delete_note(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path((id, slug)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+    match note_store(&state, &id).delete(&slug) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => map_note_err(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -471,6 +596,11 @@ mod tests {
                     .put(put_instance)
                     .patch(patch_instance)
                     .delete(delete_instance),
+            )
+            .route("/api/v1/instances/{id}/notes", get(list_notes))
+            .route(
+                "/api/v1/instances/{id}/notes/{slug}",
+                get(get_note).put(put_note).delete(delete_note),
             )
             .route("/api/v1/templates", get(list_templates))
             .route("/api/v1/templates/{slug}", get(get_template))
@@ -703,5 +833,159 @@ mod tests {
         let v = body_json(detail).await;
         assert_eq!(v["slug"], "neuroanatomia");
         assert!(v["palette"].as_array().unwrap().len() >= 1);
+    }
+
+    // ─── Notas ────────────────────────────────────────────────────────────────
+
+    async fn put_note_req(
+        app: &Router,
+        id: &str,
+        user: &str,
+        slug: &str,
+        body: serde_json::Value,
+    ) -> axum::response::Response {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/instances/{id}/notes/{slug}"))
+                    .header("authorization", format!("Bearer {}", token(user)))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn put_get_nota_round_trip() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        // slug do path em maiúsculas → normalizado server-side
+        let resp = put_note_req(
+            &app,
+            &id,
+            "alice",
+            "Minha-Nota",
+            serde_json::json!({ "title": "Minha Nota", "markdown": "corpo [[outra]]" }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["slug"], "minha-nota"); // slug canônico server-side
+        assert_eq!(v["links"][0]["target"], "outra");
+
+        let get = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/instances/{id}/notes/minha-nota"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(get.status(), StatusCode::OK);
+        assert_eq!(body_json(get).await["title"], "Minha Nota");
+    }
+
+    #[tokio::test]
+    async fn list_notas_com_backlinks_e_grafo() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        put_note_req(
+            &app,
+            &id,
+            "alice",
+            "a",
+            serde_json::json!({ "markdown": "liga [[b]]" }),
+        )
+        .await;
+        put_note_req(
+            &app,
+            &id,
+            "alice",
+            "b",
+            serde_json::json!({ "markdown": "folha" }),
+        )
+        .await;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/instances/{id}/notes"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["notes"].as_array().unwrap().len(), 2);
+        assert_eq!(v["backlinks"]["b"][0]["source"], "a");
+        assert_eq!(v["graph"]["a"][0], "b");
+    }
+
+    #[tokio::test]
+    async fn put_nota_sem_jwt_401() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/instances/{id}/notes/x"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn put_nota_de_outro_dono_403() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        let resp = put_note_req(
+            &app,
+            &id,
+            "bob",
+            "x",
+            serde_json::json!({ "markdown": "hack" }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn get_nota_instancia_nao_publicada_de_outro_403() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        put_note_req(
+            &app,
+            &id,
+            "alice",
+            "n",
+            serde_json::json!({ "markdown": "x" }),
+        )
+        .await;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/instances/{id}/notes/n"))
+                    .header("authorization", format!("Bearer {}", token("bob")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 }

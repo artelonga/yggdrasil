@@ -8,13 +8,17 @@
 //! - [`edit`] — [`EditOp`] e sua aplicação/validação granular.
 //! - [`store`] — persistência em disco + anexos content-addressed.
 //! - [`template`] — instâncias-semente (blank, neuroanatomia).
+//! - [`note`] — notas Markdown ligadas por wikilinks (o "jardim"); canônico em
+//!   disco, referenciado pelo grafo via `Block.props.note_slug`.
 
 pub mod edit;
+pub mod note;
 pub mod schema;
 pub mod store;
 pub mod template;
 
 pub use edit::{EditError, EditOp};
+pub use note::{Backlink, Note, NoteError, NoteLink, NoteStore};
 pub use schema::{
     AttachmentKind, Block, Cell, Connection, ContentRef, GridSpec, Layer, LayerKind, Projection,
     SCHEMA_VERSION, UniverseInstance,

@@ -15,7 +15,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Versão do schema serializado. Incrementar ao introduzir migração incompatível.
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// v2: notas Markdown ligadas por wikilinks (referenciadas por
+/// `Block.props.note_slug`). Mudança puramente aditiva em disco — instâncias v1
+/// carregam sem migração (campos/props novos têm default); só são reescritas como
+/// v2 no próximo `save`.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Um universo autorado por usuário: grade + camadas + blocos + conexões.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -409,5 +414,28 @@ mod tests {
         let json = serde_json::to_string(&inst).unwrap();
         // meta vazio é omitido
         assert!(!json.contains("\"meta\""));
+    }
+
+    #[test]
+    fn deserializa_instancia_v1() {
+        // Fixture gravado sob SCHEMA_VERSION=1 (sem props especiais nos blocos).
+        // Deve carregar sem erro sob v2 — a migração forward é no-op.
+        let v1 = r#"{
+            "id": "i", "schema_version": 1, "owner": "o", "title": "T",
+            "grid": { "width": 40, "height": 20, "cell_size": 16 },
+            "projection": "two_d_grid",
+            "layers": [ { "id": "base", "name": "Base", "kind": "blocks", "blocks": [
+                { "id": "b1", "block_type": "note", "pos": { "x": 1, "y": 1 } }
+            ] } ],
+            "connections": [],
+            "created_at": "2026-05-29T12:00:00Z",
+            "updated_at": "2026-05-29T12:00:00Z"
+        }"#;
+        let inst: UniverseInstance = serde_json::from_str(v1).unwrap();
+        assert_eq!(inst.schema_version, 1, "campo cru preservado na leitura");
+        assert_eq!(inst.id, "i");
+        assert_eq!(inst.layers[0].blocks[0].id, "b1");
+        // Reserializa como v2 só quando explicitamente carimbado.
+        assert_eq!(SCHEMA_VERSION, 2);
     }
 }

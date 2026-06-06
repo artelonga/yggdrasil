@@ -50,6 +50,18 @@
     #inspector .att { margin-top: 0.5rem; padding: 0.5rem; background: #111119; border-radius: 4px; }
     #inspector img { max-width: 100%; border-radius: 4px; }
     #inspector .credit { opacity: 0.5; font-size: 0.72rem; margin-top: 0.3rem; }
+    .note-view { line-height: 1.5; word-wrap: break-word; }
+    .note-view h3, .note-view h4, .note-view h5 { margin: 0.4rem 0 0.2rem; font-weight: 500; }
+    .note-view p { margin: 0.35rem 0; }
+    .note-view ul { margin: 0.35rem 0 0.35rem 1.1rem; }
+    .note-view code { background: #07070b; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.82em; }
+    .note-view a.wikilink { color: #b48ead; border-bottom: 1px dashed #b48ead; text-decoration: none; cursor: pointer; }
+    .note-view a.wikilink.missing { color: #8a7a8a; border-bottom-style: dotted; }
+    #inspector textarea { width: 100%; min-height: 140px; margin-top: 0.6rem; background: #07070b;
+      color: #e5e2e1; border: 1px solid #2a2a44; border-radius: 4px; padding: 0.5rem;
+      font-family: ui-monospace, monospace; font-size: 0.8rem; resize: vertical; }
+    .backlinks { margin-top: 0.7rem; font-size: 0.78rem; opacity: 0.8; }
+    .backlinks a { cursor: pointer; }
     .hint { opacity: 0.45; font-size: 0.78rem; line-height: 1.4; }
     .edit-only { display: none; }
     body.edit .edit-only { display: block; }
@@ -82,6 +94,10 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
       <section>
         <h2>Camadas</h2>
         <div id="layers"></div>
+      </section>
+      <section>
+        <h2>Notas</h2>
+        <div id="notes-list"><p class="hint">Sem notas ainda.</p></div>
       </section>
       <section class="edit-only">
         <h2>Paleta</h2>
