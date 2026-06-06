@@ -25,6 +25,8 @@ const state = {
   notes: [],            // [{ slug, title, body, links, ... }]
   backlinks: {},        // slug -> [{ source, label }]
   graph: {},            // slug -> [slug-alvo] (wikilinks resolvidos)
+  noteQuery: '',        // busca client-side sobre a sidebar Notas
+  graphView: false,     // visão grafo (notas-como-nós + arestas de wikilink)
 };
 
 const canvas = document.getElementById('canvas');
@@ -77,6 +79,8 @@ async function load() {
   renderLayers();
   renderPalette();
   renderNotesList();
+  wireNoteSearch();
+  wireGraphToggle();
   render();
 }
 
@@ -232,6 +236,7 @@ function findBlock(id) {
 }
 
 function render() {
+  if (state.graphView) { renderGraph(); return; }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const g = gridSpec();
   const c = g.cell_size;
@@ -356,6 +361,93 @@ function drawWikiEdge(p, q) {
   ctx.lineTo(q.cx, q.cy);
   ctx.stroke();
   ctx.restore();
+}
+
+// ─── Visão grafo (notas-como-nós + arestas de wikilink) ──────────────────────
+
+// Layout circular determinístico: cada nota vira um nó disposto num círculo.
+// Reusa `state.graph` (wikilinks resolvidos) para as arestas. Sem física — é
+// estável e suficiente para um jardim de notas pequeno/médio.
+function graphNodes() {
+  const notes = state.notes;
+  const n = notes.length;
+  if (!n) return [];
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const radius = Math.max(60, Math.min(canvas.width, canvas.height) / 2 - 60);
+  return notes.map((note, i) => {
+    if (n === 1) return { note, cx, cy };
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+    return { note, cx: cx + radius * Math.cos(ang), cy: cy + radius * Math.sin(ang) };
+  });
+}
+
+function renderGraph() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const nodes = graphNodes();
+  if (!nodes.length) {
+    ctx.fillStyle = '#8a7a8a';
+    ctx.font = '14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Sem notas ainda — crie uma para vê-la no grafo.', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+  const pos = {};
+  for (const nd of nodes) pos[nd.note.slug] = nd;
+
+  // arestas de wikilink (reusa o grafo resolvido pelo servidor)
+  for (const [from, targets] of Object.entries(state.graph || {})) {
+    const a = pos[from];
+    if (!a) continue;
+    for (const to of targets) {
+      const b = pos[to];
+      if (!b || b === a) continue;
+      drawWikiEdge({ cx: a.cx, cy: a.cy }, { cx: b.cx, cy: b.cy });
+    }
+  }
+
+  // nós (notas)
+  const r = 18;
+  for (const nd of nodes) {
+    const sel = noteBlock(nd.note.slug)?.id === state.selectedBlock
+      && state.selectedBlock != null;
+    ctx.beginPath();
+    ctx.arc(nd.cx, nd.cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#b48ead33';
+    ctx.fill();
+    ctx.lineWidth = sel ? 3 : 1.5;
+    ctx.strokeStyle = sel ? '#fff' : '#b48ead';
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('📝', nd.cx, nd.cy);
+    ctx.font = '11px system-ui';
+    ctx.fillStyle = '#e8e3d3';
+    ctx.fillText(nd.note.title || nd.note.slug, nd.cx, nd.cy + r + 10);
+  }
+}
+
+// Nó do grafo sob (mx,my), se houver.
+function graphNodeAt(mx, my) {
+  for (const nd of graphNodes()) {
+    if (Math.hypot(mx - nd.cx, my - nd.cy) <= 20) return nd.note;
+  }
+  return null;
+}
+
+// Liga o toggle da visão grafo.
+function wireGraphToggle() {
+  const btn = document.getElementById('graphBtn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    state.graphView = !state.graphView;
+    btn.classList.toggle('active', state.graphView);
+    btn.textContent = state.graphView ? '🗺️ Mapa' : '🕸️ Grafo';
+    render();
+  });
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -506,18 +598,39 @@ async function saveNote(slug, title, markdown) {
   toast('Nota salva');
 }
 
-// Lista de notas na sidebar; clique abre a nota.
+// Notas que casam com a busca (título OU corpo), client-side, sem API.
+function filteredNotes() {
+  const q = state.noteQuery.trim().toLowerCase();
+  if (!q) return state.notes;
+  return state.notes.filter((n) =>
+    (n.title || '').toLowerCase().includes(q) ||
+    (n.body || '').toLowerCase().includes(q));
+}
+
+// Lista de notas na sidebar; clique abre a nota. Respeita a busca.
 function renderNotesList() {
   const el = document.getElementById('notes-list');
   if (!el) return;
   el.innerHTML = '';
   if (!state.notes.length) { el.innerHTML = '<p class="hint">Sem notas ainda.</p>'; return; }
-  state.notes.forEach((n) => {
+  const matches = filteredNotes();
+  if (!matches.length) { el.innerHTML = '<p class="hint">Nenhuma nota encontrada.</p>'; return; }
+  matches.forEach((n) => {
     const d = document.createElement('div');
     d.className = 'palette-item';
     d.innerHTML = `<span class="ico">📝</span> ${escapeHtml(n.title)}`;
     d.onclick = () => openNote(n.slug);
     el.append(d);
+  });
+}
+
+// Liga o campo de busca (filtra a sidebar Notas sem chamar a API).
+function wireNoteSearch() {
+  const input = document.getElementById('note-search');
+  if (!input) return;
+  input.addEventListener('input', () => {
+    state.noteQuery = input.value;
+    renderNotesList();
   });
 }
 
@@ -650,6 +763,14 @@ function mouseXY(e) {
 
 canvas.addEventListener('mousedown', (e) => {
   const { mx, my } = mouseXY(e);
+
+  // Visão grafo: clicar num nó seleciona/abre a nota (sem edição no grafo).
+  if (state.graphView) {
+    const note = graphNodeAt(mx, my);
+    if (note) openNote(note.slug);
+    return;
+  }
+
   const hit = blockAt(mx, my);
 
   if (!state.edit) {
