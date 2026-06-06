@@ -44,6 +44,11 @@
       border: 1px solid #2a2a44; border-radius: 4px; margin-bottom: 0.4rem; cursor: pointer;
       font-size: 0.85rem;
     }
+    #note-search {
+      width: 100%; margin-bottom: 0.5rem; background: #07070b; color: #e5e2e1;
+      border: 1px solid #2a2a44; border-radius: 4px; padding: 0.4rem 0.5rem; font-size: 0.82rem;
+    }
+    #note-search:focus { outline: none; border-color: #e9c349; }
     .palette-item.sel { border-color: #e9c349; background: #16161f; }
     .palette-item .ico { font-size: 1.1rem; }
     #inspector { font-size: 0.85rem; }
@@ -85,6 +90,7 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
     <h1 id="title">Universo</h1>
     <span class="desc" id="desc"></span>
     <span class="grow"></span>
+    <button id="graphBtn">🕸️ Grafo</button>
     <button id="modeBtn" hidden>✏️ Editar</button>
     <a href="/lobby"><button>← Lobby</button></a>
   </header>
@@ -97,6 +103,7 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
       </section>
       <section>
         <h2>Notas</h2>
+        <input type="search" id="note-search" placeholder="Buscar notas…" aria-label="Buscar notas">
         <div id="notes-list"><p class="hint">Sem notas ainda.</p></div>
       </section>
       <section class="edit-only">

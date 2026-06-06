@@ -82,7 +82,11 @@ impl From<&Template> for TemplateSummary {
 
 /// Todos os templates disponíveis.
 pub fn all_templates() -> Vec<Template> {
-    vec![blank_template(), neuroanatomia_template()]
+    vec![
+        blank_template(),
+        jardim_template(),
+        neuroanatomia_template(),
+    ]
 }
 
 /// Resumos de todos os templates.
@@ -136,6 +140,40 @@ pub fn blank_template() -> Template {
             json!({ "color": "#d4af37", "icon": "📝" }),
         )],
         render_hints: json!({ "grid_lines": true }),
+    }
+}
+
+/// Template `jardim` — visão notes-first: grade leve, paleta só-`note`.
+///
+/// Pensado para anotações ligadas por wikilinks (o "jardim"): a única coisa que
+/// o editor oferece é colocar notas, e a grade fica clara/leve para a visão de
+/// grafo ser o foco. As notas em si vivem como Markdown via `NoteStore` (Phase
+/// 0); aqui só semeamos o esqueleto e a paleta.
+pub fn jardim_template() -> Template {
+    let grid = GridSpec {
+        width: 24,
+        height: 16,
+        cell_size: 32,
+    };
+    let mut seed = empty_seed(
+        Projection::TwoDGrid,
+        grid,
+        vec![Layer::blocks("notas", "Notas")],
+    );
+    seed.title = "Jardim".into();
+    seed.description = "Comece a anotar: cada nota é um nó, wikilinks são as arestas.".into();
+
+    Template {
+        slug: "jardim".into(),
+        title: "Jardim".into(),
+        description: "Visão notes-first — escreva notas e ligue-as com [[wikilinks]].".into(),
+        seed,
+        palette: vec![PaletteItem::new(
+            "note",
+            "Nota",
+            json!({ "color": "#b48ead", "icon": "📝" }),
+        )],
+        render_hints: json!({ "grid_lines": true, "graph_view": true }),
     }
 }
 
@@ -261,14 +299,30 @@ mod tests {
     }
 
     #[test]
+    fn jardim_palette_so_nota() {
+        // Está registrado no catálogo e acessível por slug.
+        assert!(template_by_slug("jardim").is_some());
+        let t = jardim_template();
+        // Paleta = só `note` (visão notes-first).
+        assert_eq!(t.palette.len(), 1);
+        assert_eq!(t.palette[0].block_type, "note");
+        // Seed tem uma única camada de notas, sem fundos.
+        let inst = t.instantiate("j1", "ana");
+        assert_eq!(inst.template, "jardim");
+        assert_eq!(inst.layers.len(), 1);
+        assert_eq!(inst.layer("notas").unwrap().blocks.len(), 0);
+    }
+
+    #[test]
     fn lookup_por_slug() {
         assert!(template_by_slug("neuroanatomia").is_some());
         assert!(template_by_slug("blank").is_some());
+        assert!(template_by_slug("jardim").is_some());
         assert!(template_by_slug("inexistente").is_none());
     }
 
     #[test]
     fn summaries_lista_todos() {
-        assert_eq!(template_summaries().len(), 2);
+        assert_eq!(template_summaries().len(), 3);
     }
 }
