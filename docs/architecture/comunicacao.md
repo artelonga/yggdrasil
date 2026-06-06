@@ -68,9 +68,10 @@ Mapa de língua → plano: `yo→yoruba`, `gn-mbya→guarani-mbya`, `pt→portug
 
 ## Pendências / próximos passos
 
-- **Portal no lobby**: adicionar `pub const COMUNICACAO: &str = "comunicacao";`
-  em `lobby/portals.rs::slug` e um card no grid do lobby. Deixado de fora aqui
-  para não conflitar com o WIP do YG-73 (lobby).
+- **Portal no lobby** ✅ **shipado** (merge YG-73–91, `70914c2`): `pub const COMUNICACAO`
+  em `lobby/portals.rs::slug` + posição em `lobby/grid.rs::pos` + `Tile::Portal("comunicacao")`
+  no grid + card em `static/lobby.js`, com o teste `lobby_has_comunicacao_portal_at_documented_pos`.
+  (Verificado e fechado por YG-99.)
 - **Commit do write-back**: hoje o servidor só *escreve* o arquivo no checkout
   `COMUNICACAO_DIR`. Fazer `git add`/commit (ou abrir PR) das contribuições é um
   passo separado — candidato a um job que sincroniza `_users/` periodicamente.
