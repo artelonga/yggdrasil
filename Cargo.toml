@@ -14,8 +14,10 @@ description = "Yggdrasil — plataforma viva de criação, organização e conex
 publish = false
 
 [workspace.dependencies]
-# Engine importado do co (path dep no dev; será git rev em release — ver YG-17)
-game-core = { path = "../co/game-core" }
+# Engine importado do co — git rev pinado (YG-38/YG-104): destrava o CI (que só faz
+# checkout do yggdrasil; `../co/game-core` não existe lá). rev = co origin/main em
+# 2026-06-07 (mesmo código do checkout local `../co/game-core`, sem drift). co é público.
+game-core = { git = "https://github.com/artelonga/co", rev = "51faac00b13d11c0ea9addd6881f8748a10a12bc" }
 
 # Web
 axum = "0.8"

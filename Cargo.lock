@@ -937,6 +937,7 @@ dependencies = [
 [[package]]
 name = "game-core"
 version = "0.1.0"
+source = "git+https://github.com/artelonga/co?rev=51faac00b13d11c0ea9addd6881f8748a10a12bc#51faac00b13d11c0ea9addd6881f8748a10a12bc"
 dependencies = [
  "argon2",
  "axum",
