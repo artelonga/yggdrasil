@@ -2,6 +2,25 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.5.0] — 2026-06-07 — Curadoria de léxico — YG-101
+
+### Added — Promover stub → léxico curado — YG-101
+
+- **Curadoria** (`LexiconStore::promote`): um curador promove uma contribuição
+  `_users/<u>/<slug>.md` (`seed_status: stub`) ao léxico **curado**
+  `terms/<slug>.md` (`seed_status: reviewed` + `reviewed_by`/`reviewed_at`).
+  Escrita atômica, **arquiva** (remove) o stub; idempotente (re-promover é no-op);
+  `NotFound` se não há stub nem termo curado. Fecha o ciclo contribuir → revisar
+  → publicar.
+- **Endpoint** `POST /api/v1/comunicacao/lexico/promover` (`{ lang, user, slug }`),
+  **curador-autorizado** via `YGGDRASIL_ADMIN_TOKEN` (mesma chave do feedback/
+  analytics): 401 sem token configurado, **403 não-curador**, 404 termo inexistente.
+- **Fila de revisão repointada**: o item do contribuidor passa a apontar p/ o
+  termo curado (não reaparece como stub).
+- **Write-back de curadoria** (`Writeback::commit_paths`): versiona o stub
+  removido **+** o termo curado num único commit (curador-autorizado, fora do
+  filtro `_users/` do write-back automático); não-bloqueante, env-gated.
+
 ## [2.4.0] — 2026-06-07 — Apply inbound de notas (P-B, build+unit) — YG-97
 
 ### Added — Notas editáveis no CO (round-trip de volta) — YG-97

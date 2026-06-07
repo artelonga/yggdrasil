@@ -51,6 +51,10 @@ pub struct ComunicacaoState {
     /// YG-103: canal de observability — emite `yggdrasil.sala.*` (atividade de
     /// sala, não-conteúdo). `None` ⇒ no-op.
     pub room_events: Option<broadcast::Sender<ObservabilityEvent>>,
+    /// YG-101: token de curador (`YGGDRASIL_ADMIN_TOKEN`, mesmo do feedback/
+    /// analytics) que libera promover stubs → léxico curado. `None` ⇒ curadoria
+    /// desabilitada (401).
+    pub admin_token: Option<String>,
 }
 
 impl ComunicacaoState {
@@ -119,6 +123,26 @@ fn require_user(
     verify_jwt(&token, &state.jwt_secret).map_err(|_| unauthorized())
 }
 
+/// Exige um **curador** (YG-101): `Authorization: Bearer <YGGDRASIL_ADMIN_TOKEN>`
+/// (mesmo padrão do feedback/analytics). 401 se a curadoria não está configurada;
+/// 403 se o token não confere (não-curador).
+#[allow(clippy::result_large_err)]
+fn require_curator(
+    state: &ComunicacaoState,
+    headers: &HeaderMap,
+) -> Result<(), axum::response::Response> {
+    let admin = state
+        .admin_token
+        .as_deref()
+        .ok_or_else(|| err_json(StatusCode::UNAUTHORIZED, "curador_nao_configurado"))?;
+    let provided = extract_bearer(headers).unwrap_or_default();
+    if provided == admin {
+        Ok(())
+    } else {
+        Err(err_json(StatusCode::FORBIDDEN, "nao_e_curador"))
+    }
+}
+
 #[allow(clippy::result_large_err)]
 fn load_owned(
     state: &ComunicacaoState,
@@ -154,6 +178,7 @@ fn map_lexicon_err(e: LexiconError) -> axum::response::Response {
             err_json(StatusCode::UNPROCESSABLE_ENTITY, "lingua_sem_plano")
         }
         LexiconError::EmptyWord => err_json(StatusCode::UNPROCESSABLE_ENTITY, "palavra_vazia"),
+        LexiconError::NotFound(_) => err_json(StatusCode::NOT_FOUND, "termo_nao_encontrado"),
         LexiconError::Io(_) => err_json(StatusCode::INTERNAL_SERVER_ERROR, "erro_io_lexico"),
     }
 }
@@ -427,6 +452,69 @@ pub async fn publicar_elemento(
     .into_response()
 }
 
+// ─── Curadoria de léxico (YG-101) ───────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct PromoverBody {
+    /// Código de língua da entrada (`yo`, `gn-mbya`, …).
+    pub lang: String,
+    /// Usuário contribuidor (dono do stub em `_users/<user>/`).
+    pub user: String,
+    /// Slug do termo a promover.
+    pub slug: String,
+    /// Identidade do curador (`reviewed_by`); default `"curador"`.
+    #[serde(default)]
+    pub curator: Option<String>,
+}
+
+/// `POST /api/v1/comunicacao/lexico/promover` — um **curador** promove um stub
+/// `_users/<u>/<slug>.md` ao léxico curado `terms/<slug>.md` (YG-101). Vira o
+/// frontmatter p/ `reviewed`, arquiva o stub, repõe a fila de revisão do
+/// contribuidor (não reaparece como stub) e versiona a curadoria (git, não-bloq).
+pub async fn promover_termo(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<PromoverBody>,
+) -> impl IntoResponse {
+    if let Err(r) = require_curator(&state, &headers) {
+        return r;
+    }
+    let curator = body.curator.as_deref().unwrap_or("curador");
+    let promotion = match state
+        .lexicon
+        .promote(&body.lang, &body.user, &body.slug, curator)
+    {
+        Ok(p) => p,
+        Err(e) => return map_lexicon_err(e),
+    };
+
+    // a fila do contribuidor reflete o novo status: o item passa a apontar p/ o
+    // termo curado em vez do stub arquivado (não reaparece como pendente).
+    if let Ok(mut queue) = state.store.load_review(&body.user)
+        && let Some(item) = queue.get_mut(&promotion.from_rel)
+    {
+        item.term_path = promotion.to_rel.clone();
+        let _ = state.store.save_review(&body.user, &queue);
+    }
+
+    // versiona a curadoria (stub removido + termo curado) num commit, não-bloq.
+    spawn_curation_writeback(
+        state.writeback.clone(),
+        promotion.from_rel.clone(),
+        promotion.to_rel.clone(),
+        promotion.slug.clone(),
+    );
+
+    Json(serde_json::json!({
+        "promovido": promotion.created,
+        "arquivado": promotion.archived,
+        "de": promotion.from_rel,
+        "para": promotion.to_rel,
+        "slug": promotion.slug,
+    }))
+    .into_response()
+}
+
 // ─── Write-back de contribuições → git (YG-100) ─────────────────────────────────
 
 /// Dispara o write-back de UMA contribuição recém-criada, sem bloquear o
@@ -452,6 +540,33 @@ fn spawn_writeback(writeback: Arc<Writeback>, relative_path: String) {
             Err(e) => {
                 tracing::warn!(erro = %e, "comunicacao write-back: task join falhou");
             }
+        }
+    });
+}
+
+/// Versiona uma **curadoria** (YG-101): stub removido + termo curado num único
+/// commit, sem bloquear o request. Usa `commit_paths` (curador-autorizado) p/
+/// versionar também o caminho curado `terms/<slug>.md` — fora do filtro `_users/`
+/// do write-back automático. Env-gated: desligado → no-op.
+fn spawn_curation_writeback(
+    writeback: Arc<Writeback>,
+    from_rel: String,
+    to_rel: String,
+    slug: String,
+) {
+    tokio::spawn(async move {
+        let message = format!(
+            "feat(comunicacao): curar léxico {slug} ({from_rel} → {to_rel})\n\n\
+             Promoção stub → reviewed via Yggdrasil (YG-101).\n\
+             Co-Authored-By: Claude <noreply@anthropic.com>"
+        );
+        let paths = vec![from_rel, to_rel];
+        let res =
+            tokio::task::spawn_blocking(move || writeback.commit_paths(&paths, &message)).await;
+        match res {
+            Ok(Ok(outcome)) => tracing::debug!(?outcome, "comunicacao curadoria write-back"),
+            Ok(Err(e)) => tracing::warn!(erro = %e, "comunicacao curadoria write-back falhou"),
+            Err(e) => tracing::warn!(erro = %e, "comunicacao curadoria: task join falhou"),
         }
     });
 }
@@ -673,6 +788,7 @@ mod tests {
     use crate::auth::sign_jwt;
 
     const SECRET: &str = "test-secret";
+    const ADMIN: &str = "admin-secret-token";
 
     fn app() -> (Router, TempDir, TempDir) {
         let (router, rd, ld, _terms, _rooms) = app_full();
@@ -714,6 +830,7 @@ mod tests {
                 writeback,
                 term_events: None,
                 room_events: None,
+                admin_token: Some(ADMIN.into()),
             }
             .with_bridge(term_tx, room_tx),
         );
@@ -733,6 +850,7 @@ mod tests {
             .route("/api/v1/comunicacao/salas/{id}/fork", post(fork_sala))
             .route("/api/v1/comunicacao/lexico", get(consultar_lexico))
             .route("/api/v1/comunicacao/lexico/lista", get(lexico_lista))
+            .route("/api/v1/comunicacao/lexico/promover", post(promover_termo))
             .route("/api/v1/comunicacao/templates", get(list_templates))
             .route("/api/v1/comunicacao/revisao", get(get_revisao))
             .route("/api/v1/comunicacao/revisao/nota", post(nota_revisao))
@@ -880,6 +998,114 @@ mod tests {
         let rv = body_json(rev).await;
         assert_eq!(rv["total"], 1);
         assert_eq!(rv["vencidos"], 1);
+    }
+
+    // ── YG-101: curadoria (promover stub → curado) ────────────────────────
+
+    async fn publicar_ase(app: &Router, user: &str, id: &str) {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/comunicacao/salas/{id}/elementos/ase/publicar"
+                    ))
+                    .header("authorization", format!("Bearer {}", token(user)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    fn promover_req(admin: Option<&str>, lang: &str, user: &str, slug: &str) -> Request<Body> {
+        let mut b = Request::builder()
+            .method("POST")
+            .uri("/api/v1/comunicacao/lexico/promover")
+            .header("content-type", "application/json");
+        if let Some(a) = admin {
+            b = b.header("authorization", format!("Bearer {a}"));
+        }
+        b.body(Body::from(
+            serde_json::json!({ "lang": lang, "user": user, "slug": slug }).to_string(),
+        ))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn promover_curador_move_stub_para_curado_e_repoe_fila() {
+        let (app, rooms_dir, lex_dir, _t, _r) = app_full();
+        let id = create_yoruba(&app, "alice").await;
+        publicar_ase(&app, "alice", &id).await;
+        assert!(
+            lex_dir
+                .path()
+                .join("yoruba/terms/_users/alice/ase.md")
+                .is_file(),
+            "stub criado"
+        );
+
+        let resp = app
+            .clone()
+            .oneshot(promover_req(Some(ADMIN), "yo", "alice", "ase"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["promovido"], true);
+        assert_eq!(v["para"], "yoruba/terms/ase.md");
+        assert_eq!(v["de"], "yoruba/terms/_users/alice/ase.md");
+
+        // disco: curado existe (reviewed), stub arquivado
+        let curado = std::fs::read_to_string(lex_dir.path().join("yoruba/terms/ase.md")).unwrap();
+        assert!(curado.contains("seed_status: reviewed"));
+        assert!(
+            !lex_dir
+                .path()
+                .join("yoruba/terms/_users/alice/ase.md")
+                .is_file()
+        );
+
+        // fila de revisão da alice: o item aponta p/ o curado, não o stub
+        let rstore = RoomStore::new(rooms_dir.path()).unwrap();
+        let queue = rstore.load_review("alice").unwrap();
+        assert_eq!(queue.items.len(), 1);
+        assert_eq!(queue.items[0].term_path, "yoruba/terms/ase.md");
+    }
+
+    #[tokio::test]
+    async fn promover_sem_curador_403() {
+        let (app, _r, lex_dir, _t, _ro) = app_full();
+        let id = create_yoruba(&app, "alice").await;
+        publicar_ase(&app, "alice", &id).await;
+        // token de usuário comum (não é o admin) → 403
+        let resp = app
+            .clone()
+            .oneshot(promover_req(Some(&token("alice")), "yo", "alice", "ase"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        // nada foi promovido: stub permanece, curado não existe
+        assert!(
+            lex_dir
+                .path()
+                .join("yoruba/terms/_users/alice/ase.md")
+                .is_file()
+        );
+        assert!(!lex_dir.path().join("yoruba/terms/ase.md").is_file());
+    }
+
+    #[tokio::test]
+    async fn promover_termo_inexistente_404() {
+        let (app, _r, _l, _t, _ro) = app_full();
+        let resp = app
+            .clone()
+            .oneshot(promover_req(Some(ADMIN), "yo", "alice", "inexistente"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

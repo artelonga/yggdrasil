@@ -348,6 +348,8 @@ async fn main() -> anyhow::Result<()> {
             writeback: comunicacao_writeback,
             term_events: None,
             room_events: None,
+            // YG-101: curadoria de léxico — mesma chave de admin do feedback/analytics.
+            admin_token: std::env::var("YGGDRASIL_ADMIN_TOKEN").ok(),
         }
         .with_bridge(co_bridge.sender(), co_bridge.obs_sender()),
     );
@@ -379,6 +381,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/comunicacao/lexico/lista",
             get(comunicacao_routes::lexico_lista),
+        )
+        .route(
+            "/api/v1/comunicacao/lexico/promover",
+            post(comunicacao_routes::promover_termo),
         )
         .route(
             "/api/v1/comunicacao/templates",

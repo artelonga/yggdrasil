@@ -203,6 +203,47 @@ impl Writeback {
         }
     }
 
+    /// Como [`run`], mas para a **curadoria** (YG-101): versiona caminhos curados
+    /// (`<lang>/terms/<slug>.md`) **além** dos de `_users/`, num único commit. É
+    /// curador-autorizado — não passa pelo filtro `is_user_path` (que protege só
+    /// o write-back automático de contribuições). Mesma semântica de
+    /// idempotência/push/identidade-local do [`run`].
+    pub fn commit_paths(
+        &self,
+        paths: &[String],
+        message: &str,
+    ) -> Result<WritebackOutcome, WritebackError> {
+        if !self.config.enabled {
+            return Ok(WritebackOutcome::Disabled);
+        }
+        if paths.is_empty() {
+            return Ok(WritebackOutcome::NothingToCommit);
+        }
+        self.ensure_git_repo()?;
+        let mut add_args: Vec<&str> = vec!["add", "--"];
+        add_args.extend(paths.iter().map(|s| s.as_str()));
+        self.git(&add_args)?;
+        if self.index_clean()? {
+            return Ok(WritebackOutcome::NothingToCommit);
+        }
+        self.git(&[
+            "-c",
+            &format!("user.name={}", self.config.author_name),
+            "-c",
+            &format!("user.email={}", self.config.author_email),
+            "commit",
+            "-m",
+            message,
+            "--",
+        ])?;
+        let pushed = if self.config.push {
+            self.git(&["push", &self.config.remote, "HEAD"]).is_ok()
+        } else {
+            false
+        };
+        Ok(WritebackOutcome::Committed { pushed })
+    }
+
     /// `true` se o índice está limpo (nada staged) → não há o que commitar.
     fn index_clean(&self) -> Result<bool, WritebackError> {
         let out = Command::new("git")
