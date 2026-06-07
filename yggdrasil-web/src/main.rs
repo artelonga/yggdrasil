@@ -230,16 +230,14 @@ async fn main() -> anyhow::Result<()> {
         yggdrasil_core::instance::InstanceStore::new(&instances_dir)
             .map_err(|e| anyhow::anyhow!("instance store: {e}"))?,
     );
-    // YG-93: producer de eventos p/ a federated bus do CO (Fase P-A). O canal
+    // YG-93/YG-103: producer de eventos p/ a federated bus do CO. O canal
     // `broadcast` é sempre criado (barato); a task de fundo só sobe se
     // `YGG_CO_BRIDGE_URL` + `YGG_CO_BRIDGE_TOKEN` estiverem setados (gate). Sem
-    // eles, `spawn` é no-op e o `sender` fica sem assinantes — emitir é benigno.
-    // E2E aguarda o hub CO-384.
+    // eles, `spawn` é no-op e os `sender`s ficam sem assinantes — emitir é
+    // benigno. `spawn` é adiado até o `comunicacao_store` existir (semeia os
+    // termos publicados, YG-103). E2E aguarda os hubs CO-384/389.
     let co_bridge = co_bridge_producer::Producer::new();
-    let co_bridge_spawned = co_bridge_producer::spawn(&co_bridge, instance_store.clone());
-    if co_bridge_spawned {
-        info!("co-bridge producer ativo (Fase P-A) — emitindo notas ao hub do CO");
-    }
+    let instance_store_for_bridge = instance_store.clone();
 
     let instances_state = Arc::new(
         api::instances::InstancesState::new(auth_state.jwt_secret.clone(), instance_store)
@@ -328,14 +326,30 @@ async fn main() -> anyhow::Result<()> {
     let comunicacao_writeback = Arc::new(yggdrasil_core::comunicacao::Writeback::new(
         yggdrasil_core::comunicacao::WritebackConfig::from_env(),
     ));
-    let comunicacao_state = Arc::new(comunicacao_routes::ComunicacaoState {
-        jwt_secret: auth_state.jwt_secret.clone(),
-        store: comunicacao_store,
-        lexicon: Arc::new(yggdrasil_core::comunicacao::LexiconStore::new(
-            &comunicacao_lexicon_dir,
-        )),
-        writeback: comunicacao_writeback,
-    });
+    // YG-103: sobe a task de fundo do producer agora que ambos os stores existem;
+    // semeia notas (Fase 0) + termos das salas publicadas, e segue emitindo.
+    let co_bridge_spawned = co_bridge_producer::spawn(
+        &co_bridge,
+        instance_store_for_bridge,
+        comunicacao_store.clone(),
+    );
+    if co_bridge_spawned {
+        info!("co-bridge producer ativo — federando notas (P-A) + comunicação (YG-103) ao CO");
+    }
+
+    let comunicacao_state = Arc::new(
+        comunicacao_routes::ComunicacaoState {
+            jwt_secret: auth_state.jwt_secret.clone(),
+            store: comunicacao_store,
+            lexicon: Arc::new(yggdrasil_core::comunicacao::LexiconStore::new(
+                &comunicacao_lexicon_dir,
+            )),
+            writeback: comunicacao_writeback,
+            term_events: None,
+            room_events: None,
+        }
+        .with_bridge(co_bridge.sender(), co_bridge.obs_sender()),
+    );
     // Rede de segurança periódica (no-op se o write-back estiver desligado).
     comunicacao_routes::spawn_writeback_sweeper(comunicacao_state.clone());
     let comunicacao_router = Router::new()

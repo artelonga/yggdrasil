@@ -529,6 +529,7 @@ pub async fn put_note(
                 } else {
                     NoteKind::Created
                 },
+                source: crate::co_bridge_producer::FederatedSource::Notes,
                 title: n.title.clone(),
                 body: n.body.clone(),
                 updated_at: Some(n.updated.to_rfc3339()),
@@ -597,6 +598,7 @@ pub async fn delete_note(
                 instance: id.clone(),
                 slug: slug.clone(),
                 kind: NoteKind::Deleted,
+                source: crate::co_bridge_producer::FederatedSource::Notes,
                 title: String::new(),
                 body: String::new(),
                 updated_at: None,

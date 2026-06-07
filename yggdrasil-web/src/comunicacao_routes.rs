@@ -25,6 +25,7 @@ use axum::{
 };
 use nanoid::nanoid;
 use serde::Deserialize;
+use tokio::sync::broadcast;
 use yggdrasil_core::comunicacao::{
     LexiconError, LexiconStore, ReviewItem, Room, RoomEdit, RoomStore, Writeback,
     lexicon::Contribution, room::EditError, store::StoreError, template_instantiate,
@@ -32,6 +33,9 @@ use yggdrasil_core::comunicacao::{
 };
 
 use crate::auth::verify_jwt;
+use crate::co_bridge_producer::{
+    NoteKind, NoteWritten, ObservabilityEvent, RoomActivity, comunicacao_term_event,
+};
 
 /// Estado compartilhado das rotas de comunicação.
 pub struct ComunicacaoState {
@@ -40,6 +44,50 @@ pub struct ComunicacaoState {
     pub lexicon: Arc<LexiconStore>,
     /// Motor de write-back das contribuições `_users/` → git (YG-100).
     pub writeback: Arc<Writeback>,
+    /// YG-103: canal de conteúdo do producer da federated bus — emite
+    /// `entry.*` `universe_key=comunicacao` por termo publicado. `None` quando
+    /// o producer está desligado (gate de env) — emitir vira no-op.
+    pub term_events: Option<broadcast::Sender<NoteWritten>>,
+    /// YG-103: canal de observability — emite `yggdrasil.sala.*` (atividade de
+    /// sala, não-conteúdo). `None` ⇒ no-op.
+    pub room_events: Option<broadcast::Sender<ObservabilityEvent>>,
+}
+
+impl ComunicacaoState {
+    /// Liga os canais do producer do CO (YG-103). Sem isto, os campos ficam
+    /// `None` e a federação é no-op.
+    pub fn with_bridge(
+        mut self,
+        terms: broadcast::Sender<NoteWritten>,
+        rooms: broadcast::Sender<ObservabilityEvent>,
+    ) -> Self {
+        self.term_events = Some(terms);
+        self.room_events = Some(rooms);
+        self
+    }
+
+    /// Emite os termos de uma sala como `entry.*` na bus (YG-103). No-op se o
+    /// producer estiver desligado. `kind` distingue created/updated/deleted —
+    /// reusa [`comunicacao_term_event`] (mesmo path/corpo do backfill).
+    fn emit_terms(&self, room: &Room, kind: NoteKind) {
+        let Some(tx) = &self.term_events else { return };
+        for elem in &room.elements {
+            if let Some(mut ev) = comunicacao_term_event(room, elem) {
+                ev.kind = kind;
+                let _ = tx.send(ev);
+            }
+        }
+    }
+
+    /// Emite um evento de atividade de sala (`yggdrasil.sala.*`, YG-103). No-op
+    /// se o producer estiver desligado.
+    fn emit_room_activity(&self, room: &Room, activity: RoomActivity, actor: &str) {
+        let Some(tx) = &self.room_events else { return };
+        let _ = tx.send(
+            ObservabilityEvent::room(activity, &room.id, &room.lang, actor)
+                .at(room.updated_at.to_rfc3339()),
+        );
+    }
 }
 
 type ApiState = State<Arc<ComunicacaoState>>;
@@ -218,11 +266,28 @@ pub async fn patch_sala(
         Ok(r) => r,
         Err(r) => return r,
     };
+    let was_published = room.published;
     if let Err(e) = op.apply(&mut room) {
         return map_edit_err(e);
     }
     if let Err(e) = state.store.save(&room) {
         return map_store_err(e);
+    }
+    // YG-103: federa a transição de publicação ao CO.
+    match (was_published, room.published) {
+        (false, true) => {
+            // Sala recém-publicada: anuncia atividade + federa seus termos.
+            state.emit_room_activity(&room, RoomActivity::Published, &user);
+            state.emit_terms(&room, NoteKind::Created);
+        }
+        (true, false) => {
+            state.emit_room_activity(&room, RoomActivity::Unpublished, &user);
+        }
+        (true, true) => {
+            // Edição de uma sala já pública: propaga o conteúdo atualizado.
+            state.emit_terms(&room, NoteKind::Updated);
+        }
+        (false, false) => {}
     }
     Json(room).into_response()
 }
@@ -610,6 +675,21 @@ mod tests {
     const SECRET: &str = "test-secret";
 
     fn app() -> (Router, TempDir, TempDir) {
+        let (router, rd, ld, _terms, _rooms) = app_full();
+        (router, rd, ld)
+    }
+
+    /// Como [`app`], mas liga os canais do producer da bus (YG-103) e devolve os
+    /// `receiver`s para assertar os eventos emitidos (`entry.*` de termos +
+    /// `yggdrasil.sala.*` de atividade).
+    #[allow(clippy::type_complexity)]
+    fn app_full() -> (
+        Router,
+        TempDir,
+        TempDir,
+        broadcast::Receiver<NoteWritten>,
+        broadcast::Receiver<ObservabilityEvent>,
+    ) {
         let rooms_dir = tempfile::tempdir().unwrap();
         let lex_dir = tempfile::tempdir().unwrap();
         // semeia o léxico compartilhado: yoruba/terms/iemanja.md já existe
@@ -624,12 +704,19 @@ mod tests {
         let mut wb_cfg = yggdrasil_core::comunicacao::WritebackConfig::for_testing(lex_dir.path());
         wb_cfg.enabled = false;
         let writeback = Arc::new(Writeback::new(wb_cfg));
-        let state = Arc::new(ComunicacaoState {
-            jwt_secret: SECRET.into(),
-            store,
-            lexicon,
-            writeback,
-        });
+        let (term_tx, term_rx) = broadcast::channel(64);
+        let (room_tx, room_rx) = broadcast::channel(64);
+        let state = Arc::new(
+            ComunicacaoState {
+                jwt_secret: SECRET.into(),
+                store,
+                lexicon,
+                writeback,
+                term_events: None,
+                room_events: None,
+            }
+            .with_bridge(term_tx, room_tx),
+        );
         let router = Router::new()
             .route(
                 "/api/v1/comunicacao/salas",
@@ -650,7 +737,7 @@ mod tests {
             .route("/api/v1/comunicacao/revisao", get(get_revisao))
             .route("/api/v1/comunicacao/revisao/nota", post(nota_revisao))
             .with_state(state);
-        (router, rooms_dir, lex_dir)
+        (router, rooms_dir, lex_dir, term_rx, room_rx)
     }
 
     fn token(user: &str) -> String {
@@ -931,6 +1018,89 @@ mod tests {
         assert_eq!(v["published"], false);
         assert_ne!(v["id"].as_str().unwrap(), id);
         assert!(v["elements"].as_array().unwrap().len() >= 10);
+    }
+
+    /// YG-103: publicar uma sala federa seus termos como `entry.created`
+    /// `universe_key=comunicacao` **e** emite `yggdrasil.sala.published`.
+    #[tokio::test]
+    async fn publicar_sala_federa_termos_e_atividade() {
+        let (app, _r, _l, mut term_rx, mut room_rx) = app_full();
+        let id = create_yoruba(&app, "alice").await;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/comunicacao/salas/{id}"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "op": "set_published", "published": true }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // atividade de sala: yggdrasil.sala.published
+        let act = room_rx.try_recv().expect("evento de atividade emitido");
+        assert_eq!(act.event_type, "yggdrasil.sala.published");
+        assert_eq!(act.room_id, id);
+        assert_eq!(act.actor, "alice");
+        // observability carrega o código da sala (`yo`); o path canônico
+        // (`yoruba/terms/...`) é resolvido só no evento de conteúdo.
+        assert_eq!(act.lang, "yo");
+
+        // termos federados como entry.created universe_key=comunicacao
+        let mut n = 0;
+        while let Ok(ev) = term_rx.try_recv() {
+            assert_eq!(ev.universe_key(), "comunicacao");
+            assert_eq!(ev.kind, NoteKind::Created);
+            assert!(ev.path().starts_with("yoruba/terms/"));
+            n += 1;
+        }
+        assert!(
+            n >= 10,
+            "todos os termos semeados da sala yoruba federados (got {n})"
+        );
+    }
+
+    /// YG-103: despublicar emite `yggdrasil.sala.unpublished` e **não** re-federa
+    /// termos.
+    #[tokio::test]
+    async fn despublicar_sala_emite_unpublished_sem_termos() {
+        let (app, _r, _l, mut term_rx, mut room_rx) = app_full();
+        let id = create_yoruba(&app, "alice").await;
+        let publish = |published: bool| {
+            let app = app.clone();
+            let id = id.clone();
+            async move {
+                app.oneshot(
+                    Request::builder()
+                        .method("PATCH")
+                        .uri(format!("/api/v1/comunicacao/salas/{id}"))
+                        .header("authorization", format!("Bearer {}", token("alice")))
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({ "op": "set_published", "published": published })
+                                .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+            }
+        };
+        publish(true).await; // published
+        // drena os eventos da publicação
+        while term_rx.try_recv().is_ok() {}
+        while room_rx.try_recv().is_ok() {}
+
+        publish(false).await; // unpublished
+        let act = room_rx.try_recv().expect("evento de despublicação");
+        assert_eq!(act.event_type, "yggdrasil.sala.unpublished");
+        assert!(term_rx.try_recv().is_err(), "despublicar não federa termos");
     }
 
     #[tokio::test]

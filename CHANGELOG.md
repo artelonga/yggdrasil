@@ -2,6 +2,29 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.3.0] — 2026-06-07 — Federação de mensageria (build+unit) — YG-103
+
+### Added — Federar comunicação ao CO — YG-103
+
+- O producer da *federated bus* (YG-93) ganha uma **segunda fonte**
+  ([`FederatedSource`]): além das notas (`universe_key=yggdrasil`), emite os
+  **termos de léxico** das salas de comunicação **publicadas** como `entry.*`
+  `universe_key=comunicacao` `path=<lingua>/terms/<slug>.md` — mesmo envelope,
+  auth e `event_log` da YG-93. O código de língua da sala (`yo`, `gn-mbya`) é
+  resolvido ao diretório canônico do repo (`yoruba`, `guarani-mbya`) via
+  `LexiconStore::lang_dir`, idêntico ao path do write-back (YG-100).
+- **Observability de sala** (`ObservabilityEvent`, `yggdrasil.sala.*`): publicar
+  uma sala emite `yggdrasil.sala.published` (+ federa seus termos); despublicar
+  emite `yggdrasil.sala.unpublished`; evento não-conteúdo p/ o `/agora`, sem
+  entry nem replay-log.
+- **Cold-start backfill**: ao (re)conectar, `seed_comunicacao_from_store` semeia
+  os termos de todas as salas publicadas (paralelo ao seed das notas Fase 0).
+- Wiring: `ComunicacaoState::with_bridge` liga os canais (no-op quando o producer
+  está desligado por env); emissão no `patch_sala` (transição de publicação).
+- **E2E pende CO-389** (consumer CO-side de mensageria). Aqui: build + 10 testes
+  de unidade/integração (path/universe por fonte, compat serde, backfill só-de-
+  publicadas, observability sem universe/path, publicar↔federar, despublicar).
+
 ## [2.2.0] — 2026-06-06 — Content + Messaging GA — épico YG-94
 
 Os dois sistemas que o Yuri enquadrou como "conteúdo / mensageria" graduam de
