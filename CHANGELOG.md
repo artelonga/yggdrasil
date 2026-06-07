@@ -2,6 +2,30 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.4.0] — 2026-06-07 — Apply inbound de notas (P-B, build+unit) — YG-97
+
+### Added — Notas editáveis no CO (round-trip de volta) — YG-97
+
+- **Apply inbound** (`yggdrasil-web/src/co_bridge_inbound.rs`): a metade de volta
+  do round-trip. Aplica `entry.{created,updated,deleted}` vindos do CO ao
+  `NoteStore` — `created`/`updated` → `save`, `deleted` → `delete` —, tornando as
+  notas **editáveis no CO**, não só read-only.
+- **Path instance-qualified** (contrato): o path federado das notas passa de
+  `notes/<slug>.md` (YG-93) para **`instances/<id>/notes/<slug>.md`**, p/ o
+  inbound resolver a instância alvo. `parse_note_path` faz o parse (com defesa
+  contra `..`/`/`). **⚠️ Mudança de wire — CO-383/384/385 precisam casar** (sem
+  consumidor vivo ainda, então é seguro agora).
+- **Loop-guard**: echo da própria escrita (`origin_deployment` nosso +
+  `hop_count > 0`) é descartado (`is_own_echo`) — sem laço.
+- **Action tree (UPSERT, file-granular)**: `decide_default` é o auto-resolve
+  headless (ausente→cria, corpo igual→skip, mudou→update, deleted→remove);
+  `apply_with_action` executa o verbo explícito do **CO-385** — `keep-both` grava
+  `<slug>-<n>.md` (ambos retidos, sufixo livre incremental), `replace`/`skip`/etc.
+- Cria um **shell de instância** se a nota inbound referencia uma instância
+  ainda inexistente (idempotente).
+- **E2E pende CO-385** (modal/executor de conflito CO-side). Aqui: build + 15
+  testes (parse, loop-guard, escopo, auto-resolve, CRUD em disco, cada verbo).
+
 ## [2.3.0] — 2026-06-07 — Federação de mensageria (build+unit) — YG-103
 
 ### Added — Federar comunicação ao CO — YG-103

@@ -5,7 +5,8 @@
 //! fora** ao hub do CO (`wss://co.artelonga.com.br/api/v1/events/bridge`, CO-384),
 //! emitindo um [`FederatedEvent`] `entry.{created,updated,deleted}` a cada
 //! escrita. Duas **fontes** ([`FederatedSource`]) no mesmo envelope:
-//! - **notas** (Fase 0, YG-93) → `universe_key=yggdrasil`, `notes/<slug>.md`;
+//! - **notas** (Fase 0, YG-93) → `universe_key=yggdrasil`,
+//!   `instances/<id>/notes/<slug>.md` (instance-qualified desde YG-97);
 //! - **termos de léxico** das salas de comunicação (YG-103) →
 //!   `universe_key=comunicacao`, `<lang>/terms/<slug>.md` (consumer = CO-389).
 //!
@@ -54,7 +55,8 @@ pub const COMUNICACAO_UNIVERSE_KEY: &str = "comunicacao";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "source", rename_all = "snake_case")]
 pub enum FederatedSource {
-    /// Nota do editor de instâncias → universe `yggdrasil`, `notes/<slug>.md`.
+    /// Nota do editor de instâncias → universe `yggdrasil`,
+    /// `instances/<instance>/notes/<slug>.md` (instance-qualified, YG-97).
     #[default]
     Notes,
     /// Termo de léxico de uma sala de comunicação → universe `comunicacao`,
@@ -74,10 +76,14 @@ impl FederatedSource {
         }
     }
 
-    /// `path` no envelope a partir do `slug` canônico, por fonte.
-    pub fn path(&self, slug: &str) -> String {
+    /// `path` no envelope, por fonte. **Notas são instance-qualified**
+    /// (`instances/<instance>/notes/<slug>.md`, YG-97) — o round-trip do CO
+    /// precisa do id da instância p/ resolver o `NoteStore` alvo; o `notes/<slug>.md`
+    /// chato da YG-93 perdia essa informação. Termos de comunicação ignoram o
+    /// `instance` (a sala) — o path canônico é `<lang>/terms/<slug>.md`.
+    pub fn path(&self, instance: &str, slug: &str) -> String {
         match self {
-            FederatedSource::Notes => format!("notes/{slug}.md"),
+            FederatedSource::Notes => format!("instances/{instance}/notes/{slug}.md"),
             FederatedSource::Comunicacao { lang } => format!("{lang}/terms/{slug}.md"),
         }
     }
@@ -154,10 +160,11 @@ impl NoteWritten {
         }
     }
 
-    /// `path` no envelope, derivado da [`FederatedSource`]: `notes/<slug>.md`
-    /// (notas) ou `<lang>/terms/<slug>.md` (termo de comunicação).
+    /// `path` no envelope, derivado da [`FederatedSource`]:
+    /// `instances/<instance>/notes/<slug>.md` (notas, instance-qualified — YG-97)
+    /// ou `<lang>/terms/<slug>.md` (termo de comunicação).
     pub fn path(&self) -> String {
-        self.source.path(&self.slug)
+        self.source.path(&self.instance, &self.slug)
     }
 
     /// `universe_key` no envelope, derivado da fonte (`yggdrasil` | `comunicacao`).
@@ -847,9 +854,9 @@ mod tests {
     }
 
     #[test]
-    fn note_written_path_e_notes_slug_md() {
+    fn note_written_path_e_instance_qualified() {
         let n = note("inst-1", "minha-nota", NoteKind::Created);
-        assert_eq!(n.path(), "notes/minha-nota.md");
+        assert_eq!(n.path(), "instances/inst-1/notes/minha-nota.md");
     }
 
     #[test]
@@ -862,7 +869,7 @@ mod tests {
         assert_eq!(env.event_id, 1);
         assert_eq!(env.event_type, "entry.created");
         assert_eq!(env.universe_key, "yggdrasil");
-        assert_eq!(env.path, "notes/n.md");
+        assert_eq!(env.path, "instances/inst-1/notes/n.md");
         assert_eq!(env.signed_by, "node-xyz");
         assert_eq!(env.origin_deployment, ORIGIN_DEPLOYMENT);
         assert_eq!(env.hop_count, 0);
@@ -875,7 +882,7 @@ mod tests {
         // chaves esperadas pelo CO-384 presentes no wire
         assert!(json.contains("\"event_type\":\"entry.created\""));
         assert!(json.contains("\"universe_key\":\"yggdrasil\""));
-        assert!(json.contains("\"path\":\"notes/n.md\""));
+        assert!(json.contains("\"path\":\"instances/inst-1/notes/n.md\""));
         assert!(json.contains("\"hop_count\":0"));
     }
 
@@ -998,9 +1005,10 @@ mod tests {
             pending.iter().map(|e| e.note.instance.as_str()).collect();
         assert_eq!(instances, ["inst-a", "inst-b"].into_iter().collect());
 
-        // o envelope sintetizado tem path notes/<slug>.md e payload preenchido
+        // o envelope sintetizado é instance-qualified e tem payload preenchido
         let env = FederatedEvent::from_log_entry(&pending[0], "n");
-        assert!(env.path.starts_with("notes/"));
+        assert!(env.path.starts_with("instances/"));
+        assert!(env.path.contains("/notes/"));
         assert!(!env.payload.body.is_empty());
         assert!(env.payload.updated_at.is_some());
     }
@@ -1132,10 +1140,13 @@ mod tests {
     // ── YG-103: fonte comunicação (universe_key/path) ────────────────────
 
     #[test]
-    fn source_notes_mapeia_yggdrasil_e_notes_slug_md() {
+    fn source_notes_mapeia_yggdrasil_e_path_instance_qualified() {
         let s = FederatedSource::Notes;
         assert_eq!(s.universe_key(), "yggdrasil");
-        assert_eq!(s.path("minha-nota"), "notes/minha-nota.md");
+        assert_eq!(
+            s.path("inst-1", "minha-nota"),
+            "instances/inst-1/notes/minha-nota.md"
+        );
     }
 
     #[test]
@@ -1144,7 +1155,8 @@ mod tests {
             lang: "yoruba".into(),
         };
         assert_eq!(s.universe_key(), "comunicacao");
-        assert_eq!(s.path("ase"), "yoruba/terms/ase.md");
+        // comunicação ignora o `instance` (a sala) — path é <lang>/terms/<slug>.md
+        assert_eq!(s.path("sala-1", "ase"), "yoruba/terms/ase.md");
     }
 
     #[test]
@@ -1177,7 +1189,7 @@ mod tests {
         let n: NoteWritten = serde_json::from_str(legacy).unwrap();
         assert_eq!(n.source, FederatedSource::Notes);
         assert_eq!(n.universe_key(), "yggdrasil");
-        assert_eq!(n.path(), "notes/n.md");
+        assert_eq!(n.path(), "instances/i/notes/n.md");
     }
 
     // ── YG-103: cold-start backfill dos termos de salas publicadas ────────
