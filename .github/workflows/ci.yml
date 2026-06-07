@@ -16,6 +16,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # game-core (git-pinado, YG-104) tem build.rs que compila protobuf → exige protoc.
+      - name: Install protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Cache cargo registry, target dirs, and wasm-opt binary
         uses: actions/cache@v4
         with:
