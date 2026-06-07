@@ -3,6 +3,7 @@
 mod api;
 mod auth;
 mod auth_co;
+pub mod co_bridge_inbound;
 pub mod co_bridge_producer;
 pub mod comunicacao_routes;
 pub mod feedback;

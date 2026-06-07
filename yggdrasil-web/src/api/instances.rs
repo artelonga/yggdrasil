@@ -957,7 +957,8 @@ mod tests {
         assert_eq!(ev.title, "Minha Nota");
         assert!(ev.body.contains("[[outra]]"));
         assert!(ev.updated_at.is_some());
-        assert_eq!(ev.path(), "notes/minha-nota.md");
+        // YG-97: path instance-qualified p/ o round-trip de volta do CO.
+        assert_eq!(ev.path(), format!("instances/{id}/notes/minha-nota.md"));
         assert!(rx.try_recv().is_err(), "exatamente 1 evento por save");
 
         // UPDATE (mesma nota já existe → updated)
