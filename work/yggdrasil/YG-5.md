@@ -1,7 +1,7 @@
 ---
 id: 5
 title: "Input de mouse: click em tile = move + auto-entra em portal"
-status: todo
+status: done
 priority: high
 type: feat
 release: 0.1.0
@@ -14,7 +14,7 @@ labels:
   - acessibilidade
 module: yggdrasil-web
 created_at: 2026-05-09T00:00:00Z
-updated_at: 2026-05-09T00:00:00Z
+updated_at: 2026-05-09T13:35:10.941072+00:00
 ---
 
 GIVEN o lobby aceita input de teclado (YG-4),

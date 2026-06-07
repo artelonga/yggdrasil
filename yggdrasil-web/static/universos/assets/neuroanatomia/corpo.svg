@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 400" role="img" aria-label="Silhueta do corpo humano">
+  <!-- Placeholder original (CC0) — silhueta humana para a camada de fundo.
+       Substituível por asset anatômico real via upload. -->
+  <g fill="#46465c">
+    <circle cx="120" cy="46" r="26"/>
+    <path d="M120 74 C152 74 164 100 164 134 L162 214 C162 234 150 244 140 244 L100 244 C90 244 78 234 78 214 L76 134 C76 100 88 74 120 74 Z"/>
+    <rect x="50" y="124" width="20" height="124" rx="10"/>
+    <rect x="170" y="124" width="20" height="124" rx="10"/>
+    <rect x="96" y="238" width="20" height="150" rx="10"/>
+    <rect x="124" y="238" width="20" height="150" rx="10"/>
+  </g>
+</svg>

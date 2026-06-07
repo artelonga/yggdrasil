@@ -1,0 +1,30 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/lobby/player.gd" id="1_player"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_player"]
+size = Vector2(10, 6)
+
+[sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_player"]
+size = Vector2(12, 16)
+
+[node name="Player" type="CharacterBody2D"]
+collision_layer = 1
+collision_mask = 1
+script = ExtResource("1_player")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(0, -8)
+modulate = Color(0.2, 0.9, 0.3, 1)
+texture = SubResource("PlaceholderTexture2D_player")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_player")
+
+[node name="InteractionLabel" type="Label" parent="."]
+offset_left = -50
+offset_top = -30
+offset_right = 50
+offset_bottom = -16
+horizontal_alignment = 1
+text = ""

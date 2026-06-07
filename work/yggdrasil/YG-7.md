@@ -1,7 +1,7 @@
 ---
 id: 7
 title: "Adapter para Tetris (game_core::TetrisGame)"
-status: todo
+status: done
 priority: medium
 type: feat
 release: 0.5.0
@@ -12,7 +12,7 @@ labels:
   - adapter
 module: yggdrasil-core
 created_at: 2026-05-09T00:00:00Z
-updated_at: 2026-05-09T00:00:00Z
+updated_at: 2026-05-09T13:56:42.105232+00:00
 ---
 
 GIVEN o adapter Snake já estabeleceu o padrão (YG-6),

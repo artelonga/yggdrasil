@@ -1,0 +1,56 @@
+# Fly.io deployment for yggdrasil-web.
+
+app = "yggdrasil-artelonga"
+primary_region = "gru"
+
+[build]
+  dockerfile = "yggdrasil-web/Dockerfile"
+
+[mounts]
+  source = "yggdrasil_data"
+  destination = "/data"
+
+[env]
+  YGGDRASIL_DB = "/data/yggdrasil.db"
+  YGGDRASIL_SEMENTES_DB = "/data/yggdrasil-sementes.db"
+  # YG-85: instâncias do editor (e blobs) no volume persistente — /app não é
+  # gravável pelo usuário `ygg`.
+  YGGDRASIL_INSTANCES_DIR = "/data/instances"
+  # comunicacao: salas no volume persistente (mesmo motivo).
+  YGGDRASIL_COMUNICACAO_DIR = "/data/comunicacao"
+  # comunicacao: léxico curado — semente baked-in copiada para o volume no boot
+  # (entrypoint). Writes de contribuições (_users/) ficam no volume gravável.
+  COMUNICACAO_DIR = "/data/comunicacao-lexicon"
+  RUST_LOG = "yggdrasil_web=info,tower_http=info"
+  # SMTP — deixar vazios aqui; definir via `flyctl secrets set` (ver docs/DEPLOY.md)
+  YGGDRASIL_SMTP_HOST = ""
+  YGGDRASIL_SMTP_PORT = "587"
+  YGGDRASIL_SMTP_USER = ""
+  YGGDRASIL_SMTP_FROM = "Yggdrasil <noreply@artelonga.com.br>"
+  # YGGDRASIL_SMTP_PASSWORD — definir via `flyctl secrets set YGGDRASIL_SMTP_PASSWORD=...`
+
+[http_service]
+  internal_port = 3030
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[checks]
+  [checks.health]
+    type = "http"
+    port = 3030
+    path = "/health"
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "60s"

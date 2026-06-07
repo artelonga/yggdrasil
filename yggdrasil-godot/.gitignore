@@ -1,0 +1,30 @@
+# Godot 4 cache & temporary files
+.godot/
+*.tmp.tscn
+*.import
+.import/
+# Script UID files (gerados no import; cenas referenciam por path, não uid://)
+*.uid
+
+# Build outputs (gerados por scripts/build.sh)
+out/
+
+# Editor backups
+*.bak
+*.swp
+*~
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local environment overrides
+.env
+.env.local
+
+# Godot binary cache (scripts/godot.sh install)
+.godot-bin/
+
+# Large generated anatomy meshes (reproduce via scripts/fetch-anatomy.sh)
+assets/anatomia/*.obj
+assets/anatomia/*.obj.import

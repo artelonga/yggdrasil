@@ -1,0 +1,31 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/lobby/arcade_cabinet.gd" id="1_cabinet"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_cab"]
+size = Vector2(28, 28)
+
+[sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_cab"]
+size = Vector2(24, 32)
+
+[node name="ArcadeCabinet" type="Area2D"]
+collision_layer = 2
+collision_mask = 1
+monitoring = true
+monitorable = true
+script = ExtResource("1_cabinet")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(0, -8)
+texture = SubResource("PlaceholderTexture2D_cab")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_cab")
+
+[node name="Label" type="Label" parent="."]
+offset_left = -24
+offset_top = 18
+offset_right = 24
+offset_bottom = 30
+horizontal_alignment = 1
+text = "GAME"

@@ -9,32 +9,15 @@
 //!
 //! Cada portal usa `Tile::Portal(slug)` onde `slug` é o identificador do
 //! jogo destino. A transição é feita via `Session::teleport_to(slug)`.
-//!
-//! Implementação de YG-2.
+
+pub mod grid;
+pub mod portals;
+
+pub use grid::pos;
+pub use grid::{LOBBY_HEIGHT, LOBBY_WIDTH};
+pub use portals::slug;
 
 use game_core::engine::{Objective, Tile, Universe};
-
-/// Largura do mapa do lobby em tiles.
-pub const LOBBY_WIDTH: usize = 40;
-/// Altura do mapa do lobby em tiles.
-pub const LOBBY_HEIGHT: usize = 20;
-
-/// Slug de cada jogo destino. Mantido como constantes para evitar erros
-/// de digitação em adaptadores (YG-6..YG-9) e em testes.
-pub mod slug {
-    pub const SNAKE: &str = "snake";
-    pub const TETRIS: &str = "tetris";
-    pub const INVADERS: &str = "invaders";
-    pub const POKER: &str = "poker";
-}
-
-/// Posição (x, y) de cada portal no grid.
-pub mod pos {
-    pub const SNAKE: (usize, usize) = (10, 8);
-    pub const TETRIS: (usize, usize) = (30, 8);
-    pub const INVADERS: (usize, usize) = (10, 12);
-    pub const POKER: (usize, usize) = (30, 12);
-}
 
 /// Constrói o universo do lobby Yggdrasil.
 ///
@@ -62,6 +45,14 @@ pub fn lobby() -> Universe {
     let _ = u
         .map
         .set_tile(pos::POKER.0, pos::POKER.1, Tile::Portal(slug::POKER.into()));
+    let _ = u
+        .map
+        .set_tile(pos::NEURO.0, pos::NEURO.1, Tile::Portal(slug::NEURO.into()));
+    let _ = u.map.set_tile(
+        pos::COMUNICACAO.0,
+        pos::COMUNICACAO.1,
+        Tile::Portal(slug::COMUNICACAO.into()),
+    );
 
     u
 }
@@ -124,6 +115,15 @@ mod tests {
         assert_eq!(
             portal_slug(u.map.get_tile(pos::POKER.0, pos::POKER.1)),
             Some(slug::POKER)
+        );
+    }
+
+    #[test]
+    fn lobby_has_comunicacao_portal_at_documented_pos() {
+        let u = lobby();
+        assert_eq!(
+            portal_slug(u.map.get_tile(pos::COMUNICACAO.0, pos::COMUNICACAO.1)),
+            Some(slug::COMUNICACAO)
         );
     }
 

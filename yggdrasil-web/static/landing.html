@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Yggdrasil — plataforma de universos</title>
+<meta name="description" content="Yggdrasil — crie, jogue e conecte universos digitais. Placares, universos e criação num só lugar.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
+<style>
+  /* ── Relic Archive (docs/mock/DESIGN 2.md) — tokens ─────────────────────── */
+  :root{
+    --surface:#131313; --sc-lowest:#0e0e0e; --sc-low:#1c1b1b; --sc:#201f1f;
+    --sc-high:#2a2a2a; --sc-highest:#353534; --bright:#393939;
+    --on:#e5e2e1; --on-var:#c5c6cc; --outline-var:#45474c;
+    --primary:#ffb3b5; --on-primary-container:#e0505f; --on-primary:#680018;
+    --secondary:#e9c349;        /* glowing gold */
+    --r-md:.375rem; --r-lg:.5rem; --r-xl:.75rem;
+    --head:'Newsreader',Georgia,serif; --body:'Manrope',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--surface);color:var(--on);font-family:var(--body);
+    min-height:100vh;-webkit-font-smoothing:antialiased;line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  .ico{display:inline-block;vertical-align:middle}
+  ::selection{background:var(--secondary);color:#3c2f00}
+  /* tonal scrollbars */
+  .scroll::-webkit-scrollbar{width:4px}
+  .scroll::-webkit-scrollbar-thumb{background:var(--outline-var);border-radius:10px}
+
+  /* ── Sidebar (universos) ─────────────────────────────────────────────────── */
+  .side{position:fixed;left:0;top:0;height:100%;width:256px;background:var(--sc-low);
+    box-shadow:20px 0 50px rgba(0,0,0,.3);display:flex;flex-direction:column;
+    padding:1.5rem 0;z-index:50}
+  .brand{padding:0 1.5rem 0}
+  .brand h1{margin:0;font-family:var(--head);font-style:italic;font-size:1.55rem;
+    color:var(--secondary);letter-spacing:.06em}
+  .brand p{margin:.1rem 0 0;font-size:10px;text-transform:uppercase;letter-spacing:.2em;
+    color:var(--on-var);opacity:.7}
+  .nav{flex:1;overflow-y:auto;margin-top:2rem;padding:0 .75rem;display:flex;
+    flex-direction:column;gap:.35rem}
+  .nav .lbl{font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--on-var);opacity:.5;padding:.2rem 1rem .4rem}
+  .nav a{display:flex;align-items:center;gap:.9rem;padding:.6rem 1rem;border-radius:var(--r-md);
+    color:var(--on-var);opacity:.78;transition:all .15s;border-left:3px solid transparent}
+  .nav a:hover{background:var(--sc);opacity:1;transform:translateX(2px)}
+  .nav a.on{opacity:1;color:var(--primary);border-left-color:var(--primary);
+    background:linear-gradient(90deg,rgba(255,179,181,.10),transparent)}
+  .nav a span.nm{font-size:.9rem}
+  .nav a .hi{margin-left:auto;font-size:11px;color:var(--secondary);
+    font-family:var(--head);font-style:italic}
+  .side .foot{padding:0 1.5rem;margin-top:auto;display:flex;flex-direction:column;gap:1rem}
+  .cta{width:100%;padding:.8rem;border:0;cursor:pointer;border-radius:var(--r-lg);
+    background:linear-gradient(45deg,var(--primary),var(--on-primary-container));
+    color:var(--on-primary);font-family:var(--body);font-weight:700;font-size:.72rem;
+    text-transform:uppercase;letter-spacing:.14em;text-align:center;
+    box-shadow:0 8px 24px rgba(224,80,95,.18);transition:filter .15s}
+  .cta:hover{filter:brightness(1.1)}
+  .side .links{display:flex;flex-direction:column;gap:.55rem;padding-top:.2rem}
+  .side .links a{display:flex;align-items:center;gap:.6rem;font-size:12px;color:var(--on-var)}
+  .side .links a:hover{color:var(--secondary)}
+
+  /* ── Top bar ─────────────────────────────────────────────────────────────── */
+  .top{position:fixed;top:0;right:0;left:256px;height:74px;display:flex;
+    align-items:center;justify-content:space-between;padding:0 2rem;z-index:40;
+    background:rgba(19,19,19,.8);backdrop-filter:blur(18px);
+    box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .top .word{font-family:var(--head);font-style:italic;font-size:1.4rem;
+    color:var(--secondary);letter-spacing:.06em}
+  .top nav{display:flex;gap:1.6rem;margin-left:2.4rem}
+  .top nav a{font-size:.78rem;text-transform:uppercase;letter-spacing:-.01em;color:var(--on-var)}
+  .top nav a:hover{color:var(--primary)}
+  .top nav a.on{color:var(--secondary);border-bottom:2px solid var(--secondary);padding-bottom:.3rem}
+  .top .right{display:flex;align-items:center;gap:1rem}
+  .btn-ghost{padding:.45rem .9rem;border-radius:999px;border:1px solid rgba(69,71,76,.5);
+    background:transparent;color:var(--on);font-size:.8rem;cursor:pointer;font-family:var(--body)}
+  .btn-ghost:hover{border-color:rgba(233,195,73,.6);color:var(--secondary)}
+
+  /* ── Main ────────────────────────────────────────────────────────────────── */
+  main{margin-left:256px;padding:98px 2rem 4rem;max-width:1500px}
+  .hero{display:grid;grid-template-columns:1.1fr 1fr;gap:1.5rem;margin-bottom:2rem}
+  @media(max-width:1000px){.hero{grid-template-columns:1fr}}
+  .card{background:var(--sc-low);border-radius:var(--r-xl);padding:1.6rem 1.8rem;
+    box-shadow:0 20px 50px rgba(0,0,0,.25);position:relative;overflow:hidden}
+  .card .glow{position:absolute;top:-40px;right:-40px;width:200px;height:200px;
+    background:rgba(255,179,181,.06);filter:blur(80px);border-radius:50%;pointer-events:none}
+  .kicker{font-size:11px;text-transform:uppercase;letter-spacing:.3em;color:var(--secondary);
+    display:block;margin-bottom:.5rem}
+  .hero h2{font-family:var(--head);font-style:italic;font-size:2.6rem;margin:.1rem 0 .6rem;line-height:1.05}
+  .hero .lede{color:var(--on-var);font-size:.96rem;max-width:34ch;margin-bottom:1.4rem}
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem}
+  .stat{background:var(--sc);border-radius:var(--r-lg);padding:.9rem 1rem}
+  .stat .n{font-family:var(--head);font-size:1.9rem;color:var(--secondary);line-height:1}
+  .stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--on-var);
+    margin-top:.35rem}
+
+  .sec-head{display:flex;align-items:baseline;justify-content:space-between;margin:.4rem 0 1rem}
+  .sec-head h3{font-family:var(--head);font-style:italic;font-size:1.7rem;margin:0}
+  .sec-head .sub{font-size:.8rem;color:var(--on-var)}
+
+  /* placares grid */
+  .scores{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:1rem}
+  .gcard{background:var(--sc-low);border-radius:var(--r-xl);padding:1.1rem 1.2rem;
+    display:flex;flex-direction:column;gap:.7rem;transition:transform .15s,background .15s;
+    position:relative;overflow:hidden}
+  .gcard:hover{transform:translateY(-2px);background:var(--sc)}
+  .gcard .top-row{display:flex;align-items:center;gap:.7rem}
+  .gicon{width:42px;height:42px;border-radius:var(--r-lg);background:var(--sc);
+    display:flex;align-items:center;justify-content:center;color:var(--primary);flex:none}
+  .gcard.has .gicon{color:var(--secondary);box-shadow:inset 0 0 16px rgba(233,195,73,.12)}
+  .gcard .gname{font-family:var(--head);font-size:1.15rem;font-style:italic}
+  .gcard .gmeta{font-size:11px;color:var(--on-var);text-transform:uppercase;letter-spacing:.1em}
+  .gcard .gdesc{font-size:12.5px;color:var(--on-var);opacity:.78;line-height:1.35}
+  .gcard .score{display:flex;align-items:baseline;gap:.5rem;margin-top:auto}
+  .gcard .score .v{font-family:var(--head);font-size:1.8rem;color:var(--secondary)}
+  .gcard .score .who{font-size:12px;color:var(--on-var)}
+  .gcard .empty{font-size:13px;color:var(--on-var);opacity:.6;margin-top:auto}
+  .gcard .trophy{position:absolute;right:.8rem;top:.8rem;color:var(--secondary);opacity:.55}
+  .loading{color:var(--on-var);opacity:.6;padding:2rem 0}
+  @media(max-width:760px){.side{display:none}.top{left:0}main{margin-left:0}}
+</style>
+</head>
+<body>
+  <!-- Sidebar: universos -->
+  <aside class="side">
+    <div class="brand"><h1>Yggdrasil</h1><p>Plataforma de universos</p></div>
+    <nav class="nav scroll" id="nav"><div class="lbl">Universos</div>
+      <div class="loading" style="padding:1rem">carregando…</div></nav>
+    <div class="foot">
+      <a class="cta" href="/login" id="cta-criar">✦ Criar universo</a>
+      <div class="links">
+        <a href="/login">↪ Entrar</a>
+        <a href="/lobby">🗺 Mapa do lobby</a>
+        <a href="/feedback">💬 Mural de feedback</a>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Top bar -->
+  <header class="top">
+    <div style="display:flex;align-items:center">
+      <span class="word">Yggdrasil</span>
+      <nav>
+        <a class="on" href="/">Início</a>
+        <a href="/feedback">Comunidade</a>
+        <a href="/lobby">Mapa</a>
+      </nav>
+    </div>
+    <div class="right">
+      <span class="sub" style="font-size:12px;color:var(--on-var)" id="whoami">visitante</span>
+      <a class="btn-ghost" href="/login">Entrar</a>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main>
+    <section class="hero">
+      <div class="card">
+        <div class="glow"></div>
+        <span class="kicker">Bem-vindo</span>
+        <h2>Crie, jogue e conecte universos</h2>
+        <p class="lede">Uma plataforma viva de mundos digitais — arcade, anatomia 3D,
+          léxicos e mais. Explore como visitante; crie o seu quando quiser.</p>
+        <a class="cta" href="/login" style="display:inline-block;width:auto;padding:.7rem 1.4rem">
+          ✦ Criar universo</a>
+      </div>
+      <div class="card">
+        <div class="glow"></div>
+        <span class="kicker">A plataforma agora</span>
+        <div class="stats" id="stats">
+          <div class="stat"><div class="n" id="s-uni">—</div><div class="k">Universos</div></div>
+          <div class="stat"><div class="n" id="s-ses">—</div><div class="k">Sessões 24h</div></div>
+          <div class="stat"><div class="n" id="s-now">—</div><div class="k">Jogando agora</div></div>
+          <div class="stat"><div class="n" id="s-hi">—</div><div class="k">Maior placar</div></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="sec-head">
+      <h3>Placares</h3>
+      <span class="sub">Melhor pontuação de cada universo</span>
+    </div>
+    <section class="scores" id="scores"><div class="loading">carregando placares…</div></section>
+  </main>
+
+  <script>
+    const ICONS = {
+      snake:'<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M4 16c2.6 0 2.6-3.2 5.2-3.2S11.8 16 14.4 16s3.1-1.6 3.1-4.1a4.1 4.1 0 0 0-8.2 0"/><circle cx="4" cy="16" r="1.2" fill="currentColor"/>',
+      tetris:'<g fill="currentColor"><rect x="4" y="3" width="5" height="5" rx="1"/><rect x="4" y="9.5" width="5" height="5" rx="1"/><rect x="4" y="16" width="5" height="5" rx="1"/><rect x="10.5" y="16" width="5" height="5" rx="1"/></g>',
+      invaders:'<g fill="currentColor"><rect x="8" y="4" width="2" height="2"/><rect x="14" y="4" width="2" height="2"/><rect x="7" y="7" width="10" height="3"/><rect x="5" y="10" width="14" height="3"/><rect x="5" y="13" width="3" height="2"/><rect x="16" y="13" width="3" height="2"/><rect x="9" y="13" width="6" height="2"/><rect x="6" y="17" width="3" height="2"/><rect x="15" y="17" width="3" height="2"/></g>',
+      poker:'<path fill="currentColor" d="M12 3C9.2 7 4 9 4 13a3.6 3.6 0 0 0 6.2 2.6c-.2 1.7-1 2.9-2.2 3.4h8c-1.2-.5-2-1.7-2.2-3.4A3.6 3.6 0 0 0 20 13c0-4-5.2-6-8-10z"/>',
+      vim:'<path fill="currentColor" opacity="0.22" d="M12 2 22 12 12 22 2 12z"/><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8 9l4 7 4-7"/>',
+      neuro:'<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5.5a3 3 0 0 0-3 3 3 3 0 0 0-2 5.2c0 2 1.6 3.3 3.5 3.3H12m0-11.5a3 3 0 0 1 3 3 3 3 0 0 1 2 5.2c0 2-1.6 3.3-3.5 3.3H12m0-11.5v11.5"/>',
+      _default:'<g fill="currentColor"><circle cx="7" cy="8" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="17" cy="14" r="1.7"/><circle cx="9" cy="16" r="1.7"/></g>',
+      comunicacao:'<path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
+    };
+    const TROPHY = '<svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h12v2h3v2a4 4 0 0 1-4 4 5 5 0 0 1-4 3v2h3v2H8v-2h3v-2a5 5 0 0 1-4-3 4 4 0 0 1-4-4V6h3V4Zm0 4H5a2 2 0 0 0 1 1.7V8Zm12 0v1.7A2 2 0 0 0 19 8h-1Z"/></svg>';
+    const ico = (s,n=22)=>`<svg class="ico" viewBox="0 0 24 24" width="${n}" height="${n}" aria-hidden="true">${ICONS[s]||ICONS._default}</svg>`;
+    const esc = t => String(t==null?'':t).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    const href = s => s==='neuro' ? '/neuro' : '/universos/'+s;
+    const who = id => !id ? '' : String(id).split('@')[0];
+    const fmt = n => (n==null?'—':Number(n).toLocaleString('pt-BR'));
+
+    const J = (u)=>fetch(u).then(r=>r.ok?r.json():null).catch(()=>null);
+
+    Promise.all([
+      J('/api/v1/universos'),
+      J('/api/v1/scores/top?limit=1'),
+      J('/api/v1/stats'),
+    ]).then(([universos, top, stats])=>{
+      universos = universos || [];
+      const scores = (top && top.scores) || [];
+      const byGame = {}; scores.forEach(s=>{ if(!byGame[s.game]||s.score>byGame[s.game].score) byGame[s.game]=s; });
+
+      // sidebar nav — agrupado por categoria, com hover (title) descrevendo o jogo
+      const cats = {};
+      universos.forEach(u=>{ (cats[u.category||'Universos'] = cats[u.category||'Universos']||[]).push(u); });
+      const nav = document.getElementById('nav');
+      nav.innerHTML = Object.keys(cats).map(cat=>{
+        const items = cats[cat].map(u=>{
+          const hi = byGame[u.id] ? `<span class="hi">${fmt(byGame[u.id].score)}</span>` : '';
+          const tt = [u.tag, u.description].filter(Boolean).join(' — ');
+          return `<a href="${href(u.id)}" title="${esc(tt)}">${ico(u.id,20)}<span class="nm">${esc(u.name)}</span>${hi}</a>`;
+        }).join('');
+        return `<div class="lbl">${esc(cat)}</div>${items}`;
+      }).join('');
+
+      // placares grid (icons display top score in each game)
+      const grid = document.getElementById('scores');
+      grid.innerHTML = universos.map(u=>{
+        const s = byGame[u.id];
+        const body = s
+          ? `<div class="score"><span class="v">${fmt(s.score)}</span><span class="who">por ${who(s.user_id)||'anônimo'}</span></div>`
+          : `<div class="empty">sem placar ainda — seja a primeira pessoa</div>`;
+        const meta = [u.category, u.tag].filter(Boolean).join(' · ') || 'universo';
+        return `<a class="gcard ${s?'has':''}" href="${href(u.id)}" title="${esc(u.description||'')}">
+            ${s?('<span class="trophy">'+TROPHY+'</span>'):''}
+            <div class="top-row"><span class="gicon">${ico(u.id,24)}</span>
+              <div><div class="gname">${esc(u.name)}</div><div class="gmeta">${esc(meta)}</div></div></div>
+            ${u.description?`<div class="gdesc">${esc(u.description)}</div>`:''}
+            ${body}</a>`;
+      }).join('');
+
+      // anonymous stats (públicas, sem PII)
+      const maxHi = scores.reduce((m,s)=>Math.max(m,s.score||0),0);
+      document.getElementById('s-uni').textContent = fmt(universos.length);
+      document.getElementById('s-ses').textContent = fmt(stats ? stats.sessoes_24h : 0);
+      document.getElementById('s-now').textContent = fmt(stats ? stats.jogando_agora : 0);
+      document.getElementById('s-hi').textContent  = maxHi?fmt(maxHi):'—';
+    });
+
+    // já logado? mostra e ajusta CTAs
+    try{ if(localStorage.getItem('yggdrasil-jwt')){
+      document.getElementById('whoami').textContent='você está logado';
+      document.querySelectorAll('#cta-criar').forEach(a=>a.setAttribute('href','/universos/instance/new'));
+    }}catch(_){}
+  </script>
+  <script defer src="/static/feedback.js"></script>
+</body></html>

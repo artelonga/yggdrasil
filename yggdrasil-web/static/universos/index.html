@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yggdrasil — Universos</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d12; color: #e8e3d3;
+      font-family: system-ui, monospace; min-height: 100vh; padding: 2rem 1rem;
+    }
+    .wrap { max-width: 76rem; margin: 0 auto; }
+    .top-bar { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+    .top-bar h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.8rem; }
+    .top-bar a.back { color: #d4af37; text-decoration: none; font-size: .8rem; letter-spacing: .1em; border: 1px solid #d4af37; padding: .35rem .8rem; }
+    .top-bar a.back:hover { background: rgba(212,175,55,.1); }
+    .sub { opacity: .55; font-size: .82rem; margin-top: .5rem; letter-spacing: .04em; }
+
+    .filters { margin: 1.6rem 0 .4rem; display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+    .filters input, .filters select {
+      background: #15151c; color: #e8e3d3; border: 1px solid #2a2a35;
+      font-family: inherit; font-size: .85rem; padding: .45rem .7rem; border-radius: 6px;
+    }
+    .filters input.q { flex: 1; min-width: 12rem; }
+    .filters input:focus, .filters select:focus { outline: none; border-color: #d4af37; }
+    .count { font-size: .76rem; opacity: .5; margin: .9rem 0 1rem; letter-spacing: .05em; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
+    .card {
+      display: flex; flex-direction: column; gap: .5rem; text-decoration: none; color: inherit;
+      background: #14141b; border: 1px solid #24242e; border-radius: 10px; padding: 1.1rem 1.15rem;
+      transition: border-color .12s, transform .12s;
+    }
+    .card:hover { border-color: #d4af37; transform: translateY(-2px); }
+    .card .ct { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .card h3 { font-weight: 400; font-size: 1.1rem; letter-spacing: .02em; }
+    .card .desc { font-size: .82rem; opacity: .62; line-height: 1.45; }
+    .badge { font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; border: 1px solid currentColor; border-radius: 4px; padding: .12rem .4rem; }
+    .badge.arcade   { color: #d4af37; }
+    .badge.atlas    { color: #5b8def; }
+    .badge.lingua   { color: #6dbf8b; }
+    .badge.autorado { color: #b78cf0; }
+    .meta { font-size: .64rem; letter-spacing: .08em; text-transform: uppercase; opacity: .5; margin-left: auto; }
+    .lang { font-size: .68rem; color: #6dbf8b; letter-spacing: .04em; }
+    .empty { opacity: .5; font-style: italic; padding: 2rem 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top-bar">
+      <div>
+        <h1>universos</h1>
+        <div class="sub">Todos os universos do Yggdrasil — busque e filtre.</div>
+      </div>
+      <a class="back" href="/lobby">← lobby</a>
+    </div>
+
+    <div class="filters">
+      <input class="q" id="f-q" type="search" placeholder="buscar…" aria-label="buscar">
+      <select id="f-cat" aria-label="categoria"><option value="">categoria: todas</option></select>
+      <select id="f-players" aria-label="jogadores">
+        <option value="">jogadores: todos</option>
+        <option value="solo">solo</option>
+        <option value="multi">multiplayer</option>
+      </select>
+      <select id="f-lang" aria-label="idioma"><option value="">idioma: todos</option></select>
+    </div>
+    <div class="count" id="count"></div>
+    <div class="grid" id="grid"></div>
+  </div>
+  <script src="/static/universos/index.js"></script>
+  <script defer src="/static/nav.js"></script>
+</body>
+</html>

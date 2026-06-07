@@ -1,0 +1,122 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/lobby/lobby.gd" id="1_lobby"]
+[ext_resource type="PackedScene" path="res://scenes/lobby/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/lobby/arcade_cabinet.tscn" id="3_cabinet"]
+
+[sub_resource type="RectangleShape2D" id="wall_top_shape"]
+size = Vector2(640, 16)
+
+[sub_resource type="RectangleShape2D" id="wall_bottom_shape"]
+size = Vector2(640, 16)
+
+[sub_resource type="RectangleShape2D" id="wall_left_shape"]
+size = Vector2(16, 480)
+
+[sub_resource type="RectangleShape2D" id="wall_right_shape"]
+size = Vector2(16, 480)
+
+[node name="Lobby" type="Node2D"]
+script = ExtResource("1_lobby")
+
+[node name="Floor" type="ColorRect" parent="."]
+offset_right = 640.0
+offset_bottom = 480.0
+color = Color(0.1, 0.1, 0.15, 1)
+
+[node name="WallTop" type="StaticBody2D" parent="."]
+position = Vector2(320, 8)
+collision_layer = 1
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="WallTop"]
+shape = SubResource("wall_top_shape")
+
+[node name="Visual" type="ColorRect" parent="WallTop"]
+offset_left = -320.0
+offset_top = -8.0
+offset_right = 320.0
+offset_bottom = 8.0
+color = Color(0.25, 0.25, 0.35, 1)
+
+[node name="WallBottom" type="StaticBody2D" parent="."]
+position = Vector2(320, 472)
+collision_layer = 1
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="WallBottom"]
+shape = SubResource("wall_bottom_shape")
+
+[node name="Visual" type="ColorRect" parent="WallBottom"]
+offset_left = -320.0
+offset_top = -8.0
+offset_right = 320.0
+offset_bottom = 8.0
+color = Color(0.25, 0.25, 0.35, 1)
+
+[node name="WallLeft" type="StaticBody2D" parent="."]
+position = Vector2(8, 240)
+collision_layer = 1
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="WallLeft"]
+shape = SubResource("wall_left_shape")
+
+[node name="Visual" type="ColorRect" parent="WallLeft"]
+offset_left = -8.0
+offset_top = -240.0
+offset_right = 8.0
+offset_bottom = 240.0
+color = Color(0.25, 0.25, 0.35, 1)
+
+[node name="WallRight" type="StaticBody2D" parent="."]
+position = Vector2(632, 240)
+collision_layer = 1
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="WallRight"]
+shape = SubResource("wall_right_shape")
+
+[node name="Visual" type="ColorRect" parent="WallRight"]
+offset_left = -8.0
+offset_top = -240.0
+offset_right = 8.0
+offset_bottom = 240.0
+color = Color(0.25, 0.25, 0.35, 1)
+
+[node name="Cabinets" type="Node2D" parent="."]
+
+[node name="CabinetTetris" parent="Cabinets" instance=ExtResource("3_cabinet")]
+position = Vector2(128, 112)
+game_name = "Tetris"
+game_scene_path = "res://scenes/games/tetris/tetris.tscn"
+cabinet_color = Color(0, 0.8, 0.8, 1)
+
+[node name="CabinetInvaders" parent="Cabinets" instance=ExtResource("3_cabinet")]
+position = Vector2(320, 112)
+game_name = "Invaders"
+game_scene_path = "res://scenes/games/invaders/invaders.tscn"
+cabinet_color = Color(0.2, 0.8, 0.2, 1)
+
+[node name="CabinetSnake" parent="Cabinets" instance=ExtResource("3_cabinet")]
+position = Vector2(512, 112)
+game_name = "Snake"
+game_scene_path = "res://scenes/games/snake/snake.tscn"
+cabinet_color = Color(0.8, 0.8, 0, 1)
+
+[node name="CabinetPointSet" parent="Cabinets" instance=ExtResource("3_cabinet")]
+position = Vector2(192, 320)
+game_name = "PointSet"
+game_scene_path = "res://scenes/games/pointset/pointset.tscn"
+cabinet_color = Color(0.8, 0.2, 0.8, 1)
+
+[node name="CabinetPoker" parent="Cabinets" instance=ExtResource("3_cabinet")]
+position = Vector2(448, 320)
+game_name = "Poker"
+game_scene_path = "res://scenes/games/poker/poker.tscn"
+cabinet_color = Color(0.8, 0.2, 0.2, 1)
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+position = Vector2(320, 240)
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+limit_left = 0
+limit_top = 0
+limit_right = 640
+limit_bottom = 480

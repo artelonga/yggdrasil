@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Poker — Yggdrasil</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #1c1b1b;
+      color: #e5e2e1;
+      font-family: system-ui, monospace;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 64rem;
+      margin: 0 auto;
+    }
+    h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.6rem; margin-bottom: 0.4rem; }
+    .subtitulo { opacity: 0.5; font-size: 0.85rem; margin-bottom: 2rem; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .saldo-header {
+      border: 1px solid #2a2a3e;
+      background: #14141e;
+      padding: 0.6rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.1rem;
+    }
+    .saldo-label { font-size: 0.65rem; opacity: 0.5; letter-spacing: 0.15em; }
+    .saldo-value { color: #e9c349; font-size: 1.2rem; font-weight: 500; }
+    .saldo-unit { font-size: 0.7rem; opacity: 0.5; letter-spacing: 0.1em; }
+    .badge {
+      display: inline-block;
+      border: 1px solid #e9c349;
+      color: #e9c349;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      margin-left: 1rem;
+      vertical-align: middle;
+    }
+
+    /* Login CTA when anonymous */
+    #cta-login { text-align: center; padding: 4rem 1rem; }
+    #cta-login h2 { font-weight: 300; font-size: 1.4rem; margin-bottom: 1rem; }
+    #cta-login p { opacity: 0.7; max-width: 32rem; margin: 0 auto 2rem; line-height: 1.6; }
+    .btn-primary {
+      display: inline-block;
+      background: #e9c349;
+      color: #1c1b1b;
+      padding: 0.8rem 2rem;
+      text-decoration: none;
+      letter-spacing: 0.1em;
+      font-size: 0.95rem;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+
+    /* Lobby selector */
+    .lobbies {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+      gap: 1.5rem;
+    }
+    .lobby-card {
+      border: 1px solid #2a2a3e;
+      background: #14141e;
+      padding: 1.5rem;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .lobby-card:hover { border-color: #e9c349; }
+    .lobby-card h3 { font-weight: 400; font-size: 1.1rem; margin-bottom: 0.8rem; }
+    .lobby-card .meta { font-size: 0.85rem; opacity: 0.7; }
+    .lobby-card .meta strong { color: #e9c349; }
+
+    /* Table view */
+    .table-view { display: none; }
+    .table-view.active { display: block; }
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    .voltar {
+      background: none;
+      border: 1px solid #2a2a3e;
+      color: #e5e2e1;
+      padding: 0.4rem 1rem;
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .seats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .seat {
+      border: 1px solid #2a2a3e;
+      background: #14141e;
+      padding: 1.2rem;
+      text-align: center;
+      min-height: 7rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.4rem;
+    }
+    .seat .seat-num { font-size: 0.75rem; opacity: 0.4; letter-spacing: 0.15em; }
+    .seat.empty { cursor: pointer; }
+    .seat.empty:hover { border-color: #e9c349; }
+    .seat.empty .seat-label { opacity: 0.4; font-size: 0.9rem; }
+    .seat.bot { border-style: dashed; opacity: 0.7; }
+    .seat.bot .seat-label { color: #888; font-size: 0.85rem; }
+    .seat.human { border-color: #e9c349; }
+    .seat.human .seat-label { color: #e9c349; font-size: 0.85rem; word-break: break-all; }
+    .seat.self { background: rgba(212, 175, 55, 0.08); }
+    .seat.self .seat-label::after { content: ' (você)'; opacity: 0.6; }
+
+    /* CTA: invite friend */
+    .cta-invite {
+      border: 1px solid #e9c349;
+      background: rgba(212, 175, 55, 0.05);
+      padding: 1.2rem;
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .cta-invite p { font-size: 0.95rem; margin-bottom: 0.8rem; }
+    .cta-invite .url-share {
+      display: inline-block;
+      font-family: monospace;
+      background: #1c1b1b;
+      border: 1px solid #2a2a3e;
+      padding: 0.5rem 0.8rem;
+      font-size: 0.85rem;
+      color: #e9c349;
+      cursor: pointer;
+      user-select: all;
+    }
+    .cta-invite .copied { font-size: 0.75rem; opacity: 0.7; margin-left: 0.6rem; }
+
+    .placeholder-game {
+      border-top: 1px dashed #2a2a3e;
+      padding-top: 1.5rem;
+      text-align: center;
+      opacity: 0.5;
+      font-size: 0.85rem;
+    }
+
+    /* Game area */
+    .community-area { margin-bottom: 1.5rem; }
+    .game-info { display: flex; gap: 1.5rem; margin-bottom: 0.8rem; font-size: 0.85rem; align-items: center; }
+    .round-badge { background: #e9c349; color: #1c1b1b; padding: 0.15rem 0.5rem; font-size: 0.75rem; letter-spacing: 0.1em; }
+    .pot-label, .bet-label { opacity: 0.8; }
+    .card-row { display: flex; gap: 0.6rem; flex-wrap: wrap; min-height: 4rem; }
+    .playing-card {
+      width: 2.8rem; height: 4rem;
+      border: 1px solid #444;
+      background: #fff;
+      color: #111;
+      border-radius: 4px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: 1rem; font-weight: bold;
+      cursor: default;
+      animation: card-flip 0.3s ease-out;
+      transform-origin: center;
+    }
+    .playing-card.red { color: #c0392b; }
+    .playing-card .card-suit { font-size: 0.85rem; }
+    .card-back {
+      width: 2.8rem; height: 4rem;
+      border: 1px solid #444;
+      background: #1a3a6e;
+      border-radius: 4px;
+    }
+    @keyframes card-flip {
+      from { transform: rotateY(90deg); opacity: 0; }
+      to   { transform: rotateY(0deg);  opacity: 1; }
+    }
+    .hole-cards-area { margin-bottom: 1rem; }
+    .hole-label { font-size: 0.8rem; opacity: 0.6; margin-bottom: 0.4rem; }
+    .action-bar { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+    .action-btn {
+      border: none; padding: 0.5rem 1.2rem;
+      font-family: inherit; font-size: 0.9rem;
+      cursor: pointer; letter-spacing: 0.05em;
+    }
+    .btn-fold   { background: #6b2121; color: #e5e2e1; }
+    .btn-check  { background: #1e4d2b; color: #e5e2e1; }
+    .btn-call   { background: #1e3a4d; color: #e5e2e1; }
+    .btn-raise  { background: #4d3a1e; color: #e5e2e1; }
+    .action-btn:hover { opacity: 0.85; }
+    .raise-row { display: flex; gap: 0.4rem; align-items: center; }
+    .raise-input {
+      width: 5rem; padding: 0.45rem 0.5rem;
+      background: #14141e; border: 1px solid #2a2a3e;
+      color: #e5e2e1; font-family: inherit; font-size: 0.85rem;
+    }
+    .sua-vez-banner {
+      background: rgba(212, 175, 55, 0.12);
+      border: 1px solid #e9c349;
+      color: #e9c349;
+      padding: 0.6rem 1rem;
+      font-size: 0.9rem;
+      margin-bottom: 0.8rem;
+    }
+    .winner-banner {
+      background: rgba(212, 175, 55, 0.1);
+      border: 1px solid #e9c349;
+      color: #e9c349;
+      padding: 0.8rem 1rem;
+      font-size: 1rem;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    .players-list { font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem; }
+    .players-list .player-row { display: flex; gap: 1rem; margin-bottom: 0.3rem; }
+    .players-list .dealer-chip { color: #e9c349; }
+    .players-list .folded { opacity: 0.4; text-decoration: line-through; }
+
+    /* Status bar */
+    .status {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      font-size: 0.75rem;
+      opacity: 0.5;
+    }
+    .erro-banner {
+      background: #2a1414;
+      border: 1px solid #ff6b6b;
+      color: #ff6b6b;
+      padding: 0.8rem 1rem;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+    }
+  </style>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/ui/relic.css">
+<style>/* relic theme normalization */
+body{font-family:'Manrope',system-ui,sans-serif}
+h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="page-header">
+      <div>
+        <h1>🃏 POKER</h1>
+        <p class="subtitulo">Mesas multiplayer com aposta em sementes</p>
+      </div>
+      <div id="saldo-header" class="saldo-header" style="display:none">
+        <span class="saldo-label">SEU SALDO</span>
+        <span id="saldo-value" class="saldo-value">—</span>
+        <span class="saldo-unit">sementes</span>
+      </div>
+    </div>
+
+    <div id="cta-login">
+      <h2>Entrar para jogar</h2>
+      <p>O pôquer multiplayer é para usuários logados — para guardar seu saldo de sementes, registrar suas vitórias e te marcar nas mesas.</p>
+      <a class="btn-primary" href="/login?next=/universos/poker">Entrar com email</a>
+    </div>
+
+    <div id="lobby-list" class="hidden"></div>
+
+    <div id="table-view" class="table-view">
+      <div class="table-header">
+        <h2 id="table-name">Mesa</h2>
+        <button class="voltar" id="btn-voltar">← Voltar às mesas</button>
+      </div>
+      <div id="erro-banner" class="erro-banner" style="display:none"></div>
+      <div id="cta-invite" class="cta-invite" style="display:none">
+        <p>Você está jogando com um bot. <strong>Convide um amigo</strong> para ocupar o lugar dele — quando 2 humanos sentarem, o bot sai automaticamente.</p>
+        <span class="url-share" id="invite-url"></span>
+        <span class="copied" id="copied-msg"></span>
+      </div>
+      <div class="seats" id="seats"></div>
+
+      <!-- Game area (shown when hand is active) -->
+      <div id="game-area" style="display:none">
+        <div id="sua-vez-banner" class="sua-vez-banner" style="display:none">
+          ⚡ Sua vez! Escolha uma ação.
+        </div>
+        <div class="community-area">
+          <div class="game-info">
+            <span id="round-name" class="round-badge"></span>
+            <span class="pot-label">Pot: <strong id="pot-value">0</strong></span>
+            <span class="bet-label">Aposta atual: <strong id="bet-value">0</strong></span>
+          </div>
+          <div id="community-cards" class="card-row"></div>
+        </div>
+        <div id="hole-cards-area" class="hole-cards-area" style="display:none">
+          <p class="hole-label">Suas cartas:</p>
+          <div id="hole-cards" class="card-row"></div>
+        </div>
+        <div id="action-bar" class="action-bar" style="display:none">
+          <button id="btn-fold" class="action-btn btn-fold">Fold</button>
+          <button id="btn-check" class="action-btn btn-check">Check</button>
+          <button id="btn-call" class="action-btn btn-call">Call</button>
+          <div class="raise-row">
+            <input id="raise-amount" class="raise-input" type="number" min="20" step="10" value="40" />
+            <button id="btn-raise" class="action-btn btn-raise">Raise</button>
+          </div>
+        </div>
+        <div id="winner-banner" class="winner-banner" style="display:none"></div>
+        <div id="players-list" class="players-list"></div>
+      </div>
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script src="/static/universos/poker.js"></script>
+  <script defer src="/static/nav.js"></script>
+  <script defer src="/static/feedback.js"></script>
+</body>
+</html>

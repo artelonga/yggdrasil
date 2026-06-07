@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Feedback da comunidade — Yggdrasil</title>
+<style>
+  :root{--bg:#131313;--card:#0f0f16;--line:#2a2a44;--gold:#e9c349;--ink:#e5e2e1;--mut:#9a9aab}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif}
+  header{padding:1.6rem 1.25rem 1rem;border-bottom:1px solid var(--line);
+    display:flex;flex-direction:column;gap:.2rem}
+  header h1{margin:0;color:var(--gold);font-size:1.35rem}
+  header .sub{color:var(--mut);font-size:.85rem}
+  header a{color:var(--mut);text-decoration:none;font-size:.82rem;margin-top:.3rem}
+  header a:hover{color:var(--gold)}
+  main{max-width:46rem;margin:0 auto;padding:1.1rem 1.25rem 5rem}
+  .feed{display:flex;flex-direction:column;gap:.7rem}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:.8rem .95rem}
+  .meta{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.35rem}
+  .badge{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    border-radius:999px;padding:.1rem .5rem;border:1px solid}
+  .b-feedback{color:#7bd88f;border-color:#2f5d3c}
+  .b-duvida{color:#e0b86c;border-color:#5d4a2f}
+  .b-sugestao{color:#8fb8ff;border-color:#2f425d}
+  .b-ok{color:#e9c349;border-color:#5d4f2f;background:rgba(233,195,73,.08)}
+  .item.is-resolved{border-color:#3a3a2a}
+  .uni{font-size:.72rem;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:.1rem .5rem}
+  .who{font-size:.82rem;color:var(--gold)}
+  .when{font-size:.72rem;color:var(--mut);margin-left:auto}
+  .msg{font-size:.93rem;white-space:pre-wrap;word-break:break-word}
+  .empty,.loading{color:var(--mut);text-align:center;padding:3rem 1rem}
+</style><link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/ui/relic.css">
+<style>/* relic theme normalization */
+body{font-family:'Manrope',system-ui,sans-serif}
+h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
+</head>
+<body>
+  <header>
+    <h1>💬 Feedback da comunidade</h1>
+    <span class="sub">O que dizem sobre o Yggdrasil. Nome aparece; <b>e-mail nunca</b> é exibido.</span>
+    <a href="/lobby">← voltar ao lobby</a>
+  </header>
+  <main>
+    <div id="feed" class="feed"><div class="loading">Carregando…</div></div>
+  </main>
+  <script>
+    const KIND = { feedback:["Feedback","b-feedback"], duvida:["Dúvida","b-duvida"], sugestao:["Sugestão","b-sugestao"] };
+    function esc(s){ const d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML; }
+    function quando(ms){
+      try { return new Date(ms).toLocaleDateString("pt-BR",{day:"2-digit",month:"short",year:"numeric"}); }
+      catch(_){ return ""; }
+    }
+    function item(f){
+      const k = KIND[f.kind] || [f.kind, "b-feedback"];
+      const nome = f.name && f.name.trim() ? esc(f.name) : "Anônimo";
+      const sel = f.resolved ? '<span class="badge b-ok">✓ resolvido</span>' : '';
+      return '<div class="item'+(f.resolved?' is-resolved':'')+'">' +
+        '<div class="meta">' +
+          '<span class="badge '+k[1]+'">'+k[0]+'</span>' +
+          '<span class="uni">'+esc(f.universe)+'</span>' +
+          sel +
+          '<span class="who">'+nome+'</span>' +
+          '<span class="when">'+quando(f.created_at)+'</span>' +
+        '</div>' +
+        '<div class="msg">'+esc(f.message)+'</div>' +
+      '</div>';
+    }
+    fetch("/api/v1/feedback").then(r=>r.ok?r.json():[]).then(list=>{
+      const feed = document.getElementById("feed");
+      if (!list.length) { feed.innerHTML = '<div class="empty">Ainda não há mensagens. Seja a primeira pessoa a deixar uma! 💬</div>'; return; }
+      feed.innerHTML = list.map(item).join("");
+    }).catch(()=>{
+      document.getElementById("feed").innerHTML = '<div class="empty">Não foi possível carregar o feedback.</div>';
+    });
+  </script>
+  <script defer src="/static/nav.js"></script>
+  <script defer src="/static/feedback.js"></script>
+</body></html>
