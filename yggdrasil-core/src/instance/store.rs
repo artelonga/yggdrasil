@@ -7,6 +7,7 @@
 //! Listagem é feita por varredura de diretório. Um índice SQLite para listagem
 //! O(1) por owner/publish é uma otimização futura (não necessária no MVP).
 
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -109,7 +110,7 @@ impl InstanceStore {
                 out.push(inst);
             }
         }
-        out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        out.sort_by_key(|i| Reverse(i.updated_at));
         Ok(out)
     }
 

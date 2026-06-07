@@ -100,7 +100,7 @@ impl ReviewQueue {
     /// Itens vencidos (due_at ≤ now), mais antigos primeiro.
     pub fn due(&self, now: DateTime<Utc>) -> Vec<&ReviewItem> {
         let mut due: Vec<&ReviewItem> = self.items.iter().filter(|i| i.is_due(now)).collect();
-        due.sort_by(|a, b| a.due_at.cmp(&b.due_at));
+        due.sort_by_key(|a| a.due_at);
         due
     }
 }

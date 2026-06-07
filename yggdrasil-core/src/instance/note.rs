@@ -14,6 +14,7 @@
 //! [`slugify`], e invertidos em backlinks. Escrita atômica (temp + rename),
 //! espelhando [`super::store::InstanceStore`].
 
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -139,7 +140,7 @@ impl NoteStore {
                 out.push(parse_note(stem, &raw));
             }
         }
-        out.sort_by(|a, b| b.updated.cmp(&a.updated));
+        out.sort_by_key(|n| Reverse(n.updated));
         Ok(out)
     }
 

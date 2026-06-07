@@ -4,6 +4,7 @@
 //! escrita atômica (temp + rename). Cada sala é `<root>/<id>/room.json`; cada
 //! fila de revisão é `<root>/_review/<user-slug>.json`.
 
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -105,7 +106,7 @@ impl RoomStore {
                 out.push(room);
             }
         }
-        out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        out.sort_by_key(|r| Reverse(r.updated_at));
         Ok(out)
     }
 
