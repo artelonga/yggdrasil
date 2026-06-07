@@ -20,26 +20,25 @@ jobs:
       - name: Install protobuf-compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Cache cargo registry, target dirs, and wasm-opt binary
+      - name: Cache cargo registry and target dirs
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin/wasm-opt
             target/
             universes/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Install wasm-opt
-        run: cargo install wasm-opt --locked
-
       # PULADO (YG-104): as crates WASM v1.0 (universes/universe-*) não compilam (drift
       # da API do universe-sdk). Pular usa os stubs do build.rs; o workspace mantido
       # (core/web, com game-core git-pinado em YG-38/104) compila e roda os testes.
-      # Restaurar `bash scripts/build-universes.sh` quando YG-104 reparar as crates.
+      # Como pulamos `build-universes.sh`, o `wasm-opt` (só usado por ele) também sai —
+      # instalá-lo era dead weight e flaky ("binary already exists" no restore-keys).
+      # Restaurar o passo `cargo install wasm-opt --locked` + `bash scripts/build-universes.sh`
+      # juntos quando YG-104 reparar as crates.
       - name: Build universe WASM crates (skipped, YG-104)
         run: |
           echo "skipped build-universes.sh (WASM v1.0 rotted, YG-104) - using build.rs stubs"
