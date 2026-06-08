@@ -307,7 +307,7 @@ async function loadMore() {
     for (const en of data.entries) {
       const id = 'e' + en.index;
       if (have.has(id)) continue;
-      state.room.elements.push({ id, word: en.word, lang: en.lang, x: en.x, y: en.y, gloss: en.gloss || null, pronunciation: en.pron || null });
+      state.room.elements.push({ id, word: en.word, lang: en.lang, x: en.x, y: en.y, gloss: en.gloss || null, pronunciation: en.pron || null, decomp: en.decomp || null });
     }
     state.lexTotal = data.total;
     cacheRoom();
@@ -363,6 +363,12 @@ function select(id) {
   badge.textContent = { local: 'só na sala', linked: 'ligado ao léxico', contributed: 'contribuído' }[lex];
   document.getElementById('ins-word').textContent = el.word;
   document.getElementById('ins-pron').textContent = el.pronunciation || '';
+  // Decomposição morfológica em partículas (estudo Ayvu Rapyta / NOTAS Cadogan).
+  const decompEl = document.getElementById('ins-decomp');
+  if (decompEl) {
+    decompEl.textContent = el.decomp ? ('partículas: ' + el.decomp) : '';
+    decompEl.style.display = el.decomp ? 'block' : 'none';
+  }
   const ro = !state.canEdit;
   for (const fid of ['f-word', 'f-pron', 'f-gloss', 'f-concept']) {
     document.getElementById(fid).disabled = ro;

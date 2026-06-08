@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ayvu Rapyta — superfície de exploração</title>
+  <style>
+    :root {
+      --bg: #0f1410; --bg2: #161e16; --ink: #e8ead8; --dim: #9aa68f;
+      --mbya: #d8c27a; --es: #cfe0d2; --line: #2c3a2b; --accent: #7fae6f;
+      --chip: #1d281c; --part: #e0a34a; --star: #e8c45a;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(1200px 800px at 50% -10%, #1a241a, var(--bg)); color: var(--ink);
+           font: 16px/1.55 ui-serif, Georgia, "Iowan Old Style", serif; }
+    header { position: sticky; top: 0; z-index: 30; backdrop-filter: blur(6px);
+             background: linear-gradient(#0f1410ee, #0f1410cc); border-bottom: 1px solid var(--line); }
+    .bar { max-width: 940px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .bar h1 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    .bar .sub { color: var(--dim); font-size: 13px; }
+    .nav { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    button, select { background: var(--bg2); color: var(--ink); border: 1px solid var(--line);
+                     border-radius: 8px; padding: 6px 11px; font: inherit; font-size: 14px; cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    button:disabled { opacity: .4; cursor: default; }
+    .iconbtn { border: 1px solid var(--line); background: var(--bg2); border-radius: 8px; padding: 4px 8px; font-size: 14px; }
+    main { max-width: 760px; margin: 0 auto; padding: 22px 20px 120px; }
+    .resume { max-width: 760px; margin: 12px auto 0; background: #18241a; border: 1px solid var(--line); border-radius: 10px;
+              padding: 10px 14px; display: none; align-items: center; gap: 12px; }
+    .resume.show { display: flex; }
+    .resume .g { color: var(--dim); font-size: 14px; }
+    .chtitle { text-align: center; margin: 8px 0 22px; }
+    .chtitle .roman { color: var(--accent); letter-spacing: 3px; font-size: 13px; }
+    .chtitle h2 { margin: 4px 0 2px; font-size: 26px; font-weight: 600; }
+    .chtitle .gn { color: var(--mbya); font-style: italic; }
+    .chtitle .pg { color: var(--dim); font-size: 12px; }
+    .trail { position: relative; }
+    .trail::before { content: ""; position: absolute; left: 27px; top: 0; bottom: 0; width: 2px;
+                     background: linear-gradient(var(--line), transparent); }
+    .stone { position: relative; padding: 0 0 22px 64px; }
+    .stone .dot { position: absolute; left: 18px; top: 6px; width: 20px; height: 20px; border-radius: 50%;
+                  background: var(--bg2); border: 2px solid var(--line); color: var(--dim);
+                  font: 600 11px/16px ui-sans-serif, system-ui; text-align: center; }
+    .stone.on .dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px #7fae6f22; }
+    .card { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+    .stone.on .card { border-color: var(--accent); }
+    .card-actions { float: right; display: flex; gap: 6px; margin: -2px -2px 0 8px; }
+    .card-actions .iconbtn { padding: 2px 7px; font-size: 13px; color: var(--dim); }
+    .card-actions .iconbtn.act { color: var(--star); border-color: #5a4f23; }
+    .card-actions .iconbtn.note.act { color: var(--accent); border-color: #3c5039; }
+    .gn { color: var(--mbya); font-size: 17px; }
+    .es { color: var(--es); margin-top: 7px; font-size: 15px; }
+    .tok { cursor: pointer; border-bottom: 1px dotted #6b7a5f88; transition: background .12s, color .12s; border-radius: 3px; padding: 0 1px; }
+    .tok:hover { background: #7fae6f22; color: #fff; }
+    .tok.linked { border-bottom-color: var(--accent); }
+    .tok.active { background: var(--accent); color: #0f1410; }
+    .tok.lens { background: #e0a34a33; color: #fff; border-bottom-color: var(--part); }
+    .tok.fav::after { content: "★"; color: var(--star); font-size: 10px; vertical-align: super; }
+    .notemark { color: var(--accent); font-size: 12px; margin-left: 6px; }
+    .notes { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 18px; }
+    .notes h3 { font-size: 14px; color: var(--accent); letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+    .notes ul { color: var(--dim); font-size: 14px; padding-left: 18px; }
+    .notes ul.hidden { display: none; }
+    .notes li { margin: 8px 0; }
+    .hint { text-align: center; color: var(--dim); font-size: 12px; margin: 6px 0 20px; }
+    a.back { color: var(--dim); text-decoration: none; font-size: 13px; }
+    a.back:hover { color: var(--ink); }
+    /* slide-over panels */
+    .scrim { position: fixed; inset: 0; background: #0007; z-index: 35; opacity: 0; pointer-events: none; transition: opacity .25s; }
+    .scrim.show { opacity: 1; pointer-events: auto; }
+    .panel { position: fixed; top: 0; height: 100vh; z-index: 40; background: linear-gradient(#141c14, #0f1410);
+             box-shadow: 0 0 40px #0009; transition: transform .28s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; }
+    #inspector { right: 0; width: 360px; max-width: 90vw; border-left: 1px solid var(--line); transform: translateX(100%); }
+    #inspector.open { transform: translateX(0); }
+    #caderno { left: 0; width: 380px; max-width: 92vw; border-right: 1px solid var(--line); transform: translateX(-100%); }
+    #caderno.open { transform: translateX(0); }
+    .ptop { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+    .ptop .x { margin-left: auto; }
+    .pback { background: none; border: none; color: var(--dim); padding: 4px 6px; }
+    .pback:hover { color: var(--ink); }
+    .pbody { padding: 16px 18px; overflow-y: auto; flex: 1; }
+    .insp-word { font-size: 24px; color: var(--mbya); }
+    .insp-sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+    .seglabel { color: var(--accent); font: 600 11px/1 ui-sans-serif; letter-spacing: 1.5px; text-transform: uppercase; margin: 20px 0 11px; display: flex; align-items: center; gap: 8px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 9px; }
+    .pchip { background: var(--chip); border: 1px solid var(--line); border-radius: 10px; padding: 8px 11px; cursor: pointer;
+             font-size: 15px; color: var(--ink); opacity: 0; transform: translateY(8px) scale(.9);
+             animation: pop .42s cubic-bezier(.2,.9,.3,1.2) forwards; }
+    .pchip:hover { border-color: var(--accent); }
+    .pchip.linked { border-color: #3c5039; }
+    .pchip.cur { border-color: var(--part); color: var(--part); }
+    .pchip .cnt { color: var(--dim); font-size: 11px; font-family: ui-sans-serif; margin-left: 4px; }
+    .pchip.plain { cursor: default; color: var(--dim); border-style: dashed; }
+    @keyframes pop { to { opacity: 1; transform: none; } }
+    .sense { border-top: 1px solid var(--line); padding: 11px 0; opacity: 0; animation: fadein .4s ease forwards; }
+    .sense .hw { color: var(--mbya); font-size: 16px; }
+    .sense .src { color: var(--part); font: 600 10px/1 ui-sans-serif; text-transform: uppercase; margin-left: 6px; }
+    .sense .g { color: var(--dim); font-size: 14px; margin-top: 3px; }
+    @keyframes fadein { to { opacity: 1; } }
+    .rowbtns { display: flex; gap: 8px; margin: 14px 0 4px; }
+    .rowbtns .iconbtn.act { color: var(--star); border-color: #5a4f23; }
+    textarea { width: 100%; background: #10160f; color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+               padding: 9px; font: inherit; font-size: 14px; resize: vertical; min-height: 64px; }
+    .tabs { display: flex; gap: 6px; padding: 10px 18px 0; }
+    .tabs button { flex: 1; font-size: 13px; }
+    .tabs button.on { border-color: var(--accent); color: var(--accent); }
+    .item { border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; margin-bottom: 10px; background: var(--bg2); }
+    .item .h { display: flex; align-items: center; gap: 8px; }
+    .item .h b { color: var(--mbya); }
+    .item .h .ref { color: var(--accent); font-size: 12px; cursor: pointer; }
+    .item .h .del { margin-left: auto; color: var(--dim); border: none; background: none; cursor: pointer; }
+    .item .h .del:hover { color: #d77; }
+    .item .body { color: var(--dim); font-size: 14px; margin-top: 6px; }
+    .item textarea { margin-top: 6px; }
+    .empty { color: var(--dim); font-size: 14px; padding: 16px 4px; }
+    .badge { background: #1d281c; border: 1px solid var(--line); border-radius: 20px; padding: 1px 8px; font: 600 11px/1.6 ui-sans-serif; color: var(--dim); }
+    .sugg-form label { display: block; color: var(--dim); font-size: 12px; margin: 10px 0 3px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <a class="back" href="/universos/comunicacao">← léxico</a>
+      <div>
+        <h1 id="work-title">Ayvu Rapyta</h1>
+        <div class="sub" id="work-sub"></div>
+      </div>
+      <div class="nav">
+        <button id="caderno-btn" class="iconbtn">📖 Caderno <span class="badge" id="cad-count">0</span></button>
+        <button id="prev">‹ cap</button>
+        <select id="chapsel"></select>
+        <button id="next">cap ›</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="resume" id="resume">
+    <span class="g" id="resume-txt"></span>
+    <button id="resume-go">retomar a jornada →</button>
+    <button id="resume-x" class="iconbtn">✕</button>
+  </div>
+
+  <main>
+    <div class="chtitle" id="chtitle"></div>
+    <div class="hint">clique numa <b>palavra</b> para decompô-la em partículas · ★ favorita · ✎ nota/sugestão · ← → navega · tudo salvo no Caderno</div>
+    <div class="trail" id="trail"></div>
+    <div class="notes" id="notes"></div>
+  </main>
+
+  <div class="scrim" id="scrim"></div>
+
+  <!-- right: lexicon inspector -->
+  <aside id="inspector" class="panel">
+    <div class="ptop">
+      <button class="pback" id="insp-back" style="display:none">‹ voltar</button>
+      <strong id="insp-title">partículas</strong>
+      <button class="pback x" id="insp-x">✕</button>
+    </div>
+    <div class="pbody" id="insp-body"></div>
+    <div class="ptop" style="border-top:1px solid var(--line);border-bottom:none">
+      <a id="insp-lex" class="back" href="/universos/comunicacao">ver no léxico (galáxia) →</a>
+    </div>
+  </aside>
+
+  <!-- left: caderno (favorites / notes / suggestions) -->
+  <aside id="caderno" class="panel">
+    <div class="ptop"><strong>📖 Meu Caderno</strong><button class="pback x" id="cad-x">✕</button></div>
+    <div class="tabs">
+      <button data-tab="fav" class="on">★ Favoritos</button>
+      <button data-tab="notes">✎ Notas</button>
+      <button data-tab="sugg">✦ Sugestões</button>
+    </div>
+    <div class="pbody" id="cad-body"></div>
+  </aside>
+
+  <script src="/static/universos/corpus.js"></script>
+</body>
+</html>
