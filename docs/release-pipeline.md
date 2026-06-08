@@ -3,57 +3,61 @@
 > PM view as of 2026-06-08. Spans two repos (`yggdrasil`, `co`). The bridge is the
 > seam; this doc sequences the whole portfolio into parallel lanes with one critical path.
 
-## TL;DR
+## TL;DR (updated 2026-06-08 — CO-384 merged)
 
-- **The bottleneck is `CO-384` (federated event-bus hub).** It is the single serialization
-  point. Nothing federates live until it lands; after it, three consumers fan out in parallel.
-- **The yggdrasil bridge side is DONE** — producer (YG-93), inbound apply (YG-97), comunicação
-  federation (YG-103), curation (YG-101) all shipped + CI-green. yggdrasil is *waiting*, not blocking.
-- **CO's EDA spine is DONE** — CO-380 (event bus) + CO-381 (/agora) shipped. CO-384 builds on them.
-- **CO-389's only YG dependency (YG-101) is satisfied** → it unblocks the instant CO-384 exists.
-- Recommended shape: **lean v3.0 read-only launch + v3.1 fast-follow** (whose yggdrasil half is
-  already built). Blocking launch on "all" makes CO the long pole on ~5 serial consumer tasks.
+- **CO-384 (hub) is DONE; CO-389 is in CI.** The old bottleneck cleared — but the bridge **does
+  not carry a single byte yet**, for two reasons (audited 2026-06-08):
+  1. **yggdrasil's producer never opens the socket** — `connect_and_stream` is still the stub
+     that "awaited CO-384". → **YG-119** (real WS dial).
+  2. **The two halves drifted on the wire** — envelope/payload/path/sala-event-types don't match
+     between YG-93/103 and CO-384/389 (the `_users/` vs `<lang>/terms/` path mismatch silently
+     matches nothing). → **YG-118** freezes the contract + aligns the producer.
+- **New critical path = the bridge-go-live epic (YG-117): YG-118 (wire) → YG-119 (dial) → YG-120
+  (JWKS/trust) → YG-121 (secrets + E2E)**, paired with CO-389 + CO-374. This is the real gate to
+  v3.0 full-federation (your launch-scope decision).
+- yggdrasil's *logic* halves (YG-93/97/103/101/112/114) are built; what's missing is the
+  **transport + contract**, not the features.
 
-## Critical path (live federation → launch)
+## Critical path (live federation → launch) — revised
 
 ```
-CO-380 ✅ ──┐
-CO-381 ✅ ──┼──► CO-384 (hub) ──┬──► CO-383 (notes ingest, read-only)  ──► v3.0 live notes at co
-            │   ⟵ THE bottleneck │                                        │
-            │                    ├──► CO-389 (messaging live)  ──────────►│  (YG-101 ✅ satisfied)
-[YG-93/97/  │                    └──► CO-385 (UPSERT modal) ──► editable  │  v3.1
- 103/101 ✅]┘                                                  round-trip │
-                                                                          ▼
-                                              CO-374 (staging Playwright e2e gate) ──► launch
-            launch gates (CO-internal): CO-278/278-B (public API + rate limits),
-                                        CO-145 (encrypted assets)
+CO-380 ✅  CO-381 ✅  CO-384 ✅ (hub)        ┌─► CO-389 (em CI) ─┐
+                          │                  │                   │
+  YG-118 (freeze wire +   │   YG-119 (real   │   CO-383 (notes)  ├─► CO-374 (staging E2E) ─► v3.0
+  align producer) ────────┼─► WS dial) ──────┼─► CO-385 (UPSERT) │       full-federation launch
+        ▲ co-auto first   │   YG-120 (JWKS)  │   (v3.1 editable) │
+        │                 │   YG-121 (secrets+E2E) ──────────────┘
+  [YG-93/97/103/101/112/114 ✅ — lógica pronta; falta transporte+contrato]
+            launch gates (CO-internal): CO-278/278-B (public API), CO-145 (encrypted assets)
 ```
 
-`YG-93/97/103/101` sit at the left edge **already complete** — they feed CO-383/389/385 the instant
-those land. The instance-qualified note path `instances/<id>/notes/<slug>.md` (YG-97) is the wire
-contract CO-383/384/385 must match.
+The instance-qualified note path `instances/<id>/notes/<slug>.md` (YG-97) and the comunicação
+term path `<lang>/terms/_users/<u>/<slug>.md` (YG-118) are the wire contract CO-383/389 consume —
+**frozen in YG-118's spec** as the single source of truth for both repos.
 
 ## Parallel lanes (what can run concurrently)
 
 | Lane | Owner | Tasks | Notes |
 |---|---|---|---|
-| **A — Bridge CO-side** (critical) | co session | `CO-384` → { `CO-383` ∥ `CO-389` ∥ `CO-385` } → `CO-374` | CO-384 serializes; then 3-wide fan-out. The launch critical path. |
-| **B — Corpus / Caderno** | yggdrasil | `YG-111` (finish surface) ∥ `YG-112` (Caderno persist) → `YG-114` (federation, trivial) ∥ `YG-113` (suggestions→curation) → `YG-115` (etymology) | Independent of A until YG-114 e2e needs CO-389. YG-112 is the real unblock (YG-114 rides YG-97's path for free). |
-| **C — CI debt** | yggdrasil | `YG-104` (repair WASM crates + Godot lint; remove band-aids) | Fully independent. Restores honest CI gating. Run anytime. |
-| **D — Per-universe versioning** | yggdrasil | `YG-63`..`YG-67` | Independent tooling. Parallelizable. |
-| **E — Catalog expansion** | yggdrasil | `YG-68`..`YG-72` (Shandara SRD, REGISTRY.yaml, ~40 RPG seeds) | Independent content. **Explicitly post-1.0** per YG-68. |
-| **F — Godot POC** | yggdrasil-godot | `YG-32`..`YG-35` | Separate stack. **YG-35 = migration DECISION** (canvas vs Godot) — a strategic gate, timebox it; not release-blocking filler. |
-| **G — CO launch hardening** | co session | `CO-278`/`278-B` (public API+limits, *critical*), `CO-145` (assets, *critical*), `CO-128` (conflict UI → feeds CO-385) | CO-internal priority; outside this PM's grounding. |
+| **A — Bridge go-live** (CRITICAL, now) | yggdrasil + co | **YG-117** epic: `YG-118` (freeze wire+align) → `YG-119` (WS dial) → `YG-120` (JWKS) → `YG-121` (secrets+E2E); ∥ co: `CO-389` finish, then `CO-383`/`CO-385` | The real launch critical path now that CO-384 is done. **YG-118 is the co-auto first task.** |
+| **B — Corpus / Caderno** ✅ landed v2.6.0 | yggdrasil | `YG-111`(found) `YG-112` `YG-114` done; open: `YG-113` `YG-115` `YG-116` | Follow-ups parallel, not launch-blocking. |
+| **C — CI debt** ✅ done | yggdrasil | `YG-104` (WASM repaired, CI honest) | Closed in v2.6.0. |
+| **D — Per-universe versioning** ✅ done | yggdrasil | `YG-63`..`YG-67` | Closed in v2.6.0. |
+| **E — Catalog expansion** ✅ landed | yggdrasil | `YG-68`/`70`/`72`/`69` (REGISTRY + 40 RPGs + Shandara) | v2.6.0; remaining seeds are content trickle. |
+| **F — Godot POC** ✅ decided | yggdrasil-godot | `YG-35` → ADR hybrid; `YG-32/33/34` superseded | Closed — canvas is production. |
+| **G — CO launch hardening** | co session | `CO-278`/`278-B` (public API), `CO-145` (assets), `CO-128` (conflict UI → CO-385) | CO-internal priority; outside this PM's grounding. |
 
-**Concurrency ceiling:** Lanes A/G are co-session work; B/C/D/E are yggdrasil and can run as separate
-agents/worktrees; F is a different toolchain. Realistic simultaneous front: **A + (B,C) + one of D/E**.
+**Concurrency now:** Lane A is the front (yggdrasil YG-118→121 via **co-auto**, ∥ co session on
+CO-389/383/385 + Lane G). B's follow-ups (YG-113/115/116) and content trickle run in parallel as
+capacity allows — none gate launch.
 
-## Wave sequence
+## Wave sequence (revised)
 
-- **Wave 1 (now):** A starts `CO-384` (critical). B starts `YG-111` + `YG-112`. C does `YG-104`.
-  → 3 lanes live; CO-384 is the gating item to watch.
-- **Wave 2 (CO-384 lands):** `CO-383` ∥ `CO-389` ∥ `CO-385` fan out. `YG-114` lights up (path already
-  contracted by YG-97 → a confirmation test + AYVU_INSTANCE const). `YG-113` after YG-112.
+- **Wave 1 — Phase-2 wave (DONE, v2.6.0):** lanes B/C/D/E + Godot decision landed via 5 parallel
+  agents + integration.
+- **Wave 2 — Bridge go-live (NOW):** `YG-118` (co-auto, first) freezes the wire → `YG-119` dial →
+  `YG-120` JWKS → `YG-121` E2E; co session runs `CO-389` finish + `CO-383`/`385` against YG-118's
+  frozen contract. **This is the v3.0 full-federation gate.**
 - **Wave 3:** `CO-374` e2e gate; CO launch hardening (CO-278/145); trailing content lanes D/E/`YG-115`
   as capacity allows. Godot (F) decided independently.
 
