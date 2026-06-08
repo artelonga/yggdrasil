@@ -9,7 +9,7 @@
 //! Error JSON:  `{"error":"<message>"}`
 
 use serde::{Deserialize, Serialize};
-use universe_sdk::universe_exports;
+use universe_sdk::{Universe, UniverseManifest, universe_exports};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -192,6 +192,30 @@ impl SnakeSession {
         };
         serde_json::to_string(&state)
             .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Universe trait impl
+// ---------------------------------------------------------------------------
+
+impl Universe for SnakeSession {
+    fn create(_params: &str) -> Self {
+        SnakeSession::default()
+    }
+
+    fn tick(&mut self, input: &str) -> String {
+        self.process(input)
+    }
+
+    fn manifest() -> UniverseManifest {
+        UniverseManifest {
+            name: "snake".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            api_version: 1,
+            max_players: 1,
+            capabilities: vec![],
+        }
     }
 }
 

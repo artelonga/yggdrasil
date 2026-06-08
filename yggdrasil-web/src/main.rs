@@ -398,6 +398,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/comunicacao/revisao/nota",
             post(comunicacao_routes::nota_revisao),
         )
+        .route(
+            "/api/v1/comunicacao/corpus/{slug}",
+            get(comunicacao_routes::corpus),
+        )
         .with_state(comunicacao_state);
 
     let app = Router::new()
@@ -413,6 +417,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/universos/poker", get(serve_poker))
         .route("/universos/vim", get(serve_vim))
         .route("/universos/comunicacao", get(serve_comunicacao))
+        .route("/universos/corpus", get(serve_corpus))
         // 301 redirects para preservar bookmarks/links externos com a URL
         // antiga `/games/<slug>`. Remover quando todos os universos ativos
         // estiverem na nova URL por ≥ 1 release.
@@ -522,6 +527,12 @@ async fn serve_vim() -> impl IntoResponse {
 /// elementos multilíngues). Busca a sala via `/api/v1/comunicacao/salas/{id}`.
 async fn serve_comunicacao() -> impl IntoResponse {
     Html(include_str!("../static/universos/comunicacao.html"))
+}
+
+/// Superfície de exploração do **Ayvu Rapyta** — leitura verso a verso, capítulo
+/// a capítulo: Mbyá ⟷ Español + NOTAS de Cadogan + partículas do léxico.
+async fn serve_corpus() -> impl IntoResponse {
+    Html(include_str!("../static/universos/corpus.html"))
 }
 
 /// Índice `/universos` — catálogo unificado e filtrável de todos os universos

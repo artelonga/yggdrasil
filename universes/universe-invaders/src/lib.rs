@@ -1,13 +1,13 @@
 //! universe-invaders — Space Invaders WASM universe for Yggdrasil.
 //!
 //! Canvas: 480×480. 4 rows × 10 cols of aliens.
-//! xorshift64 RNG seeded from the host via `universe_sdk::get_random()`.
+//! xorshift64 RNG seeded from the host via `universe_sdk::random_seed()`.
 //!
 //! Input JSON:  `{"action":"left"|"right"|"fire"}`  (anything else = bare tick)
 //! Output JSON: game state or `{"error":"..."}` on invalid input.
 
 use serde::{Deserialize, Serialize};
-use universe_sdk::get_random;
+use universe_sdk::{Universe, UniverseManifest, random_seed};
 
 // ---------------------------------------------------------------------------
 // Canvas / game constants
@@ -105,7 +105,7 @@ impl Default for InvadersSession {
 
 impl InvadersSession {
     fn init(&mut self) {
-        let seed = get_random();
+        let seed = random_seed();
         self.rng_state = if seed == 0 { 0xdeadbeef_cafebabe } else { seed };
         self.player_x = W / 2 - PLAYER_W / 2;
         self.spawn_aliens();
@@ -359,6 +359,26 @@ impl InvadersSession {
         }
 
         self.render_json()
+    }
+}
+
+impl Universe for InvadersSession {
+    fn create(_params: &str) -> Self {
+        InvadersSession::default()
+    }
+
+    fn tick(&mut self, input: &str) -> String {
+        self.process(input)
+    }
+
+    fn manifest() -> UniverseManifest {
+        UniverseManifest {
+            name: "invaders".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            api_version: 1,
+            max_players: 1,
+            capabilities: vec![],
+        }
     }
 }
 
