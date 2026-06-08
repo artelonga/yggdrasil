@@ -137,6 +137,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "universe-shandara"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "universe-sdk",
+]
+
+[[package]]
 name = "universe-snake"
 version = "1.0.0"
 dependencies = [

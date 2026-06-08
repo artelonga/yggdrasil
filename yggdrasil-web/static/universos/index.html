@@ -41,9 +41,19 @@
     .badge.atlas    { color: #5b8def; }
     .badge.lingua   { color: #6dbf8b; }
     .badge.autorado { color: #b78cf0; }
+    .badge.rpg      { color: #e07a5f; }
+    .badge.mesa     { color: #d4af37; }
+    .badge.ferramentas { color: #8a93a6; }
+    /* status badges */
+    .status { font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; border-radius: 4px; padding: .12rem .4rem; border: 1px solid currentColor; }
+    .status.embedded { color: #6dbf8b; }
+    .status.planned  { color: #d4af37; }
+    .status.external { color: #5b8def; }
     .meta { font-size: .64rem; letter-spacing: .08em; text-transform: uppercase; opacity: .5; margin-left: auto; }
+    .origin { font-size: .64rem; letter-spacing: .06em; text-transform: uppercase; opacity: .5; }
     .lang { font-size: .68rem; color: #6dbf8b; letter-spacing: .04em; }
     .empty { opacity: .5; font-style: italic; padding: 2rem 0; }
+    .counts { font-size: .68rem; opacity: .5; margin-left: .6rem; }
   </style>
 </head>
 <body>
@@ -58,13 +68,15 @@
 
     <div class="filters">
       <input class="q" id="f-q" type="search" placeholder="buscar…" aria-label="buscar">
-      <select id="f-cat" aria-label="categoria"><option value="">categoria: todas</option></select>
-      <select id="f-players" aria-label="jogadores">
-        <option value="">jogadores: todos</option>
-        <option value="solo">solo</option>
-        <option value="multi">multiplayer</option>
+      <select id="f-status" aria-label="situação">
+        <option value="">situação: todas</option>
+        <option value="embedded">🟢 jogável</option>
+        <option value="planned">🟡 planejado</option>
+        <option value="external">🔗 externo</option>
       </select>
-      <select id="f-lang" aria-label="idioma"><option value="">idioma: todos</option></select>
+      <select id="f-type" aria-label="tipo"><option value="">tipo: todos</option></select>
+      <select id="f-origin" aria-label="origem"><option value="">origem: todas</option></select>
+      <select id="f-genre" aria-label="gênero"><option value="">gênero: todos</option></select>
     </div>
     <div class="count" id="count"></div>
     <div class="grid" id="grid"></div>

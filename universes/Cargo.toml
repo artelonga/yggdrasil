@@ -9,6 +9,7 @@ members = [
     "universe-pointset",
     "universe-poker",
     "universe-vim",
+    "universe-shandara",
 ]
 
 # [workspace.package] removido em YG-64: cada crate de universo declara
