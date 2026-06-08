@@ -179,7 +179,8 @@ impl FederatedEvent {
 }
 
 /// Protocolo de fio — mirror do `BridgeMessage` do CO-384.
-/// O Yggdrasil envia `Event`; na (re)conexão pode enviar `ReplayRequest`.
+/// O Yggdrasil envia `Event`; na (re)conexão pode enviar `ReplayRequest`;
+/// o hub responde com `Ack` para confirmar recebimento (fecha o loop de replay).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "bridge_msg_type")]
 pub enum BridgeMessage {
@@ -193,6 +194,9 @@ pub enum BridgeMessage {
         #[serde(flatten)]
         federated: FederatedEvent,
     },
+    /// ACK enviado pelo hub após processar um evento — `event_id` é o `CoEvent.id`
+    /// (UUID v4) do evento recebido.  O producer usa para avançar `last_delivered`.
+    Ack { event_id: String },
 }
 
 impl BridgeMessage {
@@ -836,10 +840,14 @@ fn ws_request(
         .as_str()
         .into_client_request()
         .map_err(|e| BridgeError::BadRequest(e.to_string()))?;
-    let value = format!("Bearer {}", config.token)
+    let auth = format!("Bearer {}", config.token)
         .parse()
         .map_err(|_| BridgeError::BadRequest("token inválido p/ header".into()))?;
-    req.headers_mut().insert("authorization", value);
+    req.headers_mut().insert("authorization", auth);
+    let proto = "co.eda.bridge.v1"
+        .parse()
+        .map_err(|_| BridgeError::BadRequest("subprotocol inválido".into()))?;
+    req.headers_mut().insert("sec-websocket-protocol", proto);
     Ok(req)
 }
 
@@ -905,11 +913,16 @@ async fn run_loop(
         config.url
     );
 
+    let root = store.root().to_path_buf();
     let mut backoff = Backoff::new();
     loop {
-        match connect_and_stream(&config, &mut log, &mut rx, &mut obs_rx).await {
+        match connect_and_stream(&config, &mut log, &root, &mut rx, &mut obs_rx).await {
             Ok(()) => {
                 backoff.reset();
+            }
+            Err(BridgeError::ChannelClosed) => {
+                tracing::info!("co-bridge producer: canal interno fechado — encerrando loop");
+                return;
             }
             Err(e) => {
                 let delay = backoff.fail();
@@ -923,70 +936,168 @@ async fn run_loop(
     }
 }
 
-/// Conecta ao hub, autentica, drena pendentes e faz streaming dos novos eventos.
+/// Conecta ao hub CO-384, drena o `EventLog` pendente e faz streaming bidirecional.
 ///
-/// **STUB de rede (E2E aguarda CO-384/YG-119).** Valida a request de handshake,
-/// mantém o `event_log` consistente e loga os envelopes que *seriam* enviados.
+/// Retorna `Ok(())` se a conexão encerrou de forma limpa (backoff reset);
+/// retorna `Err` em qualquer falha de rede (backoff fail + reconnect no caller).
 async fn connect_and_stream(
     config: &BridgeConfig,
     log: &mut EventLog,
+    root: &std::path::Path,
     rx: &mut broadcast::Receiver<NoteWritten>,
     obs_rx: &mut broadcast::Receiver<ObservabilityEvent>,
 ) -> Result<(), BridgeError> {
-    let _ws_request = ws_request(config)?;
-    for entry in log.pending() {
-        let msg = BridgeMessage::from_log_entry(entry, &config.node_id);
-        match msg.encode() {
-            Ok(_json) => {
-                if let BridgeMessage::Event { federated } = &msg {
-                    tracing::debug!(
-                        "co-bridge producer: envelope pronto (type={}, universe={:?}) \
-                         — envio aguarda CO-384/YG-119",
-                        federated.event.event_type,
-                        federated.event.universe_key
-                    );
-                }
-            }
-            Err(e) => tracing::error!("co-bridge producer: encode falhou: {e}"),
-        }
-    }
+    use futures_util::{SinkExt, StreamExt};
+    use std::collections::HashMap;
+    use tokio_tungstenite::tungstenite::Message;
 
-    tokio::select! {
-        content = rx.recv() => match content {
-            Ok(note) => {
-                log.append(note);
-                Err(BridgeError::HubUnavailable)
-            }
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                tracing::warn!("co-bridge producer: canal de conteúdo lagou {n} evento(s)");
-                Err(BridgeError::HubUnavailable)
-            }
-            Err(broadcast::error::RecvError::Closed) => Err(BridgeError::ChannelClosed),
-        },
-        obs = obs_rx.recv() => match obs {
-            Ok(ev) => {
-                if let Err(e) = ev.encode() {
-                    tracing::error!("co-bridge producer: encode observability falhou: {e}");
+    let req = ws_request(config)?;
+    let (mut ws, _) = tokio_tungstenite::connect_async(req)
+        .await
+        .map_err(|e| BridgeError::Connect(e.to_string()))?;
+
+    tracing::info!(
+        "co-bridge producer: conectado ao hub {} (co.eda.bridge.v1)",
+        config.url
+    );
+
+    // Mapeia CoEvent.id → log_id para correlacionar ACKs do hub.
+    let mut pending_acks: HashMap<String, u64> = HashMap::new();
+
+    // Drena eventos pendentes (cold-start = log inteiro; warm-reconnect = desde último ACK).
+    let to_drain: Vec<(u64, BridgeMessage)> = log
+        .pending()
+        .iter()
+        .map(|e| (e.id, BridgeMessage::from_log_entry(e, &config.node_id)))
+        .collect();
+    for (log_id, msg) in &to_drain {
+        if let BridgeMessage::Event { federated } = msg {
+            pending_acks.insert(federated.event.id.clone(), *log_id);
+        }
+        let json = msg
+            .encode()
+            .map_err(|e| BridgeError::Encode(e.to_string()))?;
+        ws.send(Message::from(json))
+            .await
+            .map_err(|e| BridgeError::Send(e.to_string()))?;
+    }
+    tracing::debug!(
+        "co-bridge producer: {} evento(s) drenados; aguardando tráfego",
+        to_drain.len()
+    );
+
+    // Heartbeat: envia ping a cada 30s para manter a conexão viva.
+    let hb_start = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut heartbeat = tokio::time::interval_at(hb_start, Duration::from_secs(30));
+
+    loop {
+        tokio::select! {
+            frame = ws.next() => {
+                match frame {
+                    Some(Ok(Message::Text(text))) => {
+                        match serde_json::from_str::<BridgeMessage>(&text) {
+                            Ok(BridgeMessage::Ack { event_id }) => {
+                                if let Some(&log_id) = pending_acks.get(&event_id) {
+                                    log.ack(log_id);
+                                    pending_acks.retain(|_, v| *v > log_id);
+                                    tracing::debug!("co-bridge producer: ACK log_id={log_id}");
+                                }
+                            }
+                            Ok(BridgeMessage::Event { ref federated }) => {
+                                let applied = crate::co_bridge_inbound::apply_inbound(root, federated);
+                                tracing::debug!("co-bridge inbound: {:?}", applied);
+                            }
+                            Ok(BridgeMessage::ReplayRequest { .. }) => {}
+                            Err(e) => {
+                                tracing::warn!("co-bridge producer: frame inbound inválido: {e}");
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Ping(data))) => {
+                        ws.send(Message::Pong(data))
+                            .await
+                            .map_err(|e| BridgeError::Send(e.to_string()))?;
+                    }
+                    Some(Ok(Message::Pong(_)))
+                    | Some(Ok(Message::Binary(_)))
+                    | Some(Ok(Message::Frame(_))) => {}
+                    Some(Ok(Message::Close(_))) | None => {
+                        tracing::info!("co-bridge producer: conexão encerrada pelo hub");
+                        return Err(BridgeError::Disconnected);
+                    }
+                    Some(Err(e)) => {
+                        return Err(BridgeError::Recv(e.to_string()));
+                    }
                 }
-                Err(BridgeError::HubUnavailable)
             }
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                tracing::warn!("co-bridge producer: canal de observability lagou {n} evento(s)");
-                Err(BridgeError::HubUnavailable)
+            content = rx.recv() => {
+                match content {
+                    Ok(note) => {
+                        let id = log.append(note);
+                        if let Some(entry) = log.pending().iter().rev().find(|e| e.id == id) {
+                            let msg = BridgeMessage::from_log_entry(entry, &config.node_id);
+                            if let BridgeMessage::Event { federated } = &msg {
+                                pending_acks.insert(federated.event.id.clone(), id);
+                            }
+                            let json = msg.encode().map_err(|e| BridgeError::Encode(e.to_string()))?;
+                            ws.send(Message::from(json))
+                                .await
+                                .map_err(|e| BridgeError::Send(e.to_string()))?;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("co-bridge producer: canal de conteúdo lagou {n} evento(s)");
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        return Err(BridgeError::ChannelClosed);
+                    }
+                }
             }
-            Err(broadcast::error::RecvError::Closed) => Err(BridgeError::ChannelClosed),
-        },
+            obs = obs_rx.recv() => {
+                match obs {
+                    Ok(ev) => {
+                        let msg = ev.to_bridge_message(&config.node_id);
+                        let json = msg.encode().map_err(|e| BridgeError::Encode(e.to_string()))?;
+                        ws.send(Message::from(json))
+                            .await
+                            .map_err(|e| BridgeError::Send(e.to_string()))?;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(
+                            "co-bridge producer: canal de observability lagou {n} evento(s)"
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        return Err(BridgeError::ChannelClosed);
+                    }
+                }
+            }
+            _ = heartbeat.tick() => {
+                ws.send(Message::Ping(vec![].into()))
+                    .await
+                    .map_err(|e| BridgeError::Send(e.to_string()))?;
+                tracing::debug!("co-bridge producer: heartbeat ping enviado");
+            }
+        }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum BridgeError {
-    #[error("hub do CO indisponível (CO-384 ainda não existe)")]
-    HubUnavailable,
     #[error("canal interno de notas fechado")]
     ChannelClosed,
     #[error("request WS inválida: {0}")]
     BadRequest(String),
+    #[error("erro de conexão WS: {0}")]
+    Connect(String),
+    #[error("erro de recepção WS: {0}")]
+    Recv(String),
+    #[error("erro de envio WS: {0}")]
+    Send(String),
+    #[error("erro de codificação de frame: {0}")]
+    Encode(String),
+    #[error("conexão WS encerrada pelo hub")]
+    Disconnected,
 }
 
 #[allow(dead_code)]
@@ -1345,7 +1456,7 @@ mod tests {
     }
 
     #[test]
-    fn ws_request_inclui_url_e_bearer() {
+    fn ws_request_inclui_url_bearer_e_subprotocol() {
         let cfg = BridgeConfig {
             url: "wss://co.test/api/v1/events/bridge".into(),
             token: "service-jwt-abc".into(),
@@ -1355,6 +1466,8 @@ mod tests {
         assert_eq!(req.uri().to_string(), "wss://co.test/api/v1/events/bridge");
         let auth = req.headers().get("authorization").unwrap();
         assert_eq!(auth, "Bearer service-jwt-abc");
+        let proto = req.headers().get("sec-websocket-protocol").unwrap();
+        assert_eq!(proto, "co.eda.bridge.v1");
     }
 
     #[test]
@@ -1630,5 +1743,129 @@ mod tests {
         assert_eq!(n.source, FederatedSource::Notes);
         assert_eq!(n.universe_key(), "yggdrasil");
         assert_eq!(n.path(), "instances/i/notes/n.md");
+    }
+
+    // ── YG-119: integração WS mock — handshake + drain + ACK ────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn integracao_ws_mock_handshake_drain_e_ack() {
+        use futures_util::{SinkExt, StreamExt};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        use tokio::net::TcpListener;
+        use tokio_tungstenite::tungstenite::{
+            Message,
+            handshake::server::{Request as WsRequest, Response as WsResponse},
+        };
+
+        let subprotocol_ok = Arc::new(AtomicBool::new(false));
+        let subprotocol_clone = subprotocol_ok.clone();
+        let received: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(vec![]));
+        let received_clone = received.clone();
+
+        // Porta efêmera em 127.0.0.1 (sem exposição externa)
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Servidor WS mock: verifica subprotocol, drena eventos, envia ACK
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let ws = tokio_tungstenite::accept_hdr_async(
+                stream,
+                move |req: &WsRequest, mut resp: WsResponse| {
+                    if req
+                        .headers()
+                        .get("sec-websocket-protocol")
+                        .map(|v| v.as_bytes() == b"co.eda.bridge.v1")
+                        .unwrap_or(false)
+                    {
+                        subprotocol_clone.store(true, Ordering::SeqCst);
+                        resp.headers_mut().insert(
+                            "sec-websocket-protocol",
+                            "co.eda.bridge.v1".parse().unwrap(),
+                        );
+                    }
+                    Ok(resp)
+                },
+            )
+            .await
+            .unwrap();
+
+            let (mut sink, mut stream) = ws.split();
+            let mut acked = 0usize;
+
+            while let Some(Ok(msg)) = stream.next().await {
+                match msg {
+                    Message::Text(text) => {
+                        let m: BridgeMessage = serde_json::from_str(&text).unwrap();
+                        if let BridgeMessage::Event { ref federated } = m {
+                            received_clone
+                                .lock()
+                                .unwrap()
+                                .push(federated.event.event_type.clone());
+                            let ack = BridgeMessage::Ack {
+                                event_id: federated.event.id.clone(),
+                            };
+                            sink.send(Message::from(ack.encode().unwrap()))
+                                .await
+                                .unwrap();
+                            acked += 1;
+                            if acked >= 2 {
+                                sink.send(Message::Close(None)).await.ok();
+                                break;
+                            }
+                        }
+                    }
+                    Message::Ping(data) => {
+                        sink.send(Message::Pong(data)).await.ok();
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        // Cliente aponta para o servidor mock
+        let cfg = BridgeConfig {
+            url: format!("ws://127.0.0.1:{port}/"),
+            token: "test-jwt".into(),
+            node_id: "test-node".into(),
+        };
+        let mut log = EventLog::new();
+        log.append(note("inst-1", "a", NoteKind::Created));
+        log.append(note("inst-1", "b", NoteKind::Updated));
+
+        let dir = TempDir::new().unwrap();
+        let (_tx, mut rx) = broadcast::channel::<NoteWritten>(16);
+        let (_obs_tx, mut obs_rx) = broadcast::channel::<ObservabilityEvent>(16);
+
+        let result = connect_and_stream(&cfg, &mut log, dir.path(), &mut rx, &mut obs_rx).await;
+
+        // Servidor fechou após ACKar os 2 eventos
+        assert!(
+            matches!(
+                result,
+                Err(BridgeError::Disconnected) | Err(BridgeError::Recv(_))
+            ),
+            "esperava Disconnected ou Recv, got: {result:?}"
+        );
+
+        // Ambos os eventos foram ACK'd no log
+        assert_eq!(log.last_delivered(), Some(2), "log_id 2 deve estar ACK'd");
+
+        server.await.unwrap();
+
+        // Subprotocol correto no handshake
+        assert!(
+            subprotocol_ok.load(Ordering::SeqCst),
+            "sec-websocket-protocol: co.eda.bridge.v1 deve estar presente no handshake"
+        );
+
+        // Servidor recebeu os 2 eventos drenados na ordem correta
+        let events = received.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0], "entry.created");
+        assert_eq!(events[1], "entry.updated");
     }
 }

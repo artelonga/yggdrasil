@@ -4146,6 +4146,7 @@ dependencies = [
  "axum",
  "chrono",
  "dashmap",
+ "futures-util",
  "game-core",
  "jsonwebtoken",
  "lettre",
