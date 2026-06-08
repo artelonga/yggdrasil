@@ -38,6 +38,10 @@ struct LexEntry {
     /// Popularidade (nº de exemplos no corpus). O JSON já vem ordenado por isto.
     #[serde(default)]
     pop: i64,
+    /// Decomposição morfológica (partículas) — semeada das NOTAS de Cadogan no
+    /// estudo do Ayvu Rapyta, ex.: `apy 'extremidade' + yta 'sustento'`.
+    #[serde(default)]
+    decomp: Option<String>,
 }
 
 fn load_entries(root: &Path, rel: &str) -> Vec<LexEntry> {
@@ -55,6 +59,21 @@ fn node_pos(i: usize) -> (f64, f64) {
     let r = SPIRAL_C * (i as f64 + 0.5).sqrt();
     let a = i as f64 * golden;
     (r * a.cos(), r * a.sin())
+}
+
+/// Lê o JSON de corpus baked (`corpus/<slug>.json`, gerado por
+/// `mbya/scripts/corpus-to-json.py`) — a fonte da superfície de exploração do
+/// Ayvu Rapyta (capítulos → versos Mbyá ⟷ Español + glosas/partículas + NOTAS).
+/// `None` se ausente. `slug` é sanitizado (sem travessia de diretório).
+pub fn corpus_json(root: &Path, slug: &str) -> Option<String> {
+    if slug.is_empty()
+        || !slug
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    std::fs::read_to_string(root.join("corpus").join(format!("{slug}.json"))).ok()
 }
 
 /// Arquivo de léxico baked por língua.
@@ -118,6 +137,9 @@ pub struct SliceEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pron: Option<String>,
     pub pop: i64,
+    /// Decomposição morfológica em partículas (estudo Ayvu Rapyta / NOTAS Cadogan).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decomp: Option<String>,
     pub x: f64,
     pub y: f64,
 }
@@ -159,6 +181,7 @@ pub fn lexicon_slice(root: &Path, lang: &str, offset: usize, limit: usize) -> Le
                 gloss: e.gloss,
                 pron: e.pron,
                 pop: e.pop,
+                decomp: e.decomp,
                 x,
                 y,
             }

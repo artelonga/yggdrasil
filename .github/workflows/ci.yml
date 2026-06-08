@@ -32,16 +32,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # PULADO (YG-104): as crates WASM v1.0 (universes/universe-*) não compilam (drift
-      # da API do universe-sdk). Pular usa os stubs do build.rs; o workspace mantido
-      # (core/web, com game-core git-pinado em YG-38/104) compila e roda os testes.
-      # Como pulamos `build-universes.sh`, o `wasm-opt` (só usado por ele) também sai —
-      # instalá-lo era dead weight e flaky ("binary already exists" no restore-keys).
-      # Restaurar o passo `cargo install wasm-opt --locked` + `bash scripts/build-universes.sh`
-      # juntos quando YG-104 reparar as crates.
-      - name: Build universe WASM crates (skipped, YG-104)
-        run: |
-          echo "skipped build-universes.sh (WASM v1.0 rotted, YG-104) - using build.rs stubs"
+      # WASM v1.0 reparado (YG-104): as crates universes/universe-* voltaram a
+      # compilar para wasm32 contra a API atual do universe-sdk (Universe trait +
+      # random_seed/kv_load/kv_store). build-universes.sh usa wasm-opt para otimizar
+      # e validar os budgets de tamanho.
+      - name: Install wasm-opt
+        run: cargo install wasm-opt --locked
+
+      - name: Build universe WASM crates
+        run: bash scripts/build-universes.sh
 
       - name: Build workspace
         run: cargo build --release
@@ -55,8 +54,10 @@ jobs:
       - name: E2E — editor de universos (servidor real + auth real)
         run: YGGDRASIL_WEB_BIN=target/release/yggdrasil-web bash scripts/e2e-editor.sh
 
-  # NÃO-bloqueante (YG-104): lint GDScript do cliente Godot com erros de parse
-  # pré-existentes (poker/snake/tetris). Roda e reporta, mas não bloqueia o CI.
+  # NÃO-bloqueante (decisão do spike YG-35, docs/adr/YG-35-godot-vs-canvas.md): os
+  # jogos 2D Godot (poker/snake/tetris) com erros de parse (GameBase/Card/HandEvaluator)
+  # foram **descopados** — o canvas é o cliente de produção; Godot só para o anatomy3d.
+  # Lint roda e reporta, mas não gateia o CI (não vale consertar GDScript descopado).
   godot:
     runs-on: ubuntu-latest
     continue-on-error: true

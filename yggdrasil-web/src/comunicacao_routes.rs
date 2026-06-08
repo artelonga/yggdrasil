@@ -749,6 +749,20 @@ pub async fn lexico_lista(
     Json(slice).into_response()
 }
 
+/// `GET /api/v1/comunicacao/corpus/{slug}` — JSON de corpus baked (sem auth —
+/// navegação pública). Serve a superfície de exploração do Ayvu Rapyta:
+/// capítulos → versos Mbyá ⟷ Español + glosas/partículas + NOTAS de Cadogan.
+pub async fn corpus(State(state): ApiState, Path(slug): Path<String>) -> impl IntoResponse {
+    match yggdrasil_core::comunicacao::public::corpus_json(state.lexicon.root(), &slug) {
+        Some(body) => (
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            body,
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "corpus não encontrado").into_response(),
+    }
+}
+
 // ─── Templates ──────────────────────────────────────────────────────────────────
 
 /// `GET /api/v1/comunicacao/templates` — lista os templates-semente.
