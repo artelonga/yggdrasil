@@ -28,8 +28,11 @@ use serde::Deserialize;
 use tokio::sync::broadcast;
 use yggdrasil_core::comunicacao::{
     Caderno, CadernoStore, LexiconError, LexiconStore, ReviewItem, Room, RoomEdit, RoomStore,
-    Writeback, lexicon::Contribution, room::EditError, store::StoreError, template_instantiate,
-    template_summaries,
+    Writeback,
+    lexicon::{Contribution, slugify},
+    room::EditError,
+    store::StoreError,
+    template_instantiate, template_summaries,
 };
 use yggdrasil_core::instance::{InstanceStore, NoteStore, UniverseInstance};
 
@@ -86,8 +89,9 @@ impl ComunicacaoState {
     /// reusa [`comunicacao_term_event`] (mesmo path/corpo do backfill).
     fn emit_terms(&self, room: &Room, kind: NoteKind) {
         let Some(tx) = &self.term_events else { return };
+        let user_slug = slugify(&room.owner);
         for elem in &room.elements {
-            if let Some(mut ev) = comunicacao_term_event(room, elem) {
+            if let Some(mut ev) = comunicacao_term_event(room, elem, &user_slug) {
                 ev.kind = kind;
                 let _ = tx.send(ev);
             }
@@ -475,6 +479,9 @@ pub async fn publicar_elemento(
     if contribution.created {
         spawn_writeback(state.writeback.clone(), contribution.relative_path.clone());
     }
+
+    // YG-118: sinal de atividade de sala ao hub do CO.
+    state.emit_room_activity(&room, RoomActivity::TermContributed, &user);
 
     let scope = match contribution.scope {
         yggdrasil_core::comunicacao::LexiconScope::Shared => "compartilhado",
@@ -941,6 +948,9 @@ pub async fn put_nota_caderno(
                 title: n.title.clone(),
                 body: n.body.clone(),
                 updated_at: Some(n.updated.to_rfc3339()),
+                frontmatter: None,
+                actor: None,
+                visibility: crate::co_bridge_producer::Visibility::Public,
             });
             Json(serde_json::json!({
                 "chave": key,
@@ -994,6 +1004,9 @@ pub async fn delete_nota_caderno(
             title: String::new(),
             body: String::new(),
             updated_at: None,
+            frontmatter: None,
+            actor: None,
+            visibility: crate::co_bridge_producer::Visibility::Public,
         });
     }
     Json(serde_json::json!({ "chave": key, "removido": removed })).into_response()
@@ -1593,8 +1606,8 @@ mod tests {
         );
     }
 
-    /// YG-103: despublicar emite `yggdrasil.sala.unpublished` e **não** re-federa
-    /// termos.
+    /// YG-118: despublicar emite `yggdrasil.sala.published{published:false}` (wire
+    /// aposentado) e **não** re-federa termos.
     #[tokio::test]
     async fn despublicar_sala_emite_unpublished_sem_termos() {
         let (app, _r, _l, mut term_rx, mut room_rx) = app_full();
@@ -1626,7 +1639,13 @@ mod tests {
 
         publish(false).await; // unpublished
         let act = room_rx.try_recv().expect("evento de despublicação");
-        assert_eq!(act.event_type, "yggdrasil.sala.unpublished");
+        // YG-118: Unpublished é aposentado do wire — mapeia p/ published{published:false}
+        assert_eq!(act.event_type, "yggdrasil.sala.published");
+        assert_eq!(
+            act.published,
+            Some(false),
+            "payload deve ter published=false"
+        );
         assert!(term_rx.try_recv().is_err(), "despublicar não federa termos");
     }
 

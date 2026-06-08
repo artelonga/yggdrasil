@@ -533,6 +533,9 @@ pub async fn put_note(
                 title: n.title.clone(),
                 body: n.body.clone(),
                 updated_at: Some(n.updated.to_rfc3339()),
+                frontmatter: None,
+                actor: None,
+                visibility: crate::co_bridge_producer::Visibility::Public,
             });
             Json(n).into_response()
         }
@@ -602,6 +605,9 @@ pub async fn delete_note(
                 title: String::new(),
                 body: String::new(),
                 updated_at: None,
+                frontmatter: None,
+                actor: None,
+                visibility: crate::co_bridge_producer::Visibility::Public,
             });
             StatusCode::NO_CONTENT.into_response()
         }
