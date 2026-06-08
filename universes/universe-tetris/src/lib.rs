@@ -1,13 +1,13 @@
 //! universe-tetris — Tetris WASM universe for Yggdrasil.
 //!
 //! Board: 10 wide × 20 tall. 7 classic piece types. xorshift64 RNG seeded
-//! from the host via `universe_sdk::get_random()`.
+//! from the host via `universe_sdk::random_seed()`.
 //!
 //! Input JSON:  `{"action":"left"|"right"|"rotate"|"drop"|"down"}`
 //! Output JSON: game state or `{"error":"..."}` on invalid input.
 
 use serde::{Deserialize, Serialize};
-use universe_sdk::get_random;
+use universe_sdk::{Universe, UniverseManifest, random_seed};
 
 // ---------------------------------------------------------------------------
 // Board constants
@@ -119,7 +119,7 @@ impl Default for TetrisSession {
 
 impl TetrisSession {
     fn init(&mut self) {
-        let seed = get_random();
+        let seed = random_seed();
         // Ensure the seed is non-zero (xorshift64 is undefined for seed=0).
         self.rng_state = if seed == 0 { 0xdeadbeef_cafebabe } else { seed };
         self.board = vec![vec![0u8; BOARD_W]; BOARD_H];
@@ -319,6 +319,26 @@ impl TetrisSession {
 
         serde_json::to_string(&self.render())
             .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string())
+    }
+}
+
+impl Universe for TetrisSession {
+    fn create(_params: &str) -> Self {
+        TetrisSession::default()
+    }
+
+    fn tick(&mut self, input: &str) -> String {
+        self.process(input)
+    }
+
+    fn manifest() -> UniverseManifest {
+        UniverseManifest {
+            name: "tetris".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            api_version: 1,
+            max_players: 1,
+            capabilities: vec![],
+        }
     }
 }
 
