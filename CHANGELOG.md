@@ -2,6 +2,64 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.6.0] — 2026-06-08 — Wave Phase-2: corpus + Caderno, catálogo, versionamento, CI honesto
+
+Wave de 5 lanes paralelas (agentes) + decisão Godot, integrada com reconciliação manual.
+Ver `docs/release-pipeline.md` (pipeline) e `docs/adr/` (decisões Godot + domain-layering).
+
+### Added — Superfície de exploração do corpus (Ayvu Rapyta) — YG-111
+
+- Commitada a superfície de corpus antes só-local: `public::corpus_json` (leitor do JSON baked
+  `corpus/<slug>.json` do repo `comunicacao`), rota `GET /api/v1/comunicacao/corpus/{slug}` +
+  `/universos/corpus`, e o cliente `corpus.html`/`corpus.js` (capítulos → versos Mbyá ⟷ Español,
+  glosas/partículas/NOTAS, pan/zoom/inspector/Caderno local-first). Plane `es → spanish`.
+- ADR de camadas: `docs/adr/domain-layering-co-yggdrasil-comunicacao.md` — mecanismo (plataforma
+  yggdrasil) vs. policy+conteúdo (universo comunicação); conteúdo sobe por valor.
+
+### Added — Caderno do Ayvu Rapyta persistido (servidor) + contrato de federação — YG-112 / YG-114
+
+- Caderno (★ favoritos, ✎ notas, progresso) **durável e cross-device**, por usuário (JWT):
+  `GET/PUT/DELETE /api/v1/comunicacao/caderno/...` + `POST .../migrar` (importa o Caderno do
+  navegador no 1º login, idempotente). `CadernoStore` espelha o store de revisão per-user.
+- As **notas** do Caderno passam pela instância canônica `ayvu-rapyta` → contrato de federação
+  travado (YG-114): path `instances/ayvu-rapyta/notes/<slug>.md`, idêntico ao producer (YG-97).
+  Federa sem mudanças quando o consumer CO-389 entrar no ar.
+- **Backend completo; o wiring do `corpus.js` aos endpoints do Caderno servidor ficou para
+  [YG-116]** — o `corpus.js` de exploração (YG-111) segue local-first por ora.
+
+### Added — Catálogo expandido de universos — YG-68 (YG-70/72/69)
+
+- Reframe de "lobby de 6 jogos" → **catálogo de universos abertos**, PT-BR/RPG-BR first.
+- `universes/REGISTRY.yaml` + `catalog.rs` (`include_str!`+`serde_yaml`, filtros status/type/
+  origin/genre/license/search); `GET /api/v1/universos` faz merge REGISTRY × runtime (compat v1.0
+  por default, envelope `{universos,total,by_status}` com filtros). `/universos` ganha badges +
+  filtros client-side. ~30 RPGs nacionais planejados + comerciais externos semeados.
+- `universe-shandara` (novo): SRD CC-BY-SA "livro vivo" como content-reader WASM (~105 KB,
+  dual-license MIT AND CC-BY-SA-4.0); `GET /api/v1/universos/shandara`.
+
+### Added — Versionamento independente por universe — YG-63 (YG-64/65/66/67)
+
+- Cada crate `universes/universe-*` com SemVer/CHANGELOG/licença próprios (snake/tetris/invaders/
+  pointset/vim `1.0.0`, poker `0.8.0`, sdk `0.1.0`); macro `pkg_version!()` no SDK;
+  `build-universes.sh` imprime tabela `Universe/Version/Size`; `GET /api/v1/universos` expõe a
+  versão SemVer por universo. `docs/UNIVERSE-VERSIONING.md` (regras + tag `universe-<id>-v<X.Y.Z>`).
+
+### Fixed — CI honesto de novo (band-aids retirados) — YG-104
+
+- **Crates WASM v1.0 reparadas**: `universe-{snake,tetris,invaders,pointset,poker}` voltam a
+  compilar p/ `wasm32` contra a API atual do `universe-sdk` (trait `Universe` + `process` export
+  + host imports gated por `target_arch=wasm32` com `#[link(wasm_import_module="env")]`). Os 7
+  testes `wasm_runtime` que carregam blobs reais passam.
+- **`ci.yml`**: restaurados `cargo install wasm-opt` + `bash scripts/build-universes.sh` (build
+  WASM real volta a gatear). O job `godot` segue `continue-on-error` — agora por **decisão de
+  escopo** (spike YG-35 descopou os jogos 2D Godot; canvas é produção), não band-aid.
+
+### Decisão — Godot vs Canvas — YG-35
+
+- ADR `docs/adr/YG-35-godot-vs-canvas.md`: **híbrido, sem migração** — canvas/Rust é o cliente de
+  produção; Godot só para o `anatomy3d`. YG-32/33/34 **superseded** (pilares de multiplayer/signal
+  bus/JWT gateway nunca foram construídos no POC).
+
 ## [2.5.0] — 2026-06-07 — Curadoria de léxico — YG-101
 
 ### Added — Promover stub → léxico curado — YG-101
