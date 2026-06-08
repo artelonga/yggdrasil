@@ -124,16 +124,19 @@ pub fn apply_inbound(root: &Path, event: &FederatedEvent) -> Applied {
     if event.is_own_echo() {
         return Applied::EchoIgnored;
     }
-    if event.universe_key != crate::co_bridge_producer::UNIVERSE_KEY {
-        return Applied::OutOfScope(event.universe_key.clone());
+    let universe_key = event.event.universe_key.as_deref().unwrap_or("");
+    if universe_key != crate::co_bridge_producer::UNIVERSE_KEY {
+        return Applied::OutOfScope(universe_key.to_string());
     }
-    let Some((instance, slug)) = parse_note_path(&event.path) else {
-        return Applied::InvalidPath(event.path.clone());
+    let path = event.event.payload["path"].as_str().unwrap_or("");
+    let Some((instance, slug)) = parse_note_path(path) else {
+        return Applied::InvalidPath(path.to_string());
     };
     let kind = note_kind_from_event(event);
     let store = NoteStore::for_instance(root, &instance);
     let local = store.load(&slug).ok().map(|n| n.body);
-    let action = decide_default(local.as_deref(), kind, &event.payload.body);
+    let incoming_body = event.event.payload["body"].as_str().unwrap_or("");
+    let action = decide_default(local.as_deref(), kind, incoming_body);
     apply_action(root, &store, &instance, &slug, event, action)
 }
 
@@ -143,18 +146,20 @@ pub fn apply_with_action(root: &Path, event: &FederatedEvent, action: UpsertActi
     if event.is_own_echo() {
         return Applied::EchoIgnored;
     }
-    if event.universe_key != crate::co_bridge_producer::UNIVERSE_KEY {
-        return Applied::OutOfScope(event.universe_key.clone());
+    let universe_key = event.event.universe_key.as_deref().unwrap_or("");
+    if universe_key != crate::co_bridge_producer::UNIVERSE_KEY {
+        return Applied::OutOfScope(universe_key.to_string());
     }
-    let Some((instance, slug)) = parse_note_path(&event.path) else {
-        return Applied::InvalidPath(event.path.clone());
+    let path = event.event.payload["path"].as_str().unwrap_or("");
+    let Some((instance, slug)) = parse_note_path(path) else {
+        return Applied::InvalidPath(path.to_string());
     };
     let store = NoteStore::for_instance(root, &instance);
     apply_action(root, &store, &instance, &slug, event, action)
 }
 
 fn note_kind_from_event(event: &FederatedEvent) -> NoteKind {
-    match event.event_type.as_str() {
+    match event.event.event_type.as_str() {
         "entry.deleted" => NoteKind::Deleted,
         "entry.updated" => NoteKind::Updated,
         _ => NoteKind::Created,
@@ -181,8 +186,8 @@ fn apply_action(
     event: &FederatedEvent,
     action: UpsertAction,
 ) -> Applied {
-    let title = &event.payload.title;
-    let body = &event.payload.body;
+    let title = event.event.payload["title"].as_str().unwrap_or("");
+    let body = event.event.payload["body"].as_str().unwrap_or("");
     match action {
         UpsertAction::Skip => Applied::Skipped(slug.to_string()),
         UpsertAction::Delete => match store.delete(slug) {
@@ -207,7 +212,6 @@ fn apply_action(
             }
         }
         UpsertAction::KeepBoth => {
-            // mantém o local; grava a versão remota como <slug>-<n> livre.
             let copy = next_free_copy(store, slug);
             ensure_instance(root, instance);
             match store.save(&copy, title, body) {
@@ -236,21 +240,28 @@ mod tests {
     use tempfile::TempDir;
     use yggdrasil_core::instance::InstanceStore;
 
-    use crate::co_bridge_producer::{EntryPayload, ORIGIN_DEPLOYMENT};
+    use crate::co_bridge_producer::{CoEvent, ORIGIN_DEPLOYMENT, Visibility};
 
     fn event(path: &str, kind: &str, title: &str, body: &str) -> FederatedEvent {
         FederatedEvent {
-            event_id: 1,
-            event_type: kind.into(),
-            universe_key: "yggdrasil".into(),
-            path: path.into(),
-            payload: EntryPayload {
-                title: title.into(),
-                body: body.into(),
-                updated_at: Some("2026-06-07T00:00:00+00:00".into()),
+            event: CoEvent {
+                id: "test-id-1".into(),
+                event_type: kind.into(),
+                universe_key: Some("yggdrasil".into()),
+                user_id: None,
+                payload: serde_json::json!({
+                    "path": path,
+                    "title": title,
+                    "body": body,
+                    "updated_at": "2026-06-07T00:00:00+00:00",
+                    "body_hash": "",
+                }),
+                visibility: Visibility::Public,
+                created_at: chrono::Utc::now(),
             },
             origin_deployment: "co.artelonga.com.br".into(),
             signed_by: "co".into(),
+            bridge_received_at: chrono::Utc::now(),
             hop_count: 1,
         }
     }
@@ -298,7 +309,7 @@ mod tests {
     fn universe_fora_de_escopo_e_ignorado() {
         let (dir, _store) = store_with_instance("i");
         let mut ev = event("yoruba/terms/ase.md", "entry.updated", "T", "c");
-        ev.universe_key = "comunicacao".into();
+        ev.event.universe_key = Some("comunicacao".into());
         assert!(matches!(
             apply_inbound(dir.path(), &ev),
             Applied::OutOfScope(_)

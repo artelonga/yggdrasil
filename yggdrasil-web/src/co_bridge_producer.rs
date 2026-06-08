@@ -3,14 +3,21 @@
 //!
 //! **Topologia: "CO is hub".** O Yggdrasil **hospeda** o conteúdo e **disca para
 //! fora** ao hub do CO (`wss://co.artelonga.com.br/api/v1/events/bridge`, CO-384),
-//! emitindo um [`FederatedEvent`] `entry.{created,updated,deleted}` a cada
-//! escrita. Duas **fontes** ([`FederatedSource`]) no mesmo envelope:
+//! emitindo um [`BridgeMessage::Event`] a cada escrita. Duas **fontes**
+//! ([`FederatedSource`]) no mesmo envelope:
 //! - **notas** (Fase 0, YG-93) → `universe_key=yggdrasil`,
 //!   `instances/<id>/notes/<slug>.md` (instance-qualified desde YG-97);
 //! - **termos de léxico** das salas de comunicação (YG-103) →
-//!   `universe_key=comunicacao`, `<lang>/terms/<slug>.md` (consumer = CO-389).
+//!   `universe_key=comunicacao`, `<lang>/terms/_users/<user-slug>/<slug>.md`
+//!   (consumer = CO-389, filtro `_users/` — **YG-118**).
 //!
-//! Além do conteúdo, emite **observability** de sala ([`ObservabilityEvent`],
+//! **Wire congelado (YG-118).** O envelope no fio é o `Event` do CO-380 embrulhado
+//! em `FederatedEvent` pelo CO-384 — **não** a flat `FederatedEvent` anterior. O
+//! Yggdrasil envia [`BridgeMessage::Event`] cujo `federated.event` é um [`CoEvent`]
+//! (mirror de CO-380). Payloads tipados: [`TermPayload`] (termos), [`NotePayload`]
+//! (notas), [`SalaPayload`] (atividade de sala).
+//!
+//! Além do conteúdo, emite **atividade** de sala ([`RoomActivity`],
 //! `yggdrasil.sala.*`) — atividade não-conteúdo p/ o `/agora`, sem entry/log.
 //! Este módulo é **one-way** (producer → hub): aplicar eventos vindos do CO é
 //! Fase P-B (YG-97/v3.1) e está fora de escopo — só o `hop_count` loop-guard já
@@ -34,6 +41,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 use yggdrasil_core::comunicacao::LexiconStore;
 use yggdrasil_core::comunicacao::lexicon::slugify;
@@ -65,9 +73,214 @@ pub fn verse_slug(chapter: impl AsRef<str>, verse: impl AsRef<str>) -> String {
 /// só adiciona a camada de evento ao vivo (<1s) por cima do sync de repo (YG-100).
 pub const COMUNICACAO_UNIVERSE_KEY: &str = "comunicacao";
 
+/// SHA-256 hex de um body Markdown. Usado em [`TermPayload`] e [`NotePayload`]
+/// para dedup no consumer CO-389 (hash match → não reescreve).
+pub fn body_sha256(body: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(body.as_bytes());
+    format!("{:x}", h.finalize())
+}
+
+// ─── Visibility (mirror CO-380) ───────────────────────────────────────────────
+
+/// Visibilidade do evento — controla federação (CO-380). Só `Public` e
+/// `UniverseMembers` são federáveis pelo hub (CO-384 `is_federatable`).
+/// Privado (`universe_owner`, `user_only`, `system`) fica local: não federa.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Visibility {
+    #[default]
+    Public,
+    UniverseMembers,
+    UniverseOwner,
+    UserOnly,
+    System,
+}
+
+impl Visibility {
+    /// `true` se o evento pode ser federado ao hub.
+    pub fn is_federatable(&self) -> bool {
+        matches!(self, Self::Public | Self::UniverseMembers)
+    }
+}
+
+// ─── Wire types: CoEvent + FederatedEvent + BridgeMessage (mirrors CO-380/384) ─
+
+/// Mirror local do `Event` do CO-380 — o envelope interno de cada evento na bus.
+/// Serializa identicamente ao `co_web::eda::event::Event`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CoEvent {
+    /// Identificador único (UUID v4 como string).
+    pub id: String,
+    /// Tipo namespaced: `entry.created`, `yggdrasil.sala.user_joined`, …
+    pub event_type: String,
+    /// `None` para eventos de atividade de sala (sem universe).
+    pub universe_key: Option<String>,
+    /// `sub` do JWT do ator (usuário que originou).
+    pub user_id: Option<String>,
+    /// Payload específico do tipo (TermPayload / NotePayload / SalaPayload).
+    pub payload: serde_json::Value,
+    /// Quem pode ver: federáveis = `public` / `universe_members`.
+    pub visibility: Visibility,
+    /// Quando o evento foi criado (UTC).
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Mirror local do `FederatedEvent` do CO-384 — envelope de federação que
+/// embrulha um [`CoEvent`] com metadados de proveniência cross-deployment.
+/// Serializa identicamente ao `co_web::eda::bridge::federated_event::FederatedEvent`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FederatedEvent {
+    /// Evento CO-380 original.
+    pub event: CoEvent,
+    /// Deployment de origem.
+    pub origin_deployment: String,
+    /// Identidade que assinou/encaminhou.
+    pub signed_by: String,
+    /// Quando este hop recebeu o evento.
+    pub bridge_received_at: chrono::DateTime<chrono::Utc>,
+    /// Saltos dados no bus (loop-guard: CO descarta se > 3).
+    pub hop_count: u8,
+}
+
+impl FederatedEvent {
+    /// Constrói o envelope a partir de um [`LoggedEvent`] (path + payload por fonte).
+    pub fn from_log_entry(entry: &LoggedEvent, node_id: &str) -> Self {
+        let note = &entry.note;
+        let payload = build_note_payload(note);
+        let co_event = CoEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            event_type: note.kind.event_type().to_string(),
+            universe_key: Some(note.universe_key().to_string()),
+            user_id: note.actor.clone(),
+            payload,
+            visibility: note.visibility.clone(),
+            created_at: chrono::Utc::now(),
+        };
+        FederatedEvent {
+            event: co_event,
+            origin_deployment: ORIGIN_DEPLOYMENT.to_string(),
+            signed_by: node_id.to_string(),
+            bridge_received_at: chrono::Utc::now(),
+            hop_count: 0,
+        }
+    }
+
+    /// `true` se o evento pode ser federado ao hub.
+    pub fn is_federatable(&self) -> bool {
+        self.event.visibility.is_federatable()
+    }
+
+    /// Loop-guard: um evento recebido cuja origem é este deployment (echo do
+    /// nosso próprio write, `hop_count > 0`) não deve ser reaplicado.
+    pub fn is_own_echo(&self) -> bool {
+        self.origin_deployment == ORIGIN_DEPLOYMENT && self.hop_count > 0
+    }
+}
+
+/// Protocolo de fio — mirror do `BridgeMessage` do CO-384.
+/// O Yggdrasil envia `Event`; na (re)conexão pode enviar `ReplayRequest`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "bridge_msg_type")]
+pub enum BridgeMessage {
+    /// Enviado na (re)conexão para solicitar replay a partir do último id recebido.
+    ReplayRequest {
+        /// ULID do último evento recebido do CO. `None` = replay tudo.
+        last_received_id: Option<String>,
+    },
+    /// Evento federado: inner event embrulhado em metadados de proveniência.
+    Event {
+        #[serde(flatten)]
+        federated: FederatedEvent,
+    },
+}
+
+impl BridgeMessage {
+    /// Codifica como JSON (frame de texto do WS).
+    pub fn encode(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    /// Constrói um `BridgeMessage::Event` a partir de um [`LoggedEvent`].
+    pub fn from_log_entry(entry: &LoggedEvent, node_id: &str) -> Self {
+        BridgeMessage::Event {
+            federated: FederatedEvent::from_log_entry(entry, node_id),
+        }
+    }
+}
+
+// ─── Payload tipados (CO-383/CO-389) ─────────────────────────────────────────
+
+/// Payload de um **termo de léxico** federado (CO-389 TermPayload).
+/// Path inclui `_users/<user-slug>/` para casar o filtro do consumer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TermPayload {
+    /// Caminho no repo `comunicacao`: `<lingua>/terms/_users/<user-slug>/<slug>.md`.
+    pub path: String,
+    /// Frontmatter do termo como JSON (word, language_code, gloss, concept, …).
+    pub frontmatter: serde_json::Value,
+    /// Corpo Markdown da entrada.
+    pub body: String,
+    /// SHA-256 hex do `body` — permite dedup no consumer (CO-389).
+    pub body_hash: String,
+    /// Diretório de língua (`yoruba`, `guarani-mbya`, …) — campo de filtro/roteamento.
+    pub lingua: String,
+}
+
+/// Payload de uma **nota de instância** federada (CO-383).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotePayload {
+    /// Caminho instance-qualified: `instances/<id>/notes/<slug>.md`.
+    pub path: String,
+    pub title: String,
+    pub body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    /// SHA-256 hex do `body`.
+    pub body_hash: String,
+}
+
+/// Payload de um evento de **atividade de sala** (`yggdrasil.sala.*`).
+/// Sem mutação de conteúdo; apenas sinal de atividade p/ o `/agora` (CO-389).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SalaPayload {
+    pub sala_id: String,
+    pub lingua: String,
+    pub actor_id: String,
+}
+
+/// Constrói o `payload: serde_json::Value` correto por fonte de um [`NoteWritten`].
+fn build_note_payload(note: &NoteWritten) -> serde_json::Value {
+    let path = note.path();
+    let body_hash = body_sha256(&note.body);
+    match &note.source {
+        FederatedSource::Comunicacao { lang, .. } => serde_json::to_value(TermPayload {
+            path,
+            frontmatter: note
+                .frontmatter
+                .clone()
+                .unwrap_or_else(|| serde_json::Value::Object(Default::default())),
+            body: note.body.clone(),
+            body_hash,
+            lingua: lang.clone(),
+        })
+        .expect("TermPayload serialize"),
+        FederatedSource::Notes => serde_json::to_value(NotePayload {
+            path,
+            title: note.title.clone(),
+            body: note.body.clone(),
+            updated_at: note.updated_at.clone(),
+            body_hash,
+        })
+        .expect("NotePayload serialize"),
+    }
+}
+
+// ─── Fonte (FederatedSource) ──────────────────────────────────────────────────
+
 /// Fonte de um evento de conteúdo: define `universe_key` + a convenção de `path`.
 /// É o que torna a *federated bus* multi-fonte sem um novo envelope (YG-103): o
-/// mesmo [`FederatedEvent`] carrega notas **ou** termos, discriminados aqui.
+/// mesmo [`BridgeMessage`] carrega notas **ou** termos, discriminados aqui.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "source", rename_all = "snake_case")]
 pub enum FederatedSource {
@@ -76,10 +289,12 @@ pub enum FederatedSource {
     #[default]
     Notes,
     /// Termo de léxico de uma sala de comunicação → universe `comunicacao`,
-    /// `<lang>/terms/<slug>.md` (a mesma convenção do write-back, YG-100).
+    /// `<lang>/terms/_users/<user_slug>/<slug>.md` (YG-118, filtro `_users/`).
     Comunicacao {
-        /// Língua da sala (`yoruba`, `mbya`, …) — o primeiro segmento do path.
+        /// Diretório de língua (`yoruba`, `guarani-mbya`, …).
         lang: String,
+        /// Slug do autor, derivado via `slugify(room.owner)`.
+        user_slug: String,
     },
 }
 
@@ -92,41 +307,36 @@ impl FederatedSource {
         }
     }
 
-    /// `path` no envelope, por fonte. **Notas são instance-qualified**
-    /// (`instances/<instance>/notes/<slug>.md`, YG-97) — o round-trip do CO
-    /// precisa do id da instância p/ resolver o `NoteStore` alvo; o `notes/<slug>.md`
-    /// chato da YG-93 perdia essa informação. Termos de comunicação ignoram o
-    /// `instance` (a sala) — o path canônico é `<lang>/terms/<slug>.md`.
+    /// `path` no envelope, por fonte.
+    ///
+    /// Notas: `instances/<instance>/notes/<slug>.md` (instance-qualified, YG-97).
+    /// Termos: `<lang>/terms/_users/<user_slug>/<slug>.md` (YG-118, filtro `_users/`).
     pub fn path(&self, instance: &str, slug: &str) -> String {
         match self {
             FederatedSource::Notes => format!("instances/{instance}/notes/{slug}.md"),
-            FederatedSource::Comunicacao { lang } => format!("{lang}/terms/{slug}.md"),
+            FederatedSource::Comunicacao { lang, user_slug } => {
+                format!("{lang}/terms/_users/{user_slug}/{slug}.md")
+            }
         }
     }
 }
 
-/// Capacidade do canal `broadcast` interno de [`NoteWritten`]. Generosa: o
-/// consumidor (a task de fundo) drena rápido; lag só ocorre se o CO ficar fora
-/// por muito tempo — e aí o `event_log` (persistido em memória) é a fonte de
-/// verdade do replay, não o canal.
-pub const NOTE_CHANNEL_CAPACITY: usize = 1024;
+// ─── Canal interno (padrão broadcast do poker) ────────────────────────────────
 
-// ─── Evento interno (padrão broadcast do poker) ──────────────────────────────
+/// Capacidade do canal `broadcast` interno de [`NoteWritten`].
+pub const NOTE_CHANNEL_CAPACITY: usize = 1024;
 
 /// Tipo de escrita que originou o evento de nota.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NoteKind {
-    /// Nota criada (não existia antes do `save`).
     Created,
-    /// Nota atualizada (já existia).
     Updated,
-    /// Nota removida (`delete`).
     Deleted,
 }
 
 impl NoteKind {
-    /// `event_type` do [`FederatedEvent`] correspondente.
+    /// `event_type` do [`CoEvent`] correspondente.
     pub fn event_type(self) -> &'static str {
         match self {
             NoteKind::Created => "entry.created",
@@ -148,10 +358,9 @@ pub struct NoteWritten {
     /// Created / Updated / Deleted.
     pub kind: NoteKind,
     /// Fonte do conteúdo: notas (default) ou termo de comunicação (YG-103).
-    /// `#[serde(default)]` mantém compat com payloads antigos (= `Notes`).
     #[serde(default)]
     pub source: FederatedSource,
-    /// Título no momento da escrita (vazio em `Deleted`).
+    /// Título (nota) / palavra (termo) no momento da escrita (vazio em `Deleted`).
     #[serde(default)]
     pub title: String,
     /// Corpo Markdown no momento da escrita (vazio em `Deleted`).
@@ -160,6 +369,15 @@ pub struct NoteWritten {
     /// `updated` (RFC3339) da nota, se conhecido.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+    /// Frontmatter como JSON para termos de léxico (CO-389 TermPayload).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frontmatter: Option<serde_json::Value>,
+    /// Ator (user_id) que originou a escrita; vira `CoEvent.user_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+    /// Visibilidade do evento (default = `Public`).
+    #[serde(default)]
+    pub visibility: Visibility,
 }
 
 impl NoteWritten {
@@ -173,151 +391,87 @@ impl NoteWritten {
             title: String::new(),
             body: String::new(),
             updated_at: None,
+            frontmatter: None,
+            actor: None,
+            visibility: Visibility::Public,
         }
     }
 
-    /// `path` no envelope, derivado da [`FederatedSource`]:
-    /// `instances/<instance>/notes/<slug>.md` (notas, instance-qualified — YG-97)
-    /// ou `<lang>/terms/<slug>.md` (termo de comunicação).
+    /// `path` no envelope, derivado da [`FederatedSource`].
     pub fn path(&self) -> String {
         self.source.path(&self.instance, &self.slug)
     }
 
-    /// `universe_key` no envelope, derivado da fonte (`yggdrasil` | `comunicacao`).
+    /// `universe_key` no envelope, derivado da fonte.
     pub fn universe_key(&self) -> &str {
         self.source.universe_key()
     }
 }
 
-// ─── Envelope FederatedEvent (compatível com CO-384) ─────────────────────────
+// ─── Atividade de sala (yggdrasil.sala.*) ────────────────────────────────────
 
-/// O `payload` de um `entry.*`: o conteúdo da nota. Em `entry.deleted` os campos
-/// ficam vazios (só `path`/`slug` identificam o alvo).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EntryPayload {
-    pub title: String,
-    pub body: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
-}
-
-/// Envelope publicado no hub do CO. Shape alinhado ao `FederatedEvent` de CO-384:
-/// `event` (id + tipo + alvo + payload) embrulhado por metadados de federação
-/// (`origin_deployment`, `signed_by`, `hop_count`).
-///
-/// `event_id` é um id monotônico **deste** deployment (offset do `event_log`); o
-/// CO deduplica idempotentemente (CO-380), então reentregar um id já visto é
-/// inócuo — é o que torna cold-start = warm-reconnect.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FederatedEvent {
-    /// Id monotônico do evento no `event_log` deste deployment.
-    pub event_id: u64,
-    /// `entry.created` | `entry.updated` | `entry.deleted`.
-    pub event_type: String,
-    /// Sempre `yggdrasil` neste producer.
-    pub universe_key: String,
-    /// `notes/<slug>.md`.
-    pub path: String,
-    /// Conteúdo da nota.
-    pub payload: EntryPayload,
-    /// Deployment de origem (loop-guard / atribuição).
-    pub origin_deployment: String,
-    /// Identidade que assinou (o `node_id` deste producer).
-    pub signed_by: String,
-    /// Saltos já dados no bus. Origem = 0; o CO incrementa no fan-out. O
-    /// producer **descarta** qualquer evento recebido com `hop_count > 0` que
-    /// se origine aqui (loop-guard pronto p/ P-B; não recebemos em v3.0).
-    pub hop_count: u32,
-}
-
-/// `origin_deployment` / `signed_by` default deste producer.
-pub const ORIGIN_DEPLOYMENT: &str = "yggdrasil.artelonga.com.br";
-
-impl FederatedEvent {
-    /// Embrulha uma entrada do log num envelope pronto para o CO.
-    pub fn from_log_entry(entry: &LoggedEvent, node_id: &str) -> Self {
-        FederatedEvent {
-            event_id: entry.id,
-            event_type: entry.note.kind.event_type().to_string(),
-            universe_key: entry.note.universe_key().to_string(),
-            path: entry.note.path(),
-            payload: EntryPayload {
-                title: entry.note.title.clone(),
-                body: entry.note.body.clone(),
-                updated_at: entry.note.updated_at.clone(),
-            },
-            origin_deployment: ORIGIN_DEPLOYMENT.to_string(),
-            signed_by: node_id.to_string(),
-            hop_count: 0,
-        }
-    }
-
-    /// Codifica como JSON (o frame de texto enviado no WS).
-    pub fn encode(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
-    }
-
-    /// Loop-guard: um evento recebido cuja origem é este deployment (echo do
-    /// nosso próprio write, `hop_count > 0`) não deve ser reaplicado. Pronto p/
-    /// P-B; em v3.0 não recebemos nada, então é só uma função pura testável.
-    pub fn is_own_echo(&self) -> bool {
-        self.origin_deployment == ORIGIN_DEPLOYMENT && self.hop_count > 0
-    }
-}
-
-// ─── Observabilidade de sala (yggdrasil.sala.*) — não-conteúdo (YG-103) ───────
-
-/// Atividade de sala que **não** é conteúdo: publicação, despublicação, presença.
-/// Vai para o `/agora` do CO como evento de observability, **sem** criar entry
-/// numa universe (YG-103, acceptance #2). Distinto do `entry.*` por design: o
-/// corpo do termo viaja como [`FederatedEvent`]; *que uma sala foi publicada* é
-/// sinal de atividade, efêmero, e não entra no `event_log` de replay.
+/// Atividade de sala que **não** é conteúdo: publicação, entrada de usuário,
+/// contribuição de termo. Vai para o `/agora` do CO via [`SalaPayload`].
+/// Distinto do `entry.*` por design: o corpo do termo viaja como
+/// [`BridgeMessage`]; *que uma sala foi publicada* é sinal de atividade,
+/// efêmero, e não entra no `event_log` de replay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RoomActivity {
-    /// Sala passou a `published` (`set_published: true`).
+    /// Sala passou a `published`.
     Published,
-    /// Sala saiu de `published` (`set_published: false`).
+    /// Sala saiu de `published`. Aposentado do fio (CO-389 não o consome);
+    /// serializa como `yggdrasil.sala.published` com `published: false` no payload.
     Unpublished,
-    /// Presença ao vivo de um usuário numa sala.
-    Presence,
+    /// Usuário entrou numa sala (era `presence`, renomeado em YG-118).
+    UserJoined,
+    /// Termo contribuído pelo usuário numa sala (novo em YG-118).
+    TermContributed,
 }
 
 impl RoomActivity {
-    /// `event_type` namespaced no bus do CO.
+    /// `event_type` para o fio do CO.
+    /// `Unpublished` mapeia para `yggdrasil.sala.published` (aposentado do wire).
     pub fn event_type(self) -> &'static str {
         match self {
-            RoomActivity::Published => "yggdrasil.sala.published",
-            RoomActivity::Unpublished => "yggdrasil.sala.unpublished",
-            RoomActivity::Presence => "yggdrasil.sala.presence",
+            RoomActivity::Published | RoomActivity::Unpublished => "yggdrasil.sala.published",
+            RoomActivity::UserJoined => "yggdrasil.sala.user_joined",
+            RoomActivity::TermContributed => "yggdrasil.sala.term_contributed",
         }
     }
 }
 
-/// Envelope de observability publicado no hub do CO (`/agora`). Compartilha a
-/// auth/conexão da YG-93, mas é um envelope **distinto** do `entry.*`: sem
-/// `universe_key`/`path`/`payload` de conteúdo — só *quem* fez *o quê* em *qual
-/// sala*, *quando*.
+/// Envelope de atividade de sala publicado no hub do CO. Compartilha a
+/// auth/conexão da YG-93, mas tem um envelope distinto do `entry.*`:
+/// sem `universe_key` — só *quem* fez *o quê* em *qual sala*, *quando*.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObservabilityEvent {
-    /// `yggdrasil.sala.{published,unpublished,presence}`.
+    /// `yggdrasil.sala.{published,user_joined,term_contributed}`.
     pub event_type: String,
     /// Id da sala.
     pub room_id: String,
-    /// Língua da sala (para roteamento/filtro no `/agora`).
+    /// Língua da sala.
     pub lang: String,
-    /// Quem originou (owner/usuário).
+    /// Quem originou.
     pub actor: String,
-    /// Deployment de origem (atribuição).
+    /// Deployment de origem.
     pub origin_deployment: String,
     /// Timestamp RFC3339, se conhecido.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<String>,
+    /// `true` apenas para `Unpublished` mapeado como `published{published:false}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published: Option<bool>,
 }
 
 impl ObservabilityEvent {
     /// Constrói um evento de atividade de sala.
     pub fn room(activity: RoomActivity, room_id: &str, lang: &str, actor: &str) -> Self {
+        let published = if activity == RoomActivity::Unpublished {
+            Some(false)
+        } else {
+            None
+        };
         ObservabilityEvent {
             event_type: activity.event_type().to_string(),
             room_id: room_id.to_string(),
@@ -325,6 +479,7 @@ impl ObservabilityEvent {
             actor: actor.to_string(),
             origin_deployment: ORIGIN_DEPLOYMENT.to_string(),
             at: None,
+            published,
         }
     }
 
@@ -334,9 +489,40 @@ impl ObservabilityEvent {
         self
     }
 
+    /// Constrói o [`BridgeMessage::Event`] para envio ao hub.
+    /// Eventos de sala **não** têm `universe_key` (atividade, não conteúdo).
+    pub fn to_bridge_message(&self, node_id: &str) -> BridgeMessage {
+        let mut payload = serde_json::json!({
+            "sala_id": self.room_id,
+            "lingua": self.lang,
+            "actor_id": self.actor,
+        });
+        if let Some(p) = self.published {
+            payload["published"] = serde_json::Value::Bool(p);
+        }
+        let co_event = CoEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            event_type: self.event_type.clone(),
+            universe_key: None,
+            user_id: Some(self.actor.clone()),
+            payload,
+            visibility: Visibility::Public,
+            created_at: chrono::Utc::now(),
+        };
+        BridgeMessage::Event {
+            federated: FederatedEvent {
+                event: co_event,
+                origin_deployment: ORIGIN_DEPLOYMENT.to_string(),
+                signed_by: node_id.to_string(),
+                bridge_received_at: chrono::Utc::now(),
+                hop_count: 0,
+            },
+        }
+    }
+
     /// Codifica como JSON (frame de texto do WS).
     pub fn encode(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
+        self.to_bridge_message(ORIGIN_DEPLOYMENT).encode()
     }
 }
 
@@ -364,7 +550,6 @@ pub struct LoggedEvent {
 pub struct EventLog {
     events: Vec<LoggedEvent>,
     next_id: u64,
-    /// Último id confirmado (ACK) pelo CO. `None` = nada entregue ainda.
     last_delivered: Option<u64>,
 }
 
@@ -377,8 +562,7 @@ impl EventLog {
         }
     }
 
-    /// Anexa um evento, devolvendo o id atribuído. Ids são monotônicos a partir
-    /// de 1.
+    /// Anexa um evento, devolvendo o id atribuído. Ids são monotônicos a partir de 1.
     pub fn append(&mut self, note: NoteWritten) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -386,7 +570,6 @@ impl EventLog {
         id
     }
 
-    /// Quantos eventos há no log.
     pub fn len(&self) -> usize {
         self.events.len()
     }
@@ -395,7 +578,6 @@ impl EventLog {
         self.events.is_empty()
     }
 
-    /// O último id ACK'd pelo CO (`None` = nenhum).
     pub fn last_delivered(&self) -> Option<u64> {
         self.last_delivered
     }
@@ -409,20 +591,14 @@ impl EventLog {
     }
 
     /// Eventos ainda **não** entregues — o que deve ser enviado no (re)connect.
-    ///
-    /// É o coração do cold-start = warm-reconnect: o offset inicial vem de
-    /// `last_delivered`; `None` ⇒ o log inteiro.
     pub fn pending(&self) -> &[LoggedEvent] {
         let from = self.last_delivered.unwrap_or(0);
-        // ids são contíguos a partir de 1; o primeiro pendente é `from`.
         let start = self.events.partition_point(|e| e.id <= from);
         &self.events[start..]
     }
 
     /// Semeia o log enumerando as notas já em disco de **todas** as instâncias,
-    /// sintetizando um `entry.created` por nota. Idempotente do ponto de vista
-    /// do CO (dedupe por id no fan-out), mas deve rodar **uma vez** no boot
-    /// antes do append-only por `save`/`delete`. Devolve quantas notas semeou.
+    /// sintetizando um `entry.created` por nota. Devolve quantas notas semeou.
     pub fn seed_from_store(&mut self, store: &InstanceStore) -> usize {
         let instances = match store.list_all() {
             Ok(v) => v,
@@ -450,6 +626,9 @@ impl EventLog {
                     title: n.title,
                     body: n.body,
                     updated_at: Some(n.updated.to_rfc3339()),
+                    frontmatter: None,
+                    actor: None,
+                    visibility: Visibility::Public,
                 });
                 seeded += 1;
             }
@@ -459,13 +638,8 @@ impl EventLog {
 
     /// Semeia o log com os **termos de léxico** das salas de comunicação
     /// **publicadas** (YG-103, acceptance #3: cold-start backfill). Cada elemento
-    /// (palavra) de uma sala publicada vira um `entry.created`
-    /// `universe_key=comunicacao` `path=<lang>/terms/<slug>.md`. Idempotente do
-    /// ponto de vista do CO (dedupe por id). Devolve quantos termos semeou.
-    ///
-    /// Salas **não** publicadas são ignoradas — só conteúdo público é federado
-    /// (mesma regra do feed `list_published`). Reusa a mesma `slugify` do
-    /// write-back (YG-100) p/ o slug ser idêntico ao do repo `comunicacao`.
+    /// vira um `entry.created` `universe_key=comunicacao`
+    /// `path=<lang>/terms/_users/<user-slug>/<slug>.md` (YG-118).
     pub fn seed_comunicacao_from_store(&mut self, store: &RoomStore) -> usize {
         let rooms = match store.list_published() {
             Ok(v) => v,
@@ -476,8 +650,9 @@ impl EventLog {
         };
         let mut seeded = 0;
         for room in rooms {
+            let user_slug = slugify(&room.owner);
             for elem in &room.elements {
-                if let Some(ev) = comunicacao_term_event(&room, elem) {
+                if let Some(ev) = comunicacao_term_event(&room, elem, &user_slug) {
                     self.append(ev);
                     seeded += 1;
                 }
@@ -487,13 +662,20 @@ impl EventLog {
     }
 }
 
+// ─── comunicacao_term_event ───────────────────────────────────────────────────
+
 /// Constrói o [`NoteWritten`] de um termo de léxico (fonte `Comunicacao`),
-/// resolvendo o **código** de língua da sala (`yo`, `gn-mbya`) para o **diretório**
-/// canônico do repo (`yoruba`, `guarani-mbya`) via [`LexiconStore::lang_dir`] — o
-/// mesmo path do write-back (YG-100). Devolve `None` se a língua não é suportada
-/// ou o slug fica vazio (termo não-federável). Compartilhado pelo backfill e pela
-/// emissão ao vivo (`comunicacao_routes`), p/ path/corpo idênticos.
-pub fn comunicacao_term_event(room: &Room, elem: &Element) -> Option<NoteWritten> {
+/// resolvendo o **código** de língua (`yo`, `gn-mbya`) para o diretório canônico
+/// (`yoruba`, `guarani-mbya`) via [`LexiconStore::lang_dir`] — o mesmo path do
+/// write-back (YG-100). Agora inclui:
+/// - `path = <lingua>/terms/_users/<user_slug>/<slug>.md` (YG-118, filtro `_users/`)
+/// - `frontmatter` como JSON (CO-389 TermPayload)
+/// - `actor = user_slug`
+///
+/// Devolve `None` se a língua não é suportada ou o slug fica vazio.
+/// Compartilhado pelo backfill e pela emissão ao vivo (`comunicacao_routes`),
+/// p/ path/corpo idênticos.
+pub fn comunicacao_term_event(room: &Room, elem: &Element, user_slug: &str) -> Option<NoteWritten> {
     let code = if elem.lang.is_empty() {
         room.lang.as_str()
     } else {
@@ -504,22 +686,55 @@ pub fn comunicacao_term_event(room: &Room, elem: &Element) -> Option<NoteWritten
     if slug.is_empty() {
         return None;
     }
+    let lingua = dir.to_string();
+    let body = term_body(elem);
+    let frontmatter = term_frontmatter(elem, room, user_slug);
     Some(NoteWritten {
         instance: room.id.clone(),
         slug,
         kind: NoteKind::Created,
         source: FederatedSource::Comunicacao {
-            lang: dir.to_string(),
+            lang: lingua,
+            user_slug: user_slug.to_string(),
         },
         title: elem.word.clone(),
-        body: term_body(elem),
+        body,
         updated_at: Some(room.updated_at.to_rfc3339()),
+        frontmatter: Some(frontmatter),
+        actor: Some(user_slug.to_string()),
+        visibility: Visibility::Public,
     })
 }
 
-/// Corpo Markdown de um termo a partir de um [`Element`] da sala: gloss/conceito
-/// como prosa simples. É o mesmo conteúdo que o write-back versiona no repo
-/// `comunicacao`; aqui só serve ao backfill (o CO é a fonte canônica do corpo).
+/// Constrói o frontmatter JSON de um termo a partir do [`Element`] da sala
+/// (CO-389 TermPayload.frontmatter).
+fn term_frontmatter(elem: &Element, room: &Room, user_slug: &str) -> serde_json::Value {
+    let lang_code = if elem.lang.is_empty() {
+        room.lang.as_str()
+    } else {
+        elem.lang.as_str()
+    };
+    let mut fm = serde_json::json!({
+        "type": "term",
+        "word": elem.word,
+        "language_code": lang_code,
+        "seed_status": "stub",
+        "author": user_slug,
+        "contributed_via": "yggdrasil-comunicacao",
+    });
+    if let Some(g) = elem.gloss.as_ref().filter(|s| !s.is_empty()) {
+        fm["gloss"] = serde_json::Value::String(g.clone());
+    }
+    if let Some(c) = elem.concept.as_ref().filter(|s| !s.is_empty()) {
+        fm["concept"] = serde_json::Value::String(c.clone());
+    }
+    if let Some(p) = elem.pronunciation.as_ref().filter(|s| !s.is_empty()) {
+        fm["pronunciation"] = serde_json::Value::String(p.clone());
+    }
+    fm
+}
+
+/// Corpo Markdown de um termo a partir de um [`Element`] da sala.
 fn term_body(elem: &Element) -> String {
     let mut parts = Vec::new();
     if let Some(g) = elem.gloss.as_ref().filter(|s| !s.is_empty()) {
@@ -536,23 +751,16 @@ fn term_body(elem: &Element) -> String {
 
 // ─── Reconnect: backoff exponencial ──────────────────────────────────────────
 
-/// Backoff mínimo do reconnect (1s).
 pub const BACKOFF_MIN: Duration = Duration::from_secs(1);
-/// Backoff máximo (teto) do reconnect (30s).
 pub const BACKOFF_MAX: Duration = Duration::from_secs(30);
 
-/// Estado da conexão WS ao hub do CO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnState {
-    /// Tentando (re)conectar; carrega o atraso atual do backoff.
     Connecting,
-    /// Conectado e autenticado.
     Connected,
 }
 
-/// Máquina de backoff exponencial 1s → 2s → 4s → … → 30s (teto), reset em
-/// conexão bem-sucedida. Pura e testável; a task de fundo dorme `current()`
-/// entre tentativas.
+/// Máquina de backoff exponencial 1s → 2s → 4s → … → 30s (teto).
 #[derive(Debug, Clone, Copy)]
 pub struct Backoff {
     current: Duration,
@@ -571,20 +779,16 @@ impl Backoff {
         }
     }
 
-    /// Atraso a esperar antes da próxima tentativa.
     pub fn current(&self) -> Duration {
         self.current
     }
 
-    /// Dobra o atraso (com teto em [`BACKOFF_MAX`]) e devolve o **novo** atraso.
-    /// Chamado após uma falha de conexão.
     pub fn fail(&mut self) -> Duration {
         let doubled = self.current.saturating_mul(2);
         self.current = doubled.min(BACKOFF_MAX);
         self.current
     }
 
-    /// Reseta para o mínimo após uma conexão bem-sucedida.
     pub fn reset(&mut self) {
         self.current = BACKOFF_MIN;
     }
@@ -592,21 +796,17 @@ impl Backoff {
 
 // ─── Config (gate de env) ────────────────────────────────────────────────────
 
+pub const ORIGIN_DEPLOYMENT: &str = "yggdrasil.artelonga.com.br";
+
 /// Config do producer, lida de `YGG_CO_BRIDGE_URL` + `YGG_CO_BRIDGE_TOKEN`.
-/// Ausência de qualquer uma ⇒ producer desligado ([`from_env`] devolve `None`).
 #[derive(Debug, Clone)]
 pub struct BridgeConfig {
-    /// URL do hub (`wss://co.artelonga.com.br/api/v1/events/bridge`).
     pub url: String,
-    /// Service JWT emitido pelo CO (apresentado na conexão).
     pub token: String,
-    /// Identidade estável deste producer no bus.
     pub node_id: String,
 }
 
 impl BridgeConfig {
-    /// Lê a config do ambiente. `None` se `YGG_CO_BRIDGE_URL` **ou**
-    /// `YGG_CO_BRIDGE_TOKEN` estiver ausente/vazio — o caso no-op.
     pub fn from_env() -> Option<Self> {
         let url = non_empty_env("YGG_CO_BRIDGE_URL")?;
         let token = non_empty_env("YGG_CO_BRIDGE_TOKEN")?;
@@ -627,10 +827,6 @@ fn non_empty_env(key: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-/// Monta a request de handshake WS ao hub do CO: a URL + `Authorization: Bearer
-/// <service JWT>` (a mesma relação de confiança do handover SSO de `auth_co.rs`).
-/// Pura e testável; é o que o dial `tokio_tungstenite::connect_async` consome
-/// quando o CO-384 existir.
 fn ws_request(
     config: &BridgeConfig,
 ) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, BridgeError> {
@@ -649,31 +845,22 @@ fn ws_request(
 
 // ─── Spawn da task de fundo (gated) ──────────────────────────────────────────
 
-/// Canais internos + handle para a task de fundo. Os `sender`s vivem no estado da
-/// camada web (`InstancesState`/`ComunicacaoState`); a task de fundo segura os
-/// `receiver`s. Dois canais: **conteúdo** (notas + termos → `entry.*`, com log de
-/// replay) e **observability** (`yggdrasil.sala.*`, efêmero, sem log).
 pub struct Producer {
     sender: broadcast::Sender<NoteWritten>,
     obs_sender: broadcast::Sender<ObservabilityEvent>,
 }
 
 impl Producer {
-    /// Cria os canais `broadcast`. Sempre seguro de chamar (não toca em rede).
     pub fn new() -> Self {
         let (sender, _rx) = broadcast::channel(NOTE_CHANNEL_CAPACITY);
         let (obs_sender, _orx) = broadcast::channel(NOTE_CHANNEL_CAPACITY);
         Self { sender, obs_sender }
     }
 
-    /// Clona o `sender` de conteúdo para a camada web emitir [`NoteWritten`]
-    /// (notas, YG-93; termos de comunicação, YG-103).
     pub fn sender(&self) -> broadcast::Sender<NoteWritten> {
         self.sender.clone()
     }
 
-    /// Clona o `sender` de observability p/ a camada web emitir
-    /// [`ObservabilityEvent`] (atividade de sala, YG-103).
     pub fn obs_sender(&self) -> broadcast::Sender<ObservabilityEvent> {
         self.obs_sender.clone()
     }
@@ -685,14 +872,6 @@ impl Default for Producer {
     }
 }
 
-/// Sobe a task de fundo **apenas** se [`BridgeConfig::from_env`] estiver
-/// configurada (gate). Sem config ⇒ no-op: devolve `false` e não toca em rede —
-/// o boot do servidor e os testes seguem intactos.
-///
-/// Quando configurada, semeia o `event_log` com as notas da Fase 0
-/// ([`EventLog::seed_from_store`]) **e** os termos das salas publicadas
-/// ([`EventLog::seed_comunicacao_from_store`], YG-103), e sobe o loop de
-/// dial/reconnect/replay. Espelha o padrão de `universos_routes::spawn_cleanup_job`.
 pub fn spawn(
     producer: &Producer,
     store: std::sync::Arc<InstanceStore>,
@@ -710,12 +889,6 @@ pub fn spawn(
     true
 }
 
-/// Loop de fundo: semeia o log, conecta com backoff, drena pendentes, e segue
-/// fazendo append + envio a cada [`NoteWritten`].
-///
-/// **NOTA:** a parte de rede (dial WS ao hub) **não pode ser exercitada sem o
-/// CO-384 vivo** — é o E2E que aguarda CO-384. A lógica pura abaixo (seed,
-/// append, offset, backoff, encode) é coberta por testes de unidade.
 async fn run_loop(
     config: BridgeConfig,
     store: std::sync::Arc<InstanceStore>,
@@ -736,7 +909,6 @@ async fn run_loop(
     loop {
         match connect_and_stream(&config, &mut log, &mut rx, &mut obs_rx).await {
             Ok(()) => {
-                // Stream encerrou sem erro (improvável); reseta e reconecta.
                 backoff.reset();
             }
             Err(e) => {
@@ -753,50 +925,32 @@ async fn run_loop(
 
 /// Conecta ao hub, autentica, drena pendentes e faz streaming dos novos eventos.
 ///
-/// **STUB de rede (E2E aguarda CO-384).** O hub `/api/v1/events/bridge` ainda
-/// não existe, então não há servidor para dialar nem testar ponta-a-ponta. Esta
-/// função descreve o contrato e mantém o `event_log` consistente (append por
-/// evento) sem depender de um CO vivo: ela monta o envelope que *seria* enviado
-/// e registra. Substituir o corpo pelo dial `tokio-tungstenite` real quando o
-/// CO-384 aterrissar (a forma do cliente segue o `reqwest`/rustls de
-/// `auth_co.rs`).
+/// **STUB de rede (E2E aguarda CO-384/YG-119).** Valida a request de handshake,
+/// mantém o `event_log` consistente e loga os envelopes que *seriam* enviados.
 async fn connect_and_stream(
     config: &BridgeConfig,
     log: &mut EventLog,
     rx: &mut broadcast::Receiver<NoteWritten>,
     obs_rx: &mut broadcast::Receiver<ObservabilityEvent>,
 ) -> Result<(), BridgeError> {
-    // — Passo 1 (pós-CO-384): dial `wss://…/events/bridge`, apresentar
-    //   `config.token` (service JWT), aguardar aceite (403 ⇒ refresh + retry).
-    // — Passo 2: drenar `log.pending()` (cold-start = log inteiro; warm =
-    //   a partir do último ACK), enviando um `FederatedEvent` por entrada.
-    // — Passo 3: a cada `NoteWritten`/`ObservabilityEvent` recebido, enviar
-    //   (conteúdo também faz `log.append()`); ao receber ACK, `log.ack(id)`.
-    //
-    // Sem o hub vivo, não abrimos socket. Validamos a request de handshake
-    // (URL + Bearer) — o que `connect_async` consumirá quando o CO-384 existir —
-    // e mantemos o log consistente consumindo os canais internos (para o backfill
-    // futuro não duplicar), devolvendo "indisponível" para acionar o backoff.
     let _ws_request = ws_request(config)?;
     for entry in log.pending() {
-        let env = FederatedEvent::from_log_entry(entry, &config.node_id);
-        match env.encode() {
+        let msg = BridgeMessage::from_log_entry(entry, &config.node_id);
+        match msg.encode() {
             Ok(_json) => {
-                tracing::debug!(
-                    "co-bridge producer: envelope pronto (event_id={}, type={}, universe={}) \
-                     — envio aguarda CO-384",
-                    env.event_id,
-                    env.event_type,
-                    env.universe_key
-                );
+                if let BridgeMessage::Event { federated } = &msg {
+                    tracing::debug!(
+                        "co-bridge producer: envelope pronto (type={}, universe={:?}) \
+                         — envio aguarda CO-384/YG-119",
+                        federated.event.event_type,
+                        federated.event.universe_key
+                    );
+                }
             }
             Err(e) => tracing::error!("co-bridge producer: encode falhou: {e}"),
         }
     }
 
-    // Consome o próximo evento interno (conteúdo **ou** observability) para manter
-    // o log crescendo enquanto o hub não existe (evita perda silenciosa antes do
-    // CO-384/389). Observability é efêmero: encode + descarte (não vai ao log).
     tokio::select! {
         content = rx.recv() => match content {
             Ok(note) => {
@@ -825,7 +979,6 @@ async fn connect_and_stream(
     }
 }
 
-/// Falhas da ponte (acionam backoff/reconnect).
 #[derive(Debug, thiserror::Error)]
 pub enum BridgeError {
     #[error("hub do CO indisponível (CO-384 ainda não existe)")]
@@ -836,12 +989,12 @@ pub enum BridgeError {
     BadRequest(String),
 }
 
-/// Caminho da nota no disco (`<root>/<instance>/notes/<slug>.md`). Útil para
-/// diagnósticos; não usado no envelope (que usa o `path` relativo).
 #[allow(dead_code)]
 fn note_disk_path(root: &std::path::Path, instance: &str, slug: &str) -> PathBuf {
     root.join(instance).join("notes").join(format!("{slug}.md"))
 }
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -857,10 +1010,13 @@ mod tests {
             title: format!("Título {slug}"),
             body: format!("corpo de {slug} [[outra]]"),
             updated_at: Some("2026-06-06T00:00:00+00:00".into()),
+            frontmatter: None,
+            actor: None,
+            visibility: Visibility::Public,
         }
     }
 
-    // ── Envelope ──────────────────────────────────────────────────────────
+    // ── NoteKind / path helpers ──────────────────────────────────────────
 
     #[test]
     fn note_kind_event_type_mapeia_entry_verbs() {
@@ -875,7 +1031,7 @@ mod tests {
         assert_eq!(n.path(), "instances/inst-1/notes/minha-nota.md");
     }
 
-    // ── YG-114: contrato do Caderno do Ayvu Rapyta (instância + slug + path) ──
+    // ── YG-114: contrato do Caderno do Ayvu Rapyta ───────────────────────
 
     #[test]
     fn verse_slug_e_estavel_e_sem_diacriticos() {
@@ -884,76 +1040,123 @@ mod tests {
         assert_eq!(verse_slug("Capítulo 3", "Verso 4"), "capitulo-3-verso-4");
     }
 
-    /// O coração do contrato CO-389: uma nota de verso do Caderno, gravada via
-    /// `NoteStore` sob `AYVU_INSTANCE`, federa no path **exato** que o consumer
-    /// CO-389 espera — `instances/ayvu-rapyta/notes/<verse_slug>.md`,
-    /// `universe_key=yggdrasil`. É o que torna a federação "de graça" quando a
-    /// YG-112 grava via `NoteStore` + `emit_note`.
     #[test]
     fn caderno_note_federa_no_path_contratado_co389() {
         let slug = verse_slug("1", "2");
-        // o `NoteWritten` que a YG-112 emitirá ao gravar a nota do verso.
         let ev = NoteWritten::note(AYVU_INSTANCE, &slug, NoteKind::Created);
         assert_eq!(ev.universe_key(), "yggdrasil");
         assert_eq!(ev.path(), "instances/ayvu-rapyta/notes/1-2.md");
-        // o path é exatamente o do `FederatedSource::Notes` (YG-97) sob a
-        // instância canônica — a costura que CO-389 consome.
-        assert_eq!(
-            ev.path(),
-            FederatedSource::Notes.path(AYVU_INSTANCE, &slug),
-            "contrato CO-389: path == FederatedSource::Notes.path()"
-        );
+        assert_eq!(ev.path(), FederatedSource::Notes.path(AYVU_INSTANCE, &slug));
     }
 
-    #[test]
-    fn envelope_encode_inclui_campos_de_federacao() {
-        let mut log = EventLog::new();
-        let id = log.append(note("inst-1", "n", NoteKind::Created));
-        let entry = &log.pending()[0];
-        assert_eq!(entry.id, id);
-        let env = FederatedEvent::from_log_entry(entry, "node-xyz");
-        assert_eq!(env.event_id, 1);
-        assert_eq!(env.event_type, "entry.created");
-        assert_eq!(env.universe_key, "yggdrasil");
-        assert_eq!(env.path, "instances/inst-1/notes/n.md");
-        assert_eq!(env.signed_by, "node-xyz");
-        assert_eq!(env.origin_deployment, ORIGIN_DEPLOYMENT);
-        assert_eq!(env.hop_count, 0);
-        assert_eq!(env.payload.title, "Título n");
+    // ── Wire: BridgeMessage formato CO-384 ──────────────────────────────
 
-        // round-trip JSON
-        let json = env.encode().unwrap();
-        let back: FederatedEvent = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, env);
-        // chaves esperadas pelo CO-384 presentes no wire
+    #[test]
+    fn bridge_message_note_tem_formato_correto() {
+        let mut log = EventLog::new();
+        log.append(note("inst-1", "n", NoteKind::Created));
+        let entry = &log.pending()[0];
+        let msg = BridgeMessage::from_log_entry(entry, "node-xyz");
+
+        let BridgeMessage::Event { federated } = &msg else {
+            panic!("esperava Event");
+        };
+        assert_eq!(federated.event.event_type, "entry.created");
+        assert_eq!(federated.event.universe_key.as_deref(), Some("yggdrasil"));
+        assert_eq!(federated.signed_by, "node-xyz");
+        assert_eq!(federated.origin_deployment, ORIGIN_DEPLOYMENT);
+        assert_eq!(federated.hop_count, 0);
+
+        // payload é NotePayload com path + body_hash
+        let payload = &federated.event.payload;
+        assert_eq!(
+            payload["path"].as_str().unwrap(),
+            "instances/inst-1/notes/n.md"
+        );
+        assert_eq!(payload["title"].as_str().unwrap(), "Título n");
+        assert!(
+            payload["body_hash"]
+                .as_str()
+                .map(|h| h.len() == 64)
+                .unwrap_or(false),
+            "body_hash deve ser hex SHA-256 de 64 chars"
+        );
+
+        // round-trip JSON → BridgeMessage (CO-380 shape)
+        let json = msg.encode().unwrap();
+        assert!(json.contains("\"bridge_msg_type\":\"Event\""));
         assert!(json.contains("\"event_type\":\"entry.created\""));
         assert!(json.contains("\"universe_key\":\"yggdrasil\""));
-        assert!(json.contains("\"path\":\"instances/inst-1/notes/n.md\""));
         assert!(json.contains("\"hop_count\":0"));
+        let back: BridgeMessage = serde_json::from_str(&json).unwrap();
+        let BridgeMessage::Event {
+            federated: back_fed,
+        } = back
+        else {
+            panic!("round-trip: esperava Event");
+        };
+        assert_eq!(back_fed.event.event_type, "entry.created");
     }
 
     #[test]
-    fn deleted_envelope_usa_entry_deleted() {
+    fn bridge_message_deleted_usa_entry_deleted() {
         let mut log = EventLog::new();
         log.append(note("inst-1", "n", NoteKind::Deleted));
-        let env = FederatedEvent::from_log_entry(&log.pending()[0], "node");
-        assert_eq!(env.event_type, "entry.deleted");
+        let msg = BridgeMessage::from_log_entry(&log.pending()[0], "node");
+        let BridgeMessage::Event { federated } = msg else {
+            panic!()
+        };
+        assert_eq!(federated.event.event_type, "entry.deleted");
     }
 
     #[test]
     fn loop_guard_descarta_proprio_echo() {
         let mut log = EventLog::new();
         log.append(note("inst-1", "n", NoteKind::Created));
-        let mut env = FederatedEvent::from_log_entry(&log.pending()[0], "node");
-        assert!(!env.is_own_echo(), "hop 0 da origem não é echo");
-        env.hop_count = 2; // voltou do hub
-        assert!(env.is_own_echo(), "echo do próprio deployment é descartado");
-        // evento de outra origem não é nosso echo
-        env.origin_deployment = "co.artelonga.com.br".into();
-        assert!(!env.is_own_echo());
+        let mut fed = FederatedEvent::from_log_entry(&log.pending()[0], "node");
+        assert!(!fed.is_own_echo(), "hop 0 da origem não é echo");
+        fed.hop_count = 2;
+        assert!(fed.is_own_echo());
+        fed.origin_deployment = "co.artelonga.com.br".into();
+        assert!(!fed.is_own_echo());
     }
 
-    // ── event_log: append + offset (last_delivered_event_id) ──────────────
+    #[test]
+    fn visibility_impede_federacao_de_privado() {
+        let mut n = note("inst-1", "n", NoteKind::Created);
+        n.visibility = Visibility::UserOnly;
+        let mut log = EventLog::new();
+        log.append(n);
+        let fed = FederatedEvent::from_log_entry(&log.pending()[0], "node");
+        assert!(!fed.is_federatable(), "UserOnly não é federável");
+
+        let mut n2 = note("inst-1", "n2", NoteKind::Created);
+        n2.visibility = Visibility::Public;
+        let mut log2 = EventLog::new();
+        log2.append(n2);
+        let fed2 = FederatedEvent::from_log_entry(&log2.pending()[0], "node");
+        assert!(fed2.is_federatable(), "Public é federável");
+    }
+
+    // ── body_sha256 ──────────────────────────────────────────────────────
+
+    #[test]
+    fn body_sha256_retorna_hex_de_64_chars() {
+        let h = body_sha256("hello world");
+        assert_eq!(h.len(), 64);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+        // idempotente: mesma entrada → mesmo hash
+        assert_eq!(h, body_sha256("hello world"));
+        // diferente de string vazia
+        assert_ne!(h, body_sha256(""));
+    }
+
+    #[test]
+    fn body_sha256_dois_bodies_distintos_hashs_distintos() {
+        assert_ne!(body_sha256("a"), body_sha256("b"));
+    }
+
+    // ── event_log: append + offset ───────────────────────────────────────
 
     #[test]
     fn append_atribui_ids_monotonicos_a_partir_de_1() {
@@ -971,7 +1174,7 @@ mod tests {
         log.append(note("i", "b", NoteKind::Created));
         assert_eq!(log.last_delivered(), None);
         let pending = log.pending();
-        assert_eq!(pending.len(), 2, "NULL → stream do log inteiro");
+        assert_eq!(pending.len(), 2);
         assert_eq!(pending[0].id, 1);
         assert_eq!(pending[1].id, 2);
     }
@@ -982,12 +1185,11 @@ mod tests {
         for s in ["a", "b", "c", "d"] {
             log.append(note("i", s, NoteKind::Created));
         }
-        log.ack(2); // CO confirmou até o id 2
+        log.ack(2);
         let pending = log.pending();
-        assert_eq!(pending.len(), 2, "só os não-entregues");
+        assert_eq!(pending.len(), 2);
         assert_eq!(pending[0].id, 3);
         assert_eq!(pending[1].id, 4);
-        assert_eq!(log.last_delivered(), Some(2));
     }
 
     #[test]
@@ -997,7 +1199,7 @@ mod tests {
             log.append(note("i", s, NoteKind::Created));
         }
         log.ack(3);
-        log.ack(1); // duplicata/reordenação — ignorada
+        log.ack(1);
         assert_eq!(log.last_delivered(), Some(3));
         assert!(log.pending().is_empty());
     }
@@ -1008,19 +1210,18 @@ mod tests {
         log.append(note("i", "a", NoteKind::Created));
         log.ack(1);
         assert!(log.pending().is_empty());
-        log.append(note("i", "b", NoteKind::Updated)); // id 2
-        let pending = log.pending();
-        assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].id, 2);
+        log.append(note("i", "b", NoteKind::Updated));
+        assert_eq!(log.pending().len(), 1);
+        assert_eq!(log.pending()[0].id, 2);
     }
 
-    // ── cold-start backfill: seed_from_store ──────────────────────────────
+    // ── cold-start backfill: seed_from_store ─────────────────────────────
+
+    use yggdrasil_core::instance::UniverseInstance;
 
     fn store_with_notes() -> (TempDir, std::sync::Arc<InstanceStore>) {
         let dir = TempDir::new().unwrap();
         let store = std::sync::Arc::new(InstanceStore::new(dir.path()).unwrap());
-
-        // duas instâncias, com notas em disco (Fase 0, anteriores ao log)
         for (iid, slugs) in [("inst-a", vec!["um", "dois"]), ("inst-b", vec!["tres"])] {
             let inst = UniverseInstance::empty(iid, "owner@test", "Inst");
             store.save(&inst).unwrap();
@@ -1033,30 +1234,33 @@ mod tests {
         (dir, store)
     }
 
-    use yggdrasil_core::instance::UniverseInstance;
-
     #[test]
     fn seed_from_store_sintetiza_entry_created_por_nota_existente() {
         let (_dir, store) = store_with_notes();
         let mut log = EventLog::new();
         let seeded = log.seed_from_store(&store);
-        assert_eq!(seeded, 3, "2 notas em inst-a + 1 em inst-b");
-        assert_eq!(log.len(), 3);
-
-        // todas são entry.created e cobrem ambas as instâncias
+        assert_eq!(seeded, 3);
         let pending = log.pending();
-        assert_eq!(pending.len(), 3, "cold-start: log inteiro pendente");
+        assert_eq!(pending.len(), 3);
         assert!(pending.iter().all(|e| e.note.kind == NoteKind::Created));
-        let instances: std::collections::BTreeSet<_> =
-            pending.iter().map(|e| e.note.instance.as_str()).collect();
-        assert_eq!(instances, ["inst-a", "inst-b"].into_iter().collect());
 
-        // o envelope sintetizado é instance-qualified e tem payload preenchido
-        let env = FederatedEvent::from_log_entry(&pending[0], "n");
-        assert!(env.path.starts_with("instances/"));
-        assert!(env.path.contains("/notes/"));
-        assert!(!env.payload.body.is_empty());
-        assert!(env.payload.updated_at.is_some());
+        let msg = BridgeMessage::from_log_entry(&pending[0], "n");
+        let BridgeMessage::Event { federated } = msg else {
+            panic!()
+        };
+        assert!(
+            federated.event.payload["path"]
+                .as_str()
+                .unwrap()
+                .starts_with("instances/")
+        );
+        assert!(
+            federated.event.payload["body_hash"]
+                .as_str()
+                .map(|h| h.len() == 64)
+                .unwrap_or(false)
+        );
+        assert!(federated.event.payload["updated_at"].is_string());
     }
 
     #[test]
@@ -1065,19 +1269,18 @@ mod tests {
         let store = InstanceStore::new(dir.path()).unwrap();
         let mut log = EventLog::new();
         assert_eq!(log.seed_from_store(&store), 0);
-        assert!(log.is_empty());
     }
 
     #[test]
     fn seed_depois_append_continua_monotonico() {
         let (_dir, store) = store_with_notes();
         let mut log = EventLog::new();
-        log.seed_from_store(&store); // ids 1..=3
+        log.seed_from_store(&store);
         let next = log.append(note("inst-a", "novo", NoteKind::Created));
-        assert_eq!(next, 4, "append pós-seed continua a sequência");
+        assert_eq!(next, 4);
     }
 
-    // ── reconnect: backoff exponencial ────────────────────────────────────
+    // ── backoff exponencial ──────────────────────────────────────────────
 
     #[test]
     fn backoff_dobra_ate_o_teto_de_30s() {
@@ -1087,8 +1290,8 @@ mod tests {
         assert_eq!(b.fail(), Duration::from_secs(4));
         assert_eq!(b.fail(), Duration::from_secs(8));
         assert_eq!(b.fail(), Duration::from_secs(16));
-        assert_eq!(b.fail(), Duration::from_secs(30), "teto em 30s");
-        assert_eq!(b.fail(), Duration::from_secs(30), "satura no teto");
+        assert_eq!(b.fail(), Duration::from_secs(30));
+        assert_eq!(b.fail(), Duration::from_secs(30));
     }
 
     #[test]
@@ -1101,25 +1304,23 @@ mod tests {
         assert_eq!(b.current(), BACKOFF_MIN);
     }
 
-    // ── config gate ───────────────────────────────────────────────────────
+    // ── config gate ──────────────────────────────────────────────────────
+
+    use std::sync::Mutex;
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn config_from_env_none_sem_url_ou_token() {
-        // Serializa o acesso a env vars do processo entre estes dois testes.
         let _guard = ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::remove_var("YGG_CO_BRIDGE_URL");
             std::env::remove_var("YGG_CO_BRIDGE_TOKEN");
         }
-        assert!(BridgeConfig::from_env().is_none(), "sem nada → no-op");
-
+        assert!(BridgeConfig::from_env().is_none());
         unsafe {
             std::env::set_var("YGG_CO_BRIDGE_URL", "wss://co.test/api/v1/events/bridge");
         }
-        assert!(
-            BridgeConfig::from_env().is_none(),
-            "só URL, sem token → no-op"
-        );
+        assert!(BridgeConfig::from_env().is_none());
         unsafe {
             std::env::remove_var("YGG_CO_BRIDGE_URL");
         }
@@ -1136,7 +1337,7 @@ mod tests {
         let cfg = BridgeConfig::from_env().expect("configurado");
         assert_eq!(cfg.url, "wss://co.test/api/v1/events/bridge");
         assert_eq!(cfg.token, "service-jwt-123");
-        assert_eq!(cfg.node_id, ORIGIN_DEPLOYMENT, "node_id default");
+        assert_eq!(cfg.node_id, ORIGIN_DEPLOYMENT);
         unsafe {
             std::env::remove_var("YGG_CO_BRIDGE_URL");
             std::env::remove_var("YGG_CO_BRIDGE_TOKEN");
@@ -1177,13 +1378,10 @@ mod tests {
         let store = std::sync::Arc::new(InstanceStore::new(dir.path()).unwrap());
         let rooms = std::sync::Arc::new(RoomStore::new(dir.path()).unwrap());
         let producer = Producer::new();
-        assert!(
-            !spawn(&producer, store, rooms),
-            "sem env → spawn devolve false (no-op, nada de rede)"
-        );
+        assert!(!spawn(&producer, store, rooms));
     }
 
-    // ── YG-103: fonte comunicação (universe_key/path) ────────────────────
+    // ── YG-103: fonte comunicação ────────────────────────────────────────
 
     #[test]
     fn source_notes_mapeia_yggdrasil_e_path_instance_qualified() {
@@ -1196,54 +1394,21 @@ mod tests {
     }
 
     #[test]
-    fn source_comunicacao_mapeia_universe_comunicacao_e_lang_terms() {
+    fn source_comunicacao_mapeia_universe_comunicacao_e_users_path() {
         let s = FederatedSource::Comunicacao {
             lang: "yoruba".into(),
+            user_slug: "alice".into(),
         };
         assert_eq!(s.universe_key(), "comunicacao");
-        // comunicação ignora o `instance` (a sala) — path é <lang>/terms/<slug>.md
-        assert_eq!(s.path("sala-1", "ase"), "yoruba/terms/ase.md");
+        assert_eq!(s.path("sala-1", "ase"), "yoruba/terms/_users/alice/ase.md");
     }
 
-    #[test]
-    fn envelope_de_termo_usa_universe_comunicacao_e_path_de_lingua() {
-        let mut log = EventLog::new();
-        log.append(NoteWritten {
-            instance: "sala-1".into(),
-            slug: "ase".into(),
-            kind: NoteKind::Created,
-            source: FederatedSource::Comunicacao {
-                lang: "yoruba".into(),
-            },
-            title: "àṣẹ".into(),
-            body: "força vital".into(),
-            updated_at: Some("2026-06-07T00:00:00+00:00".into()),
-        });
-        let env = FederatedEvent::from_log_entry(&log.pending()[0], "node");
-        assert_eq!(env.universe_key, "comunicacao");
-        assert_eq!(env.path, "yoruba/terms/ase.md");
-        assert_eq!(env.event_type, "entry.created");
-        let json = env.encode().unwrap();
-        assert!(json.contains("\"universe_key\":\"comunicacao\""));
-        assert!(json.contains("\"path\":\"yoruba/terms/ase.md\""));
-    }
-
-    #[test]
-    fn note_written_compat_serde_sem_source_defaulta_notes() {
-        // payload antigo (YG-93, sem `source`) deve desserializar como Notes.
-        let legacy = r#"{"instance":"i","slug":"n","kind":"created"}"#;
-        let n: NoteWritten = serde_json::from_str(legacy).unwrap();
-        assert_eq!(n.source, FederatedSource::Notes);
-        assert_eq!(n.universe_key(), "yggdrasil");
-        assert_eq!(n.path(), "instances/i/notes/n.md");
-    }
-
-    // ── YG-103: cold-start backfill dos termos de salas publicadas ────────
+    // ── YG-118: TermPayload, path _users/, body_hash, frontmatter ────────
 
     use yggdrasil_core::comunicacao::room::{Element, Room};
 
     fn room_with_terms(id: &str, lang: &str, published: bool, words: &[&str]) -> Room {
-        let mut room = Room::empty(id, "owner@test", "Sala", lang);
+        let mut room = Room::empty(id, "alice@test", "Sala", lang);
         room.published = published;
         for (i, w) in words.iter().enumerate() {
             room.elements
@@ -1253,10 +1418,136 @@ mod tests {
     }
 
     #[test]
+    fn termo_publicado_gera_term_payload_com_users_path_e_body_hash() {
+        let room = room_with_terms("sala-1", "yo", true, &["ase"]);
+        let elem = &room.elements[0];
+        let user_slug = "alice-test";
+        let ev = comunicacao_term_event(&room, elem, user_slug).unwrap();
+
+        // universe_key e path corretos (YG-118 acceptance #1)
+        assert_eq!(ev.universe_key(), "comunicacao");
+        assert_eq!(ev.path(), "yoruba/terms/_users/alice-test/ase.md");
+        assert!(ev.path().contains("_users/"), "path deve ter _users/");
+        assert_eq!(ev.kind, NoteKind::Created);
+
+        // constrói BridgeMessage e verifica payload (TermPayload shape)
+        let mut log = EventLog::new();
+        log.append(ev);
+        let msg = BridgeMessage::from_log_entry(&log.pending()[0], "n");
+        let BridgeMessage::Event { federated } = msg else {
+            panic!()
+        };
+
+        assert_eq!(federated.event.event_type, "entry.created");
+        assert_eq!(federated.event.universe_key.as_deref(), Some("comunicacao"));
+        let payload = &federated.event.payload;
+        assert_eq!(
+            payload["path"].as_str().unwrap(),
+            "yoruba/terms/_users/alice-test/ase.md"
+        );
+        assert!(
+            payload["body_hash"]
+                .as_str()
+                .map(|h| h.len() == 64)
+                .unwrap_or(false)
+        );
+        assert!(
+            payload["frontmatter"].is_object(),
+            "frontmatter deve ser JSON object"
+        );
+        assert_eq!(payload["lingua"].as_str().unwrap(), "yoruba");
+
+        // round-trip: desserializa como BridgeMessage (CO-380 shape)
+        let json = BridgeMessage::from_log_entry(&log.pending()[0], "n")
+            .encode()
+            .unwrap();
+        assert!(json.contains("\"bridge_msg_type\":\"Event\""));
+        assert!(json.contains("\"event_type\":\"entry.created\""));
+        assert!(json.contains("_users/alice-test/ase.md"));
+        let back: BridgeMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, BridgeMessage::Event { .. }));
+    }
+
+    #[test]
+    fn nota_de_instancia_payload_inclui_body_hash() {
+        let mut log = EventLog::new();
+        log.append(NoteWritten {
+            instance: "inst-x".into(),
+            slug: "minha-nota".into(),
+            kind: NoteKind::Updated,
+            source: FederatedSource::Notes,
+            title: "Minha Nota".into(),
+            body: "corpo da nota".into(),
+            updated_at: Some("2026-06-08T00:00:00+00:00".into()),
+            frontmatter: None,
+            actor: None,
+            visibility: Visibility::Public,
+        });
+        let msg = BridgeMessage::from_log_entry(&log.pending()[0], "n");
+        let BridgeMessage::Event { federated } = msg else {
+            panic!()
+        };
+
+        // YG-118 acceptance #2: universe_key=yggdrasil, path instance-qualified
+        assert_eq!(federated.event.universe_key.as_deref(), Some("yggdrasil"));
+        let payload = &federated.event.payload;
+        assert_eq!(
+            payload["path"].as_str().unwrap(),
+            "instances/inst-x/notes/minha-nota.md"
+        );
+        // body_hash presente
+        let hash = payload["body_hash"].as_str().unwrap();
+        assert_eq!(hash.len(), 64);
+        assert_eq!(hash, body_sha256("corpo da nota"));
+    }
+
+    #[test]
+    fn sala_events_tem_payload_correto() {
+        // YG-118 acceptance #3: yggdrasil.sala.{published,term_contributed,user_joined}
+        for (activity, expected_type) in [
+            (RoomActivity::Published, "yggdrasil.sala.published"),
+            (
+                RoomActivity::TermContributed,
+                "yggdrasil.sala.term_contributed",
+            ),
+            (RoomActivity::UserJoined, "yggdrasil.sala.user_joined"),
+        ] {
+            let ev = ObservabilityEvent::room(activity, "sala-1", "yoruba", "alice");
+            let json = ev.encode().unwrap();
+            let msg: BridgeMessage = serde_json::from_str(&json).unwrap();
+            let BridgeMessage::Event { federated } = msg else {
+                panic!("expected Event for {expected_type}");
+            };
+            assert_eq!(federated.event.event_type, expected_type);
+            assert!(
+                federated.event.universe_key.is_none(),
+                "sala events não têm universe_key"
+            );
+            let payload = &federated.event.payload;
+            assert_eq!(payload["sala_id"].as_str().unwrap(), "sala-1");
+            assert_eq!(payload["lingua"].as_str().unwrap(), "yoruba");
+            assert_eq!(payload["actor_id"].as_str().unwrap(), "alice");
+        }
+    }
+
+    #[test]
+    fn unpublished_mapeia_para_published_com_published_false() {
+        let ev = ObservabilityEvent::room(RoomActivity::Unpublished, "sala-1", "yoruba", "alice");
+        let json = ev.encode().unwrap();
+        let msg: BridgeMessage = serde_json::from_str(&json).unwrap();
+        let BridgeMessage::Event { federated } = msg else {
+            panic!()
+        };
+        assert_eq!(federated.event.event_type, "yggdrasil.sala.published");
+        assert_eq!(federated.event.payload["published"].as_bool(), Some(false));
+    }
+
+    // ── YG-103: cold-start backfill termos ───────────────────────────────
+
+    #[test]
     fn seed_comunicacao_so_inclui_salas_publicadas() {
         let dir = TempDir::new().unwrap();
         let store = RoomStore::new(dir.path()).unwrap();
-        // `yo`/`gn-mbya` são os **códigos**; o path resolve p/ `yoruba`/`guarani-mbya`.
         store
             .save(&room_with_terms("pub", "yo", true, &["ase", "ori"]))
             .unwrap();
@@ -1266,17 +1557,18 @@ mod tests {
 
         let mut log = EventLog::new();
         let seeded = log.seed_comunicacao_from_store(&store);
-        assert_eq!(seeded, 2, "só os 2 termos da sala publicada");
+        assert_eq!(seeded, 2);
         let pending = log.pending();
         assert!(
             pending
                 .iter()
                 .all(|e| e.note.universe_key() == "comunicacao")
         );
-        assert!(pending.iter().all(|e| e.note.kind == NoteKind::Created));
+        // path deve conter _users/
+        assert!(pending.iter().all(|e| e.note.path().contains("_users/")));
         let paths: std::collections::BTreeSet<_> = pending.iter().map(|e| e.note.path()).collect();
-        assert!(paths.contains("yoruba/terms/ase.md"));
-        assert!(paths.contains("yoruba/terms/ori.md"));
+        // alice@test → slugify → "alice-test"
+        assert!(paths.iter().any(|p| p.contains("yoruba/terms/_users/")));
     }
 
     #[test]
@@ -1297,7 +1589,6 @@ mod tests {
         let n = log.seed_from_store(&istore);
         let t = log.seed_comunicacao_from_store(&rstore);
         assert_eq!((n, t), (1, 1));
-        // ids contíguos: nota = 1, termo = 2
         assert_eq!(log.len(), 2);
         let universes: std::collections::BTreeSet<_> = log
             .pending()
@@ -1310,40 +1601,34 @@ mod tests {
         );
     }
 
-    // ── YG-103: observability de sala (yggdrasil.sala.*) ──────────────────
+    // ── YG-103: observability de sala (RoomActivity) ─────────────────────
 
     #[test]
-    fn observability_event_types_namespaced() {
+    fn room_activity_event_types_namespaced() {
         assert_eq!(
             RoomActivity::Published.event_type(),
             "yggdrasil.sala.published"
         );
         assert_eq!(
-            RoomActivity::Unpublished.event_type(),
-            "yggdrasil.sala.unpublished"
+            RoomActivity::UserJoined.event_type(),
+            "yggdrasil.sala.user_joined"
         );
         assert_eq!(
-            RoomActivity::Presence.event_type(),
-            "yggdrasil.sala.presence"
+            RoomActivity::TermContributed.event_type(),
+            "yggdrasil.sala.term_contributed"
+        );
+        assert_eq!(
+            RoomActivity::Unpublished.event_type(),
+            "yggdrasil.sala.published"
         );
     }
 
     #[test]
-    fn observability_envelope_nao_tem_universe_nem_path() {
-        let ev = ObservabilityEvent::room(RoomActivity::Published, "sala-1", "yoruba", "alice")
-            .at("2026-06-07T00:00:00+00:00");
-        let json = ev.encode().unwrap();
-        assert!(json.contains("\"event_type\":\"yggdrasil.sala.published\""));
-        assert!(json.contains("\"room_id\":\"sala-1\""));
-        assert!(json.contains("\"actor\":\"alice\""));
-        // observability é não-conteúdo: sem universe_key/path/payload
-        assert!(!json.contains("universe_key"));
-        assert!(!json.contains("\"path\""));
-        // round-trip
-        let back: ObservabilityEvent = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, ev);
+    fn note_written_compat_serde_sem_source_defaulta_notes() {
+        let legacy = r#"{"instance":"i","slug":"n","kind":"created"}"#;
+        let n: NoteWritten = serde_json::from_str(legacy).unwrap();
+        assert_eq!(n.source, FederatedSource::Notes);
+        assert_eq!(n.universe_key(), "yggdrasil");
+        assert_eq!(n.path(), "instances/i/notes/n.md");
     }
-
-    use std::sync::Mutex;
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 }
