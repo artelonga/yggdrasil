@@ -11,12 +11,9 @@ members = [
     "universe-vim",
 ]
 
-# Campos herdados por crates que usam `*.workspace = true` (ex. universe-vim).
-# Sua ausência quebrava o build WASM no CI (`failed to inherit edition`).
-[workspace.package]
-version = "0.1.0"
-edition = "2024"
-license = "MIT"
+# [workspace.package] removido em YG-64: cada crate de universo declara
+# version/edition/license literalmente, para versionamento independente do core.
+# (universe-vim deixou de usar `version.workspace = true`.)
 
 # Deps herdadas por `serde = { workspace = true }` nas crates (ex. universe-vim).
 [workspace.dependencies]

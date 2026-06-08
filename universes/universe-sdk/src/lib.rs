@@ -30,6 +30,32 @@ pub struct UniverseManifest {
     pub capabilities: Vec<String>,
 }
 
+/// Expands to the consuming crate's `CARGO_PKG_VERSION` as a `&'static str`.
+///
+/// Each universo crate uses this in its `Universe::manifest()` so the manifest
+/// `version` field is derived from the crate's own `Cargo.toml` (YG-64/YG-66)
+/// instead of a hardcoded string. Because `env!` expands in the *caller's*
+/// crate, `pkg_version!()` resolves to the version of the universo crate, not
+/// the SDK.
+///
+/// # Usage
+/// ```ignore
+/// fn manifest() -> UniverseManifest {
+///     UniverseManifest {
+///         name: "snake".into(),
+///         version: universe_sdk::pkg_version!().into(),
+///         api_version: 1,
+///         // ...
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! pkg_version {
+    () => {
+        env!("CARGO_PKG_VERSION")
+    };
+}
+
 // ─── Universe trait ───────────────────────────────────────────────────────────
 
 pub trait Universe: Sized + 'static {
@@ -289,6 +315,21 @@ mod tests {
     fn read_empty_is_empty_string() {
         let s = unsafe { read_json(0, 0) };
         assert_eq!(s, "");
+    }
+
+    #[test]
+    fn pkg_version_is_valid_semver() {
+        // Expands to universe-sdk's own CARGO_PKG_VERSION here. Must be a
+        // X.Y.Z string so manifests built from it are valid semver.
+        let v = crate::pkg_version!();
+        let parts: Vec<&str> = v.split('.').collect();
+        assert_eq!(parts.len(), 3, "esperava semver X.Y.Z, got {v}");
+        for p in parts {
+            assert!(
+                p.parse::<u64>().is_ok(),
+                "componente não-numérico em {v}: {p}"
+            );
+        }
     }
 
     #[test]
