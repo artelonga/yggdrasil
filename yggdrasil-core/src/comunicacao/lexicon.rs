@@ -90,6 +90,7 @@ impl LexiconStore {
             "gn-mbya" | "gn" => Some("guarani-mbya"),
             "yo" => Some("yoruba"),
             "pt" | "pt-br" => Some("portuguese"),
+            "es" => Some("spanish"),
             _ => None,
         }
     }
@@ -409,6 +410,7 @@ mod tests {
         assert_eq!(LexiconStore::lang_dir("yo"), Some("yoruba"));
         assert_eq!(LexiconStore::lang_dir("gn-mbya"), Some("guarani-mbya"));
         assert_eq!(LexiconStore::lang_dir("pt-br"), Some("portuguese"));
+        assert_eq!(LexiconStore::lang_dir("es"), Some("spanish"));
         assert_eq!(LexiconStore::lang_dir("klingon"), None);
     }
 
