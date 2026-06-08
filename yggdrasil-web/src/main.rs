@@ -239,6 +239,10 @@ async fn main() -> anyhow::Result<()> {
     // termos publicados, YG-103). E2E aguarda os hubs CO-384/389.
     let co_bridge = co_bridge_producer::Producer::new();
     let instance_store_for_bridge = instance_store.clone();
+    // YG-112/114: as notas do Caderno do Ayvu Rapyta são gravadas via `NoteStore`
+    // sob a instância canônica do Ayvu (`AYVU_INSTANCE`) no mesmo store de
+    // instâncias — o producer staged então as federa de graça.
+    let instance_store_for_caderno = instance_store.clone();
 
     let instances_state = Arc::new(
         api::instances::InstancesState::new(auth_state.jwt_secret.clone(), instance_store)
@@ -317,6 +321,13 @@ async fn main() -> anyhow::Result<()> {
         yggdrasil_core::comunicacao::RoomStore::new(&comunicacao_rooms_dir)
             .map_err(|e| anyhow::anyhow!("comunicacao store: {e}"))?,
     );
+    // YG-112: Caderno do Ayvu Rapyta — store per-user (favoritos/notas/progresso)
+    // sob a mesma raiz das salas (`_caderno/<user-slug>.json`), espelhando o
+    // per-user da fila de revisão.
+    let comunicacao_caderno = Arc::new(
+        yggdrasil_core::comunicacao::CadernoStore::new(&comunicacao_rooms_dir)
+            .map_err(|e| anyhow::anyhow!("comunicacao caderno store: {e}"))?,
+    );
     // (Re)gera as duas salas públicas (Iorubá + Mbyá) do léxico completo baked-in.
     yggdrasil_core::comunicacao::ensure_public_rooms(
         &comunicacao_store,
@@ -350,6 +361,10 @@ async fn main() -> anyhow::Result<()> {
             room_events: None,
             // YG-101: curadoria de léxico — mesma chave de admin do feedback/analytics.
             admin_token: std::env::var("YGGDRASIL_ADMIN_TOKEN").ok(),
+            // YG-112: Caderno per-user + store de instâncias p/ federar as notas
+            // do Ayvu (YG-114).
+            caderno: comunicacao_caderno,
+            instance_store: instance_store_for_caderno,
         }
         .with_bridge(co_bridge.sender(), co_bridge.obs_sender()),
     );
@@ -397,6 +412,30 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/comunicacao/revisao/nota",
             post(comunicacao_routes::nota_revisao),
+        )
+        // YG-112: Caderno do Ayvu Rapyta — favoritos/notas/progresso por usuário
+        // (JWT-gated), com migração do localStorage. Notas federam pelo Ayvu (YG-114).
+        .route(
+            "/api/v1/comunicacao/caderno",
+            get(comunicacao_routes::get_caderno),
+        )
+        .route(
+            "/api/v1/comunicacao/caderno/favoritos/{key}",
+            axum::routing::put(comunicacao_routes::add_favorito)
+                .delete(comunicacao_routes::remove_favorito),
+        )
+        .route(
+            "/api/v1/comunicacao/caderno/notas/{key}",
+            axum::routing::put(comunicacao_routes::put_nota_caderno)
+                .delete(comunicacao_routes::delete_nota_caderno),
+        )
+        .route(
+            "/api/v1/comunicacao/caderno/progresso/{key}",
+            axum::routing::put(comunicacao_routes::set_progresso),
+        )
+        .route(
+            "/api/v1/comunicacao/caderno/migrar",
+            post(comunicacao_routes::migrar_caderno),
         )
         .with_state(comunicacao_state);
 

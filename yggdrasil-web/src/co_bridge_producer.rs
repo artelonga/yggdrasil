@@ -44,6 +44,22 @@ use yggdrasil_core::instance::{InstanceStore, NoteStore};
 /// `universe_key` das **notas** (editor de instâncias) no bus do CO.
 pub const UNIVERSE_KEY: &str = "yggdrasil";
 
+/// Instância canônica do **Ayvu Rapyta** (YG-114). As notas do Caderno do corpus
+/// (YG-112) são gravadas via `NoteStore` sob esta instância — assim o producer
+/// staged (YG-93/97) as federa **de graça** no path instance-qualified
+/// `instances/ayvu-rapyta/notes/<slug>.md`, batendo o contrato do consumer CO-389.
+/// É o *seam* que trava o contrato (instância + slug + path) antes do E2E.
+pub const AYVU_INSTANCE: &str = "ayvu-rapyta";
+
+/// Adaptador **verso → slug** estável do Caderno do Ayvu Rapyta (YG-114).
+/// Reusa a mesma [`slugify`] do léxico/notas, então a âncora de um verso é
+/// idêntica em todo o sistema (`verse_slug(1, 2) → "1-2"`,
+/// `verse_slug("I", "12a") → "i-12a"`). É a chave por baixo do `NoteWritten`
+/// federado: `instances/ayvu-rapyta/notes/<verse_slug>.md` (contrato CO-389).
+pub fn verse_slug(chapter: impl AsRef<str>, verse: impl AsRef<str>) -> String {
+    slugify(&format!("{} {}", chapter.as_ref(), verse.as_ref()))
+}
+
 /// `universe_key` dos **termos de léxico** das salas de comunicação (YG-103).
 /// É a universe `comunicacao` que **já existe** no CO (mbya/yoruba) — o producer
 /// só adiciona a camada de evento ao vivo (<1s) por cima do sync de repo (YG-100).
@@ -857,6 +873,36 @@ mod tests {
     fn note_written_path_e_instance_qualified() {
         let n = note("inst-1", "minha-nota", NoteKind::Created);
         assert_eq!(n.path(), "instances/inst-1/notes/minha-nota.md");
+    }
+
+    // ── YG-114: contrato do Caderno do Ayvu Rapyta (instância + slug + path) ──
+
+    #[test]
+    fn verse_slug_e_estavel_e_sem_diacriticos() {
+        assert_eq!(verse_slug("1", "2"), "1-2");
+        assert_eq!(verse_slug("I", "12a"), "i-12a");
+        assert_eq!(verse_slug("Capítulo 3", "Verso 4"), "capitulo-3-verso-4");
+    }
+
+    /// O coração do contrato CO-389: uma nota de verso do Caderno, gravada via
+    /// `NoteStore` sob `AYVU_INSTANCE`, federa no path **exato** que o consumer
+    /// CO-389 espera — `instances/ayvu-rapyta/notes/<verse_slug>.md`,
+    /// `universe_key=yggdrasil`. É o que torna a federação "de graça" quando a
+    /// YG-112 grava via `NoteStore` + `emit_note`.
+    #[test]
+    fn caderno_note_federa_no_path_contratado_co389() {
+        let slug = verse_slug("1", "2");
+        // o `NoteWritten` que a YG-112 emitirá ao gravar a nota do verso.
+        let ev = NoteWritten::note(AYVU_INSTANCE, &slug, NoteKind::Created);
+        assert_eq!(ev.universe_key(), "yggdrasil");
+        assert_eq!(ev.path(), "instances/ayvu-rapyta/notes/1-2.md");
+        // o path é exatamente o do `FederatedSource::Notes` (YG-97) sob a
+        // instância canônica — a costura que CO-389 consome.
+        assert_eq!(
+            ev.path(),
+            FederatedSource::Notes.path(AYVU_INSTANCE, &slug),
+            "contrato CO-389: path == FederatedSource::Notes.path()"
+        );
     }
 
     #[test]
