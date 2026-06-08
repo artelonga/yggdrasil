@@ -13,6 +13,7 @@
 //! editor de instâncias (YG-73) — reusa apenas os mesmos princípios de
 //! persistência (disco como fonte da verdade, escrita atômica).
 
+pub mod caderno;
 pub mod lexicon;
 pub mod public;
 pub mod review;
@@ -21,6 +22,7 @@ pub mod store;
 pub mod templates;
 pub mod writeback;
 
+pub use caderno::{Caderno, CadernoNote, CadernoStore};
 pub use lexicon::{Contribution, LexiconError, LexiconScope, LexiconStore, Promotion};
 pub use public::{PUBLIC_MBYA, PUBLIC_YORUBA, SYSTEM_OWNER, ensure_public_rooms, is_public_id};
 pub use review::{ReviewItem, ReviewQueue};

@@ -27,14 +27,16 @@ use nanoid::nanoid;
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use yggdrasil_core::comunicacao::{
-    LexiconError, LexiconStore, ReviewItem, Room, RoomEdit, RoomStore, Writeback,
-    lexicon::Contribution, room::EditError, store::StoreError, template_instantiate,
+    Caderno, CadernoStore, LexiconError, LexiconStore, ReviewItem, Room, RoomEdit, RoomStore,
+    Writeback, lexicon::Contribution, room::EditError, store::StoreError, template_instantiate,
     template_summaries,
 };
+use yggdrasil_core::instance::{InstanceStore, NoteStore, UniverseInstance};
 
 use crate::auth::verify_jwt;
 use crate::co_bridge_producer::{
-    NoteKind, NoteWritten, ObservabilityEvent, RoomActivity, comunicacao_term_event,
+    AYVU_INSTANCE, FederatedSource, NoteKind, NoteWritten, ObservabilityEvent, RoomActivity,
+    comunicacao_term_event,
 };
 
 /// Estado compartilhado das rotas de comunicação.
@@ -55,6 +57,15 @@ pub struct ComunicacaoState {
     /// analytics) que libera promover stubs → léxico curado. `None` ⇒ curadoria
     /// desabilitada (401).
     pub admin_token: Option<String>,
+    /// YG-112: store per-user do Caderno do Ayvu Rapyta (favoritos/notas/
+    /// progresso) — `<root>/_caderno/<user-slug>.json`, espelhando o per-user de
+    /// revisão.
+    pub caderno: Arc<CadernoStore>,
+    /// YG-112/114: store de instâncias, p/ gravar as **notas** do Caderno via
+    /// `NoteStore` sob a instância canônica do Ayvu ([`AYVU_INSTANCE`]) — assim o
+    /// producer staged (YG-93/97) as federa. O `term_events` (canal de conteúdo
+    /// `NoteWritten`) é reusado para emitir essas notas (fonte `Notes`).
+    pub instance_store: Arc<InstanceStore>,
 }
 
 impl ComunicacaoState {
@@ -91,6 +102,33 @@ impl ComunicacaoState {
             ObservabilityEvent::room(activity, &room.id, &room.lang, actor)
                 .at(room.updated_at.to_rfc3339()),
         );
+    }
+
+    /// `NoteStore` das notas do Caderno, enraizado na instância canônica do Ayvu
+    /// ([`AYVU_INSTANCE`]) — o mesmo padrão de [`crate::api::instances`]. Garante
+    /// que o *shell* da instância exista em disco (cria se ausente) para que a
+    /// nota tenha onde morar e o producer a enxergue no backfill.
+    fn ayvu_note_store(&self) -> NoteStore {
+        if !self.instance_store.exists(AYVU_INSTANCE) {
+            let inst = UniverseInstance::empty(
+                AYVU_INSTANCE,
+                crate::co_bridge_producer::ORIGIN_DEPLOYMENT,
+                "Ayvu Rapyta",
+            );
+            if let Err(e) = self.instance_store.save(&inst) {
+                tracing::warn!(erro = %e, "caderno: não foi possível criar a instância do Ayvu");
+            }
+        }
+        NoteStore::for_instance(self.instance_store.root(), AYVU_INSTANCE)
+    }
+
+    /// Emite um [`NoteWritten`] (fonte `Notes`) no canal de conteúdo do producer,
+    /// se ligado — espelha o `emit_note` de [`crate::api::instances`]. No-op
+    /// quando o producer está desligado (sem assinantes).
+    fn emit_note(&self, event: NoteWritten) {
+        if let Some(tx) = &self.term_events {
+            let _ = tx.send(event);
+        }
     }
 }
 
@@ -787,6 +825,235 @@ pub async fn nota_revisao(
     Json(updated).into_response()
 }
 
+// ─── Caderno do Ayvu Rapyta (YG-112) ────────────────────────────────────────────
+
+/// `GET /api/v1/comunicacao/caderno` — devolve o Caderno completo do usuário
+/// logado (favoritos + notas + progresso). Recuperável em qualquer dispositivo.
+pub async fn get_caderno(State(state): ApiState, headers: HeaderMap) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    match state.caderno.load(&user) {
+        Ok(c) => Json(c).into_response(),
+        Err(e) => map_store_err(e),
+    }
+}
+
+/// `PUT /api/v1/comunicacao/caderno/favoritos/{key}` — favorita um verso.
+pub async fn add_favorito(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let mut caderno = match state.caderno.load(&user) {
+        Ok(c) => c,
+        Err(e) => return map_store_err(e),
+    };
+    let added = caderno.add_fav(&key, chrono::Utc::now());
+    if let Err(e) = state.caderno.save(&user, &caderno) {
+        return map_store_err(e);
+    }
+    Json(serde_json::json!({ "chave": key, "favoritado": true, "novo": added })).into_response()
+}
+
+/// `DELETE /api/v1/comunicacao/caderno/favoritos/{key}` — desfavorita.
+pub async fn remove_favorito(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let mut caderno = match state.caderno.load(&user) {
+        Ok(c) => c,
+        Err(e) => return map_store_err(e),
+    };
+    let removed = caderno.remove_fav(&key);
+    if let Err(e) = state.caderno.save(&user, &caderno) {
+        return map_store_err(e);
+    }
+    Json(serde_json::json!({ "chave": key, "favoritado": false, "removido": removed }))
+        .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct NotaCadernoBody {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub markdown: String,
+}
+
+/// `PUT /api/v1/comunicacao/caderno/notas/{key}` — cria/atualiza uma nota do
+/// Caderno. Persiste **duas** vezes: (1) no Caderno per-user (recuperação rápida
+/// na UI) e (2) via `NoteStore` sob a instância canônica do Ayvu ([`AYVU_INSTANCE`],
+/// YG-114) + `emit_note` — exatamente como `put_note` em `instances.rs` — para o
+/// producer staged (YG-93/97) federar de graça (contrato CO-389).
+pub async fn put_nota_caderno(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+    Json(body): Json<NotaCadernoBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let title = if body.title.trim().is_empty() {
+        key.clone()
+    } else {
+        body.title.clone()
+    };
+
+    // (1) persiste no Caderno per-user
+    let mut caderno = match state.caderno.load(&user) {
+        Ok(c) => c,
+        Err(e) => return map_store_err(e),
+    };
+    caderno.upsert_note(&key, &title, &body.markdown, chrono::Utc::now());
+    if let Err(e) = state.caderno.save(&user, &caderno) {
+        return map_store_err(e);
+    }
+
+    // (2) grava via NoteStore sob a instância do Ayvu + emite no producer
+    //     (federação YG-114). Falha aqui é logada mas não derruba a resposta: o
+    //     Caderno já está durável; a federação é a camada extra.
+    let note_store = state.ayvu_note_store();
+    let existed = note_store.load(&key).is_ok();
+    match note_store.save(&key, &title, &body.markdown) {
+        Ok(n) => {
+            state.emit_note(NoteWritten {
+                instance: AYVU_INSTANCE.to_string(),
+                slug: n.slug.clone(),
+                kind: if existed {
+                    NoteKind::Updated
+                } else {
+                    NoteKind::Created
+                },
+                source: FederatedSource::Notes,
+                title: n.title.clone(),
+                body: n.body.clone(),
+                updated_at: Some(n.updated.to_rfc3339()),
+            });
+            Json(serde_json::json!({
+                "chave": key,
+                "slug": n.slug,
+                "title": n.title,
+                "federado": true,
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            tracing::warn!(erro = %e, "caderno: nota não federada (NoteStore falhou)");
+            // o Caderno per-user já gravou — devolve sucesso parcial.
+            Json(serde_json::json!({
+                "chave": key,
+                "slug": key,
+                "title": title,
+                "federado": false,
+            }))
+            .into_response()
+        }
+    }
+}
+
+/// `DELETE /api/v1/comunicacao/caderno/notas/{key}` — remove a nota do Caderno
+/// per-user **e** da instância do Ayvu (federando o `entry.deleted`).
+pub async fn delete_nota_caderno(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let mut caderno = match state.caderno.load(&user) {
+        Ok(c) => c,
+        Err(e) => return map_store_err(e),
+    };
+    let removed = caderno.remove_note(&key);
+    if let Err(e) = state.caderno.save(&user, &caderno) {
+        return map_store_err(e);
+    }
+    // remove também da instância do Ayvu + federa o delete (best-effort).
+    let note_store = state.ayvu_note_store();
+    if note_store.delete(&key).is_ok() {
+        state.emit_note(NoteWritten {
+            instance: AYVU_INSTANCE.to_string(),
+            slug: key.clone(),
+            kind: NoteKind::Deleted,
+            source: FederatedSource::Notes,
+            title: String::new(),
+            body: String::new(),
+            updated_at: None,
+        });
+    }
+    Json(serde_json::json!({ "chave": key, "removido": removed })).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct ProgressoBody {
+    pub verse: String,
+}
+
+/// `PUT /api/v1/comunicacao/caderno/progresso/{key}` — registra o avanço de
+/// leitura (último verso lido) de um capítulo/seção.
+pub async fn set_progresso(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+    Json(body): Json<ProgressoBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let mut caderno = match state.caderno.load(&user) {
+        Ok(c) => c,
+        Err(e) => return map_store_err(e),
+    };
+    caderno.set_progress(&key, &body.verse);
+    if let Err(e) = state.caderno.save(&user, &caderno) {
+        return map_store_err(e);
+    }
+    Json(serde_json::json!({ "chave": key, "verse": body.verse })).into_response()
+}
+
+/// `POST /api/v1/comunicacao/caderno/migrar` — recebe o blob do `localStorage`
+/// (o Caderno local-first de antes da YG-112) e o **funde** no servidor
+/// (idempotente, sem perda — [`Caderno::merge_from`]). É o caminho do primeiro
+/// login: o cliente envia `{ fav, notes, progress }` e recebe o Caderno
+/// consolidado. As notas migradas **não** re-federam em massa aqui (evita
+/// duplicar o backfill); a federação acende nas escritas seguintes via
+/// `put_nota_caderno`.
+pub async fn migrar_caderno(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(local): Json<Caderno>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let mut server = match state.caderno.load(&user) {
+        Ok(c) => c,
+        Err(e) => return map_store_err(e),
+    };
+    server.merge_from(local);
+    if let Err(e) = state.caderno.save(&user, &server) {
+        return map_store_err(e);
+    }
+    Json(server).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -836,6 +1103,10 @@ mod tests {
         let writeback = Arc::new(Writeback::new(wb_cfg));
         let (term_tx, term_rx) = broadcast::channel(64);
         let (room_tx, room_rx) = broadcast::channel(64);
+        // YG-112: Caderno per-user + store de instâncias (notas do Ayvu) sob a
+        // mesma raiz de salas, num tempdir isolado por teste.
+        let caderno = Arc::new(CadernoStore::new(rooms_dir.path()).unwrap());
+        let instance_store = Arc::new(InstanceStore::new(rooms_dir.path().join("_inst")).unwrap());
         let state = Arc::new(
             ComunicacaoState {
                 jwt_secret: SECRET.into(),
@@ -845,6 +1116,8 @@ mod tests {
                 term_events: None,
                 room_events: None,
                 admin_token: Some(ADMIN.into()),
+                caderno,
+                instance_store,
             }
             .with_bridge(term_tx, room_tx),
         );
@@ -868,6 +1141,20 @@ mod tests {
             .route("/api/v1/comunicacao/templates", get(list_templates))
             .route("/api/v1/comunicacao/revisao", get(get_revisao))
             .route("/api/v1/comunicacao/revisao/nota", post(nota_revisao))
+            .route("/api/v1/comunicacao/caderno", get(get_caderno))
+            .route(
+                "/api/v1/comunicacao/caderno/favoritos/{key}",
+                axum::routing::put(add_favorito).delete(remove_favorito),
+            )
+            .route(
+                "/api/v1/comunicacao/caderno/notas/{key}",
+                axum::routing::put(put_nota_caderno).delete(delete_nota_caderno),
+            )
+            .route(
+                "/api/v1/comunicacao/caderno/progresso/{key}",
+                axum::routing::put(set_progresso),
+            )
+            .route("/api/v1/comunicacao/caderno/migrar", post(migrar_caderno))
             .with_state(state);
         (router, rooms_dir, lex_dir, term_rx, room_rx)
     }
@@ -1374,5 +1661,279 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let v = body_json(resp).await;
         assert_eq!(v.as_array().unwrap().len(), 3);
+    }
+
+    // ── YG-112: Caderno (favoritos / notas / progresso / migração) ─────────
+
+    fn caderno_req(
+        method: &str,
+        uri: &str,
+        user: &str,
+        body: Option<serde_json::Value>,
+    ) -> Request<Body> {
+        let mut b = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("authorization", format!("Bearer {}", token(user)));
+        let body = match body {
+            Some(v) => {
+                b = b.header("content-type", "application/json");
+                Body::from(v.to_string())
+            }
+            None => Body::empty(),
+        };
+        b.body(body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn caderno_sem_jwt_401() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/caderno")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn favoritar_e_recuperar_em_outro_request() {
+        let (app, _r, _l) = app();
+        let put = app
+            .clone()
+            .oneshot(caderno_req(
+                "PUT",
+                "/api/v1/comunicacao/caderno/favoritos/1-2",
+                "alice",
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(put.status(), StatusCode::OK);
+        assert_eq!(body_json(put).await["novo"], true);
+
+        // recupera o Caderno: favorito persistido
+        let get = app
+            .clone()
+            .oneshot(caderno_req(
+                "GET",
+                "/api/v1/comunicacao/caderno",
+                "alice",
+                None,
+            ))
+            .await
+            .unwrap();
+        let v = body_json(get).await;
+        assert!(v["fav"].get("1-2").is_some(), "favorito persistido");
+
+        // outro usuário não vê o favorito da alice (isolamento per-user)
+        let bob = app
+            .clone()
+            .oneshot(caderno_req(
+                "GET",
+                "/api/v1/comunicacao/caderno",
+                "bob",
+                None,
+            ))
+            .await
+            .unwrap();
+        assert!(body_json(bob).await["fav"].as_object().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn desfavoritar_remove() {
+        let (app, _r, _l) = app();
+        app.clone()
+            .oneshot(caderno_req(
+                "PUT",
+                "/api/v1/comunicacao/caderno/favoritos/1-2",
+                "alice",
+                None,
+            ))
+            .await
+            .unwrap();
+        let del = app
+            .clone()
+            .oneshot(caderno_req(
+                "DELETE",
+                "/api/v1/comunicacao/caderno/favoritos/1-2",
+                "alice",
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(body_json(del).await["removido"], true);
+        let get = app
+            .clone()
+            .oneshot(caderno_req(
+                "GET",
+                "/api/v1/comunicacao/caderno",
+                "alice",
+                None,
+            ))
+            .await
+            .unwrap();
+        assert!(body_json(get).await["fav"].as_object().unwrap().is_empty());
+    }
+
+    /// YG-112/114: gravar uma nota do Caderno persiste no per-user **e** federa
+    /// via `NoteStore` da instância do Ayvu — o `NoteWritten` emitido bate o
+    /// contrato CO-389 (`instances/ayvu-rapyta/notes/<slug>.md`).
+    #[tokio::test]
+    async fn nota_caderno_persiste_e_federa_pelo_ayvu() {
+        let (app, _r, _l, mut term_rx, _room_rx) = app_full();
+        let resp = app
+            .clone()
+            .oneshot(caderno_req(
+                "PUT",
+                "/api/v1/comunicacao/caderno/notas/1-2",
+                "alice",
+                Some(serde_json::json!({ "title": "Verso 1.2", "markdown": "minha leitura" })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["slug"], "1-2");
+        assert_eq!(v["federado"], true);
+
+        // evento federado: fonte Notes, instância do Ayvu, path contratado
+        let ev = term_rx.try_recv().expect("nota federada");
+        assert_eq!(ev.kind, NoteKind::Created);
+        assert_eq!(ev.instance, AYVU_INSTANCE);
+        assert_eq!(ev.universe_key(), "yggdrasil");
+        assert_eq!(ev.path(), "instances/ayvu-rapyta/notes/1-2.md");
+
+        // recupera a nota do Caderno per-user
+        let get = app
+            .clone()
+            .oneshot(caderno_req(
+                "GET",
+                "/api/v1/comunicacao/caderno",
+                "alice",
+                None,
+            ))
+            .await
+            .unwrap();
+        let c = body_json(get).await;
+        assert_eq!(c["notes"]["1-2"]["markdown"], "minha leitura");
+    }
+
+    #[tokio::test]
+    async fn nota_caderno_segunda_escrita_e_updated() {
+        let (app, _r, _l, mut term_rx, _room_rx) = app_full();
+        for _ in 0..1 {
+            app.clone()
+                .oneshot(caderno_req(
+                    "PUT",
+                    "/api/v1/comunicacao/caderno/notas/1-2",
+                    "alice",
+                    Some(serde_json::json!({ "markdown": "v1" })),
+                ))
+                .await
+                .unwrap();
+        }
+        assert_eq!(term_rx.try_recv().unwrap().kind, NoteKind::Created);
+        app.clone()
+            .oneshot(caderno_req(
+                "PUT",
+                "/api/v1/comunicacao/caderno/notas/1-2",
+                "alice",
+                Some(serde_json::json!({ "markdown": "v2" })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(term_rx.try_recv().unwrap().kind, NoteKind::Updated);
+    }
+
+    #[tokio::test]
+    async fn progresso_persiste() {
+        let (app, _r, _l) = app();
+        let put = app
+            .clone()
+            .oneshot(caderno_req(
+                "PUT",
+                "/api/v1/comunicacao/caderno/progresso/cap-1",
+                "alice",
+                Some(serde_json::json!({ "verse": "1-7" })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(put.status(), StatusCode::OK);
+        let get = app
+            .clone()
+            .oneshot(caderno_req(
+                "GET",
+                "/api/v1/comunicacao/caderno",
+                "alice",
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(body_json(get).await["progress"]["cap-1"], "1-7");
+    }
+
+    /// YG-112: migração do `localStorage` é idempotente e sem perda — funde o
+    /// blob local no Caderno do servidor, e re-enviar o mesmo blob não muda nada.
+    #[tokio::test]
+    async fn migrar_localstorage_idempotente_sem_perda() {
+        let (app, _r, _l) = app();
+        // pré-existe um favorito no servidor
+        app.clone()
+            .oneshot(caderno_req(
+                "PUT",
+                "/api/v1/comunicacao/caderno/favoritos/srv-fav",
+                "alice",
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let blob = serde_json::json!({
+            "fav": { "local-fav": "2026-06-01T00:00:00Z" },
+            "notes": {
+                "1-2": {
+                    "key": "1-2",
+                    "title": "Local",
+                    "markdown": "nota local",
+                    "updated_at": "2026-06-07T00:00:00Z"
+                }
+            },
+            "progress": { "cap-1": "1-9" }
+        });
+        let m1 = app
+            .clone()
+            .oneshot(caderno_req(
+                "POST",
+                "/api/v1/comunicacao/caderno/migrar",
+                "alice",
+                Some(blob.clone()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(m1.status(), StatusCode::OK);
+        let c1 = body_json(m1).await;
+        // sem perda: o favorito do servidor E o do local coexistem
+        assert!(c1["fav"].get("srv-fav").is_some());
+        assert!(c1["fav"].get("local-fav").is_some());
+        assert_eq!(c1["notes"]["1-2"]["markdown"], "nota local");
+        assert_eq!(c1["progress"]["cap-1"], "1-9");
+
+        // idempotente: re-migrar o mesmo blob dá o mesmo Caderno
+        let m2 = app
+            .clone()
+            .oneshot(caderno_req(
+                "POST",
+                "/api/v1/comunicacao/caderno/migrar",
+                "alice",
+                Some(blob),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(body_json(m2).await, c1);
     }
 }
