@@ -6,6 +6,7 @@
 //! score += group_size².  Game over when grid is empty or no valid group exists.
 
 use serde::{Deserialize, Serialize};
+use universe_sdk::{Universe, UniverseManifest, random_seed};
 
 const COLS: usize = 8;
 const ROWS: usize = 6;
@@ -131,7 +132,7 @@ fn grid_is_empty(grid: &[[u8; COLS]; ROWS]) -> bool {
 
 impl PointsetSession {
     fn initialize(&mut self) {
-        let mut rng = universe_sdk::get_random();
+        let mut rng = random_seed();
         if rng == 0 {
             rng = 0xdeadbeef_cafebabe;
         }
@@ -237,6 +238,26 @@ impl PointsetSession {
         };
 
         serde_json::to_string(&out).unwrap_or_else(|_| "{}".to_string())
+    }
+}
+
+impl Universe for PointsetSession {
+    fn create(_params: &str) -> Self {
+        PointsetSession::default()
+    }
+
+    fn tick(&mut self, input: &str) -> String {
+        self.process(input)
+    }
+
+    fn manifest() -> UniverseManifest {
+        UniverseManifest {
+            name: "pointset".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            api_version: 1,
+            max_players: 1,
+            capabilities: vec![],
+        }
     }
 }
 

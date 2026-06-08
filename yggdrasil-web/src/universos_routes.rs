@@ -66,6 +66,13 @@ pub struct UniversoMeta {
 pub fn universo_list() -> Vec<UniversoMeta> {
     // PointSet foi descontinuado como universo (decisão de produto) — não entra
     // mais no catálogo.
+    //
+    // YG-66: o campo `version` reflete a SemVer do crate WASM correspondente em
+    // `universes/universe-<id>/Cargo.toml` (versionamento independente — YG-64).
+    // Mantido como string literal aqui porque a runtime nativa (game-core) não
+    // carrega o manifest WASM; quando o caminho WASM (YG-104) destravar, derivar
+    // de `manifest().version` (= `universe_sdk::pkg_version!()`). Ver
+    // docs/UNIVERSE-VERSIONING.md.
     vec![
         UniversoMeta {
             id: "snake",
@@ -73,7 +80,7 @@ pub fn universo_list() -> Vec<UniversoMeta> {
             category: "Arcade",
             tag: "Clássico",
             description: "A cobra que cresce a cada bocado.",
-            version: "1.0",
+            version: "1.0.0",
             max_players: 1,
             api_version: 1,
         },
@@ -83,7 +90,7 @@ pub fn universo_list() -> Vec<UniversoMeta> {
             category: "Arcade",
             tag: "Clássico",
             description: "Encaixe as peças que caem.",
-            version: "1.0",
+            version: "1.0.0",
             max_players: 1,
             api_version: 1,
         },
@@ -93,7 +100,7 @@ pub fn universo_list() -> Vec<UniversoMeta> {
             category: "Arcade",
             tag: "Clássico",
             description: "Defenda a Terra dos invasores.",
-            version: "1.0",
+            version: "1.0.0",
             max_players: 1,
             api_version: 1,
         },
@@ -103,7 +110,7 @@ pub fn universo_list() -> Vec<UniversoMeta> {
             category: "Mesa",
             tag: "Cartas",
             description: "Texas Hold'em multiplayer com sementes.",
-            version: "1.0",
+            version: "0.8.0",
             max_players: 6,
             api_version: 1,
         },
@@ -113,7 +120,7 @@ pub fn universo_list() -> Vec<UniversoMeta> {
             category: "Ferramentas",
             tag: "Editor",
             description: "Domine o editor modal, nível a nível.",
-            version: "1.0",
+            version: "1.0.0",
             max_players: 1,
             api_version: 1,
         },
@@ -125,7 +132,7 @@ pub fn universo_list() -> Vec<UniversoMeta> {
             category: "Atlas",
             tag: "Ciência",
             description: "Atlas 3D do cérebro, do macro aos núcleos.",
-            version: "1.0",
+            version: "1.0.0",
             max_players: 999,
             api_version: 1,
         },
@@ -1142,6 +1149,30 @@ mod tests {
         for u in arr {
             assert_eq!(u["playable"], true);
             assert_eq!(u["status"], "embedded");
+        }
+    }
+
+    // YG-66: cada universo listado deve expor `version` como SemVer X.Y.Z
+    // válida (derivada do Cargo.toml do crate WASM — versionamento independente).
+    #[test]
+    fn cada_universo_tem_version_semver_valida() {
+        for u in super::universo_list() {
+            let parts: Vec<&str> = u.version.split('.').collect();
+            assert_eq!(
+                parts.len(),
+                3,
+                "universo '{}' tem version não-semver: '{}'",
+                u.id,
+                u.version
+            );
+            for p in parts {
+                assert!(
+                    p.parse::<u64>().is_ok(),
+                    "universo '{}' tem componente não-numérico em '{}'",
+                    u.id,
+                    u.version
+                );
+            }
         }
     }
 

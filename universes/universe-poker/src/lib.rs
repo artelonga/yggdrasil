@@ -11,6 +11,7 @@
 //!   "raise"  — human raises; optional "amount" field (default 100)
 
 use serde::{Deserialize, Serialize};
+use universe_sdk::{Universe, UniverseManifest, kv_load, kv_store, random_seed};
 
 // ---------------------------------------------------------------------------
 // xorshift64 RNG
@@ -425,7 +426,7 @@ impl PokerState {
         self.active_count = PLAYER_COUNT;
 
         // Build and shuffle deck
-        let mut rng = universe_sdk::get_random();
+        let mut rng = random_seed();
         if rng == 0 {
             rng = 0xdeadbeef_cafebabe;
         }
@@ -765,7 +766,7 @@ struct PokerSession {
 
 impl Default for PokerSession {
     fn default() -> Self {
-        let state = universe_sdk::kv_load("state")
+        let state = kv_load("state")
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_else(PokerState::new_game);
         Self { state }
@@ -775,7 +776,7 @@ impl Default for PokerSession {
 impl PokerSession {
     fn save(&self) {
         if let Ok(bytes) = serde_json::to_vec(&self.state) {
-            universe_sdk::kv_store("state", &bytes);
+            kv_store("state", &bytes);
         }
     }
 
@@ -906,6 +907,26 @@ impl PokerSession {
             if iterations > 30 {
                 break;
             }
+        }
+    }
+}
+
+impl Universe for PokerSession {
+    fn create(_params: &str) -> Self {
+        PokerSession::default()
+    }
+
+    fn tick(&mut self, input: &str) -> String {
+        self.process(input)
+    }
+
+    fn manifest() -> UniverseManifest {
+        UniverseManifest {
+            name: "poker".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            api_version: 1,
+            max_players: PLAYER_COUNT as u32,
+            capabilities: vec!["save".into()],
         }
     }
 }

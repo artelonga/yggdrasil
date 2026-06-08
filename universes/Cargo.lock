@@ -103,7 +103,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "universe-invaders"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -112,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "universe-pointset"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "universe-poker"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -147,7 +147,7 @@ dependencies = [
 
 [[package]]
 name = "universe-snake"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -156,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "universe-tetris"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "universe-vim"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",

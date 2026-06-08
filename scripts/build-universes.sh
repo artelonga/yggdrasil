@@ -30,6 +30,24 @@ BUDGETS=(300000 300000 300000 200000 600000 250000 700000)   # bytes
 
 mkdir -p "$OUT"
 
+# YG-66: ler a versão de cada crate do Cargo.toml (fonte: cargo metadata) para
+# anexar à tabela final. Cada universo carrega sua própria SemVer (YG-64).
+declare -A VERSIONS
+declare -a SIZES
+crate_version() {
+    # $1 = nome do crate (ex.: universe-snake). Lê de cargo metadata; fallback
+    # para grep no Cargo.toml se python3/cargo-metadata indisponível.
+    local crate="$1"
+    if command -v python3 &>/dev/null; then
+        cargo metadata --format-version 1 --no-deps --manifest-path "$UNIVERSES_DIR/Cargo.toml" 2>/dev/null \
+            | python3 -c "import json,sys;d=json.load(sys.stdin);print(next((p['version'] for p in d['packages'] if p['name']=='$crate'),'?'))" 2>/dev/null \
+            || echo "?"
+    else
+        grep -m1 '^version' "$UNIVERSES_DIR/$crate/Cargo.toml" 2>/dev/null \
+            | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' || echo "?"
+    fi
+}
+
 echo "==> Building universe WASM crates (target: $TARGET)"
 cd "$UNIVERSES_DIR"
 
@@ -49,12 +67,14 @@ for i in "${!UNIVERSES[@]}"; do
     fi
 
     SIZE=$(wc -c < "$DST")
+    SIZES[$i]="$SIZE"
+    VERSIONS[$U]="$(crate_version "universe-$U")"
     BUDGET="${BUDGETS[$i]}"
     if [ "$SIZE" -gt "$BUDGET" ]; then
         echo "❌ $U.wasm: ${SIZE}B > budget ${BUDGET}B" >&2
         exit 1
     fi
-    echo "✅ $U.wasm: ${SIZE}B (budget: ${BUDGET}B)"
+    echo "✅ $U.wasm: ${SIZE}B (budget: ${BUDGET}B) — v${VERSIONS[$U]}"
 done
 
 echo ""
@@ -71,5 +91,17 @@ if [ "$TOTAL" -gt "$MAX_TOTAL" ]; then
     exit 1
 fi
 echo "✅ Total: ${TOTAL}B / ${MAX_TOTAL}B"
+
+# YG-66: tabela final nome/versão/tamanho. A versão vem do Cargo.toml de cada
+# crate (versionamento independente — YG-64). Consumida por auditoria de release
+# e cruzada com `GET /api/v1/universos`.
+echo ""
+printf "%-12s %-9s %s\n" "Universe" "Version" "Size"
+for i in "${!UNIVERSES[@]}"; do
+    U="${UNIVERSES[$i]}"
+    KB=$(( (${SIZES[$i]} + 1023) / 1024 ))
+    printf "%-12s %-9s %s KB\n" "$U" "${VERSIONS[$U]}" "$KB"
+done
+
 echo ""
 echo "All universos compiled. Run 'cargo build' to embed them."
