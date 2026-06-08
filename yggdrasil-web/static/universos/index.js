@@ -1,9 +1,9 @@
-/* /universos — índice unificado e filtrável de TODOS os universos do Yggdrasil.
- * Agrega, no cliente, quatro fontes: a lista de arcade (/api/v1/universos), o
- * atlas estático (anatomia), o feed público de salas de comunicação
- * (/api/v1/comunicacao/salas?published=true) e as instâncias autoradas
- * (/api/v1/instances?published=true). Sem dependências. Filtros: busca livre,
- * categoria, jogadores (solo/multi) e idioma. */
+/* /universos — catálogo unificado e filtrável de TODOS os universos do
+ * Yggdrasil (YG-70). Fonte primária: GET /api/v1/universos?format=catalog —
+ * o merge servidor-side de REGISTRY.yaml (embedados + planejados + externos).
+ * Agrega ainda, no cliente, as salas de comunicação publicadas e as instâncias
+ * autoradas publicadas. Sem dependências. Filtros: busca, situação (status),
+ * tipo, origem, gênero. */
 (function () {
   "use strict";
 
@@ -19,66 +19,17 @@
     return LANGS[k] || code;
   }
 
-  var CAT = {
-    arcade:   { label: "arcade",   cls: "arcade" },
-    atlas:    { label: "atlas",    cls: "atlas" },
-    lingua:   { label: "língua",   cls: "lingua" },
-    autorado: { label: "autorado", cls: "autorado" }
+  // status → rótulo + emoji (jogável / planejado / externo)
+  var STATUS = {
+    embedded: { label: "jogável",   icon: "🟢" },
+    planned:  { label: "planejado", icon: "🟡" },
+    external: { label: "externo",   icon: "🔗" }
   };
 
   function getJSON(url) {
     return fetch(url, { headers: { Accept: "application/json" } })
-      .then(function (r) { return r.ok ? r.json() : []; })
-      .catch(function () { return []; });   // fonte ausente → ignora, não quebra o índice
-  }
-
-  // ── monta o catálogo a partir das fontes ──────────────────────────────────
-  function buildCatalog(arcade, salas, instances) {
-    var items = [];
-
-    // 1. arcade + neuro (lista oficial)
-    (arcade || []).forEach(function (u) {
-      var atlas = u.id === "neuro";
-      items.push({
-        nome: u.name || u.id,
-        desc: atlas ? "Atlas 3D — explore em colaboração." : "Jogo arcade.",
-        cat: atlas ? "atlas" : "arcade",
-        players: (u.max_players || 1) > 1 ? "multi" : "solo",
-        lang: null,
-        url: "/universos/" + u.id
-      });
-    });
-
-    // 2. atlas estático — anatomia (peça interativa do cérebro)
-    items.push({
-      nome: "neuroanatomy",
-      desc: "Atlas do cérebro — explore as partes brincando.",
-      cat: "atlas", players: "multi", lang: null,
-      url: "/static/anatomia/"
-    });
-
-    // 3. salas de comunicação publicadas (léxico interativo, por língua)
-    (salas || []).forEach(function (s) {
-      items.push({
-        nome: s.title || s.id,
-        desc: "Sala de léxico interativo.",
-        cat: "lingua", players: "multi",
-        lang: langName(s.lang),
-        url: "/universos/comunicacao?id=" + encodeURIComponent(s.id)
-      });
-    });
-
-    // 4. instâncias autoradas publicadas (data-driven)
-    (instances || []).forEach(function (i) {
-      items.push({
-        nome: i.title || i.id,
-        desc: (i.description && i.description.trim()) || "Universo autorado.",
-        cat: "autorado", players: "solo", lang: null,
-        url: "/universos/instance/" + encodeURIComponent(i.id)
-      });
-    });
-
-    return items;
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; });   // fonte ausente → ignora, não quebra o índice
   }
 
   function esc(s) {
@@ -87,13 +38,73 @@
     });
   }
 
+  // destino e rótulo da ação por status
+  function targetFor(it) {
+    if (it.status === "embedded") return { url: it.url, ext: false };
+    if (it.status === "external" && it.external_url) return { url: it.external_url, ext: true };
+    // planejado → leva ao template de issue "quero portar"
+    return { url: it.contribute_url || "#", ext: !!it.contribute_url };
+  }
+
+  // ── monta o catálogo (REGISTRY + fontes vivas) ────────────────────────────
+  function buildCatalog(registry, salas, instances) {
+    var items = [];
+
+    // 1. catálogo servidor-side (embedados + planejados + externos)
+    (registry || []).forEach(function (u) {
+      items.push({
+        nome: u.title || u.name || u.slug,
+        desc: u.description || "",
+        status: u.status || "embedded",
+        type: u.type || "",
+        origin: u.origin || "",
+        genre: Array.isArray(u.genre) ? u.genre : [],
+        external_url: u.external_url || null,
+        target_release: u.target_release || null,
+        url: "/universos/" + (u.slug || u.id),
+        contribute_url: u.status === "planned"
+          ? "https://github.com/artelonga/yggdrasil/issues/new?template=portar-rpg.md&title=" +
+            encodeURIComponent("Portar " + (u.title || u.slug))
+          : null
+      });
+    });
+
+    // 2. salas de comunicação publicadas (léxico interativo, por língua)
+    (salas || []).forEach(function (s) {
+      items.push({
+        nome: s.title || s.id,
+        desc: "Sala de léxico interativo.",
+        status: "embedded", type: "lingua", origin: "original",
+        genre: [], lang: langName(s.lang),
+        url: "/universos/comunicacao?id=" + encodeURIComponent(s.id)
+      });
+    });
+
+    // 3. instâncias autoradas publicadas (data-driven)
+    (instances || []).forEach(function (i) {
+      items.push({
+        nome: i.title || i.id,
+        desc: (i.description && i.description.trim()) || "Universo autorado.",
+        status: "embedded", type: "autorado", origin: "original",
+        genre: [],
+        url: "/universos/instance/" + encodeURIComponent(i.id)
+      });
+    });
+
+    return items;
+  }
+
   function cardHTML(it) {
-    var c = CAT[it.cat] || { label: it.cat, cls: "" };
-    return '<a class="card" href="' + esc(it.url) + '">' +
+    var st = STATUS[it.status] || { label: it.status, icon: "" };
+    var t = targetFor(it);
+    var typeCls = (it.type || "").replace(/[^a-z]/gi, "").toLowerCase();
+    return '<a class="card" href="' + esc(t.url) + '"' +
+        (t.ext ? ' target="_blank" rel="noopener"' : "") + '>' +
       '<div class="ct">' +
-        '<span class="badge ' + c.cls + '">' + esc(c.label) + '</span>' +
+        '<span class="status ' + esc(it.status) + '">' + st.icon + " " + esc(st.label) + '</span>' +
+        (it.type ? '<span class="badge ' + esc(typeCls) + '">' + esc(it.type) + '</span>' : "") +
         (it.lang ? '<span class="lang">' + esc(it.lang) + '</span>' : "") +
-        '<span class="meta">' + (it.players === "multi" ? "multiplayer" : "solo") + '</span>' +
+        (it.origin ? '<span class="meta">' + esc(it.origin) + '</span>' : "") +
       '</div>' +
       '<h3>' + esc(it.nome) + '</h3>' +
       '<div class="desc">' + esc(it.desc) + '</div>' +
@@ -110,42 +121,49 @@
     var elGrid = document.getElementById("grid");
     var elCount = document.getElementById("count");
     var fQ = document.getElementById("f-q");
-    var fCat = document.getElementById("f-cat");
-    var fPlayers = document.getElementById("f-players");
-    var fLang = document.getElementById("f-lang");
+    var fStatus = document.getElementById("f-status");
+    var fType = document.getElementById("f-type");
+    var fOrigin = document.getElementById("f-origin");
+    var fGenre = document.getElementById("f-genre");
 
     // popula dropdowns a partir dos dados presentes
-    uniqueSorted(catalog.map(function (i) { return i.cat; })).forEach(function (cat) {
-      var o = document.createElement("option");
-      o.value = cat; o.textContent = (CAT[cat] ? CAT[cat].label : cat);
-      fCat.appendChild(o);
-    });
-    uniqueSorted(catalog.map(function (i) { return i.lang; })).forEach(function (lang) {
-      var o = document.createElement("option");
-      o.value = lang; o.textContent = lang;
-      fLang.appendChild(o);
-    });
+    function fill(sel, values) {
+      uniqueSorted(values).forEach(function (v) {
+        var o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        sel.appendChild(o);
+      });
+    }
+    fill(fType, catalog.map(function (i) { return i.type; }));
+    fill(fOrigin, catalog.map(function (i) { return i.origin; }));
+    var allGenres = [];
+    catalog.forEach(function (i) { (i.genre || []).forEach(function (g) { allGenres.push(g); }); });
+    fill(fGenre, allGenres);
 
     function render() {
       var q = (fQ.value || "").trim().toLowerCase();
-      var cat = fCat.value, players = fPlayers.value, lang = fLang.value;
+      var status = fStatus.value, type = fType.value, origin = fOrigin.value, genre = fGenre.value;
       var list = catalog.filter(function (it) {
-        if (cat && it.cat !== cat) return false;
-        if (players && it.players !== players) return false;
-        if (lang && it.lang !== lang) return false;
+        if (status && it.status !== status) return false;
+        if (type && it.type !== type) return false;
+        if (origin && it.origin !== origin) return false;
+        if (genre && (it.genre || []).indexOf(genre) === -1) return false;
         if (q) {
-          var hay = (it.nome + " " + it.desc + " " + (it.lang || "")).toLowerCase();
+          var hay = (it.nome + " " + it.desc + " " + (it.genre || []).join(" ")).toLowerCase();
           if (hay.indexOf(q) === -1) return false;
         }
         return true;
       });
-      elCount.textContent = list.length + (list.length === 1 ? " universo" : " universos");
+      var by = { embedded: 0, planned: 0, external: 0 };
+      list.forEach(function (it) { if (by[it.status] != null) by[it.status]++; });
+      elCount.textContent = list.length + (list.length === 1 ? " universo" : " universos") +
+        " · 🟢 " + by.embedded + " · 🟡 " + by.planned + " · 🔗 " + by.external;
       elGrid.innerHTML = list.length
         ? list.map(cardHTML).join("")
         : '<div class="empty">Nenhum universo encontrado com esses filtros.</div>';
     }
 
-    [fQ, fCat, fPlayers, fLang].forEach(function (el) {
+    [fQ, fStatus, fType, fOrigin, fGenre].forEach(function (el) {
       el.addEventListener("input", render);
       el.addEventListener("change", render);
     });
@@ -153,10 +171,11 @@
   }
 
   Promise.all([
-    getJSON("/api/v1/universos"),
+    getJSON("/api/v1/universos?format=catalog"),
     getJSON("/api/v1/comunicacao/salas?published=true"),
     getJSON("/api/v1/instances?published=true")
   ]).then(function (res) {
-    init(buildCatalog(res[0], res[1], res[2]));
+    var registry = (res[0] && res[0].universos) || [];
+    init(buildCatalog(registry, res[1] || [], res[2] || []));
   });
 })();

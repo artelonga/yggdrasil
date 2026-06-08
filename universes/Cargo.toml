@@ -9,6 +9,7 @@ members = [
     "universe-pointset",
     "universe-poker",
     "universe-vim",
+    "universe-shandara",
 ]
 
 # Campos herdados por crates que usam `*.workspace = true` (ex. universe-vim).

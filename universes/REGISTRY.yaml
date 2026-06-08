@@ -1,0 +1,458 @@
+# REGISTRY.yaml — fonte da verdade do catálogo de universos do Yggdrasil.
+#
+# Declara TODAS as entradas do catálogo, não só os universos jogáveis:
+#   - status: embedded → WASM/engine em produção, jogável aqui (playable: true)
+#   - status: planned  → mapeado, sem código ainda (placeholder, contribuível)
+#   - status: external → existe fora da plataforma, link out (saiba mais)
+#
+# Lido em compile-time por `yggdrasil-web/src/catalog.rs` via include_str! +
+# serde_yaml. O schema está documentado em `docs/architecture/catalog.md`.
+#
+# Campos por entrada:
+#   slug          (obrigatório) identificador único, kebab-case
+#   status        (obrigatório) embedded | planned | external
+#   type          (obrigatório) rpg | arcade | puzzle | atlas | lingua | ferramentas | mesa
+#   title         (obrigatório) nome humano (PT-BR)
+#   description   (obrigatório) descrição curta em PT-BR
+#   genre         lista de gêneros (filtro multi)
+#   origin        brazilian | international | original
+#   license       open-source | commercial | MIT | "MIT AND CC-BY-SA-4.0" | ...
+#   creators      lista de autores/criadores
+#   year          ano de criação/publicação
+#   external_url  link externo (obrigatório para status: external)
+#   target_release versão do Yggdrasil em que planejamos portar (planned)
+#   port_difficulty easy | medium | hard (chute inicial, confirmar com mantenedores)
+#   versions_tracked true se o crate tem CHANGELOG próprio via git pathspec (YG-71)
+
+universes:
+  # ── Embedados (jogáveis em produção) ─────────────────────────────────────
+  - slug: snake
+    status: embedded
+    type: arcade
+    genre: [classic]
+    origin: international
+    license: MIT
+    title: "Snake"
+    description: "A cobra que cresce a cada bocado. Clássico desde 1976."
+    versions_tracked: true
+
+  - slug: tetris
+    status: embedded
+    type: arcade
+    genre: [classic, puzzle]
+    origin: international
+    license: MIT
+    title: "Tetris"
+    description: "Encaixe as peças que caem em linhas. Clássico desde 1984."
+    versions_tracked: true
+
+  - slug: invaders
+    status: embedded
+    type: arcade
+    genre: [classic, shooter]
+    origin: international
+    license: MIT
+    title: "Space Invaders"
+    description: "Defenda a Terra dos invasores que descem em formação."
+    versions_tracked: true
+
+  - slug: poker
+    status: embedded
+    type: mesa
+    genre: [cards, multiplayer]
+    origin: international
+    license: MIT
+    title: "Pôquer"
+    description: "Texas Hold'em multiplayer com aposta em sementes."
+    versions_tracked: true
+
+  - slug: vim
+    status: embedded
+    type: ferramentas
+    genre: [editor, educational]
+    origin: international
+    license: MIT
+    title: "Vim"
+    description: "Domine o editor modal, nível a nível."
+    versions_tracked: true
+
+  - slug: neuro
+    status: embedded
+    type: atlas
+    genre: [science, collaborative]
+    origin: original
+    license: MIT
+    title: "Neuro — Atlas 3D"
+    description: "Atlas 3D do cérebro, do macro aos núcleos. Explore em colaboração."
+    versions_tracked: true
+
+  - slug: shandara
+    status: embedded
+    type: rpg
+    genre: [fantasy, narrative, open-world]
+    origin: original
+    license: "MIT AND CC-BY-SA-4.0"
+    title: "Shandara"
+    description: "Universo de fantasia original regido por seis forças primordiais. SRD livre em PT-BR (CC-BY-SA 4.0)."
+    creators: ["Yggdrasil / ArteLonga"]
+    versions_tracked: true
+
+  # ── Planejados — RPGs brasileiros open-source/indie (placeholder) ────────
+  # Derivados de docs/RPGs Brasileiros.md. status: planned = candidato a port
+  # WASM; cada port vira uma task YG-? separada quando priorizado.
+
+  - slug: tagmar
+    status: planned
+    type: rpg
+    genre: [fantasy, medieval]
+    origin: brazilian
+    license: open-source
+    title: "Tagmar 3"
+    creators: ["Comunidade Tagmar"]
+    year: 1991
+    description: "O primeiro RPG nacional, criado em 1991. O continente de Tagmar divide-se em Região dos Reinos, Terras Selvagens e O Império. Desenvolvido como software livre desde a concepção, por voluntários."
+    external_url: https://tagmar.com.br
+    target_release: v1.5.0
+    port_difficulty: medium
+
+  - slug: kilombo
+    status: planned
+    type: rpg
+    genre: [historical, indie, afro-brazilian]
+    origin: brazilian
+    license: open-source
+    title: "Kilombo RPG"
+    description: "Sistema independente inspirado na resistência histórica dos quilombos brasileiros. Foco em narrativas afro-brasileiras, cultura, identidade, luta, sobrevivência e construção de comunidade."
+    target_release: v1.6.0
+    port_difficulty: medium
+
+  - slug: cacadores-de-saci
+    status: planned
+    type: rpg
+    genre: [folklore, indie, comedy]
+    origin: brazilian
+    license: open-source
+    title: "Caçadores de Saci"
+    creators: ["Rafael Beltrame"]
+    description: "Inspirado no folclore nacional. Aventuras cheias de criaturas míticas brasileiras, combinando humor, exploração e identidade cultural em proposta leve e criativa."
+    port_difficulty: easy
+
+  - slug: mojuba
+    status: planned
+    type: rpg
+    genre: [spiritual, afro-brazilian]
+    origin: brazilian
+    license: open-source
+    title: "Mojubá RPG"
+    description: "Inspirado nas religiões e culturas afro-brasileiras. Abordagem rica em simbolismo, espiritualidade e ancestralidade, com narrativas que valorizam identidade e tradição."
+    port_difficulty: medium
+
+  - slug: kalymba
+    status: planned
+    type: rpg
+    genre: [fantasy, african]
+    origin: brazilian
+    license: open-source
+    title: "Kalymba"
+    creators: ["Thiago Rosa", "Lampião Game Studio"]
+    description: "Inspirado em culturas africanas. Fantasia rica e diversa que valoriza ancestralidade, mitologia e identidade cultural."
+    port_difficulty: medium
+
+  - slug: melodia-perdida
+    status: planned
+    type: rpg
+    genre: [narrative, emotional]
+    origin: brazilian
+    license: open-source
+    title: "Melodia Perdida"
+    description: "Foco em narrativa emocional, usando música e sentimentos como elementos centrais da história. Experiências sensíveis e simbólicas."
+    port_difficulty: hard
+
+  - slug: o-som-das-seis
+    status: planned
+    type: rpg
+    genre: [western]
+    origin: brazilian
+    license: open-source
+    title: "O Som das Seis"
+    description: "Faroeste brasileiro. Histórias de duelos, justiça e sobrevivência em terras áridas, com forte influência dos clássicos do gênero."
+    port_difficulty: medium
+
+  - slug: gaia-preludio
+    status: planned
+    type: rpg
+    genre: [fantasy, nature]
+    origin: brazilian
+    license: open-source
+    title: "Gaia: O Prelúdio"
+    creators: ["Fábio Emper"]
+    description: "Fantasia com um mundo em constante transformação, onde forças naturais e criaturas fantásticas moldam a realidade. Forte ligação com a natureza."
+    port_difficulty: medium
+
+  - slug: mighty-blade
+    status: planned
+    type: rpg
+    genre: [rules-light]
+    origin: brazilian
+    license: open-source
+    title: "Mighty Blade"
+    creators: ["Tiago Junges"]
+    year: 2003
+    description: "Sistema extremamente simples e didático — apenas quatro páginas de regras. Ideal para aprender rápido."
+    port_difficulty: easy
+
+  - slug: simples20
+    status: planned
+    type: rpg
+    genre: [rules-light, d20]
+    origin: brazilian
+    license: open-source
+    title: "Simples20"
+    description: "Baseado no dado de 20 lados, prioriza simplicidade e acessibilidade. Ideal para iniciantes ou mesas que buscam regras rápidas e diretas."
+    port_difficulty: easy
+
+  - slug: breu
+    status: planned
+    type: rpg
+    genre: [horror, psychological]
+    origin: brazilian
+    license: open-source
+    title: "BREU"
+    description: "Terror nacional indie. Atmosfera densa e psicológica, explorando o medo, o desconhecido e a fragilidade dos personagens diante de forças sombrias."
+    port_difficulty: medium
+
+  - slug: oblivio
+    status: planned
+    type: rpg
+    genre: [introspective, dark]
+    origin: brazilian
+    license: open-source
+    title: "Oblívio"
+    description: "Foco em narrativa e atmosfera sombria. Histórias introspectivas sobre memória, identidade e perda — foge do heroísmo clássico, prioriza experiências emocionais e psicológicas."
+    port_difficulty: medium
+
+  - slug: terravysta
+    status: planned
+    type: rpg
+    genre: [fantasy]
+    origin: brazilian
+    license: open-source
+    title: "Terravysta RPG"
+    description: "Fantasia com mundo próprio — culturas, povos e conflitos únicos. Liberdade para construção de campanhas e desenvolvimento narrativo."
+    port_difficulty: medium
+
+  - slug: colonia
+    status: planned
+    type: rpg
+    genre: [survival, building]
+    origin: brazilian
+    license: open-source
+    title: "Colônia RPG"
+    description: "Exploração, sobrevivência e construção de sociedade. Os jogadores participam diretamente do desenvolvimento de novos territórios, moldando o mundo ao longo da campanha."
+    port_difficulty: hard
+
+  - slug: assimilacao
+    status: planned
+    type: rpg
+    genre: [sci-fi]
+    origin: brazilian
+    license: open-source
+    title: "Assimilação RPG"
+    description: "Ficção científica sobre tecnologia, consciência e transformação da humanidade. Dilemas existenciais e evolutivos."
+    port_difficulty: medium
+
+  - slug: skyfall
+    status: planned
+    type: rpg
+    genre: [survival, mystery]
+    origin: brazilian
+    license: open-source
+    title: "Skyfall RPG"
+    description: "Mundo em colapso onde o céu representa uma ameaça constante. Campanhas focadas em exploração, mistério e sobrevivência."
+    port_difficulty: medium
+
+  - slug: brutal
+    status: planned
+    type: rpg
+    genre: [combat-focused]
+    origin: brazilian
+    license: open-source
+    title: "Brutal RPG"
+    description: "Combates rápidos e letais. Mecânicas diretas e intensas, com confrontos decisivos e consequências imediatas."
+    port_difficulty: easy
+
+  - slug: cronicas-de-nanquim
+    status: planned
+    type: rpg
+    genre: [oriental, stylized]
+    origin: brazilian
+    license: open-source
+    title: "As Crônicas de Nanquim"
+    description: "Inspirado na cultura oriental e na estética de quadrinhos. Aventuras estilizadas com foco em narrativa visual e identidade marcante."
+    port_difficulty: medium
+
+  - slug: sociedade-mitra
+    status: planned
+    type: rpg
+    genre: [intrigue, secret-org, investigation]
+    origin: brazilian
+    license: open-source
+    title: "Sociedade Mitra"
+    description: "Intrigas e organizações secretas. Conspirações, jogos de poder e conflitos ocultos, com ênfase em investigação e relações entre personagens."
+    port_difficulty: medium
+
+  - slug: full-metal-cria
+    status: planned
+    type: rpg
+    genre: [cyberpunk, urban-brazil]
+    origin: brazilian
+    license: open-source
+    title: "Full Metal Cria"
+    description: "Mistura tecnologia com realidade urbana brasileira. Estilo, identidade e narrativa moderna, proposta contemporânea cheia de personalidade."
+    port_difficulty: medium
+
+  - slug: arquivos-paranormais
+    status: planned
+    type: rpg
+    genre: [investigation, horror]
+    origin: brazilian
+    license: open-source
+    title: "Arquivos Paranormais"
+    description: "Investigações sobrenaturais. Clima de suspense e descoberta diante de casos misteriosos e fenômenos inexplicáveis."
+    port_difficulty: medium
+
+  - slug: solaria
+    status: planned
+    type: rpg
+    genre: [fantasy, sun-themed]
+    origin: brazilian
+    license: open-source
+    title: "Solaria"
+    description: "Mundo guiado pela influência do sol. Explora energia, luz e civilizações moldadas por esse elemento, em uma ambientação única."
+    port_difficulty: medium
+
+  - slug: invazores
+    status: planned
+    type: rpg
+    genre: [sci-fi, invasion]
+    origin: brazilian
+    license: open-source
+    title: "Invazores"
+    description: "Temática de invasão alienígena. Foco em tensão e sobrevivência diante de ameaças desconhecidas e situações extremas."
+    port_difficulty: medium
+
+  - slug: conspiracoes-rpg
+    status: planned
+    type: rpg
+    genre: [conspiracy, modern]
+    origin: brazilian
+    license: open-source
+    title: "Conspirações RPG"
+    description: "Teorias conspiratórias, organizações secretas e mistérios ocultos. Cenários onde a verdade nem sempre é clara."
+    port_difficulty: medium
+
+  - slug: sacramento
+    status: planned
+    type: rpg
+    genre: [drama, realistic]
+    origin: brazilian
+    license: open-source
+    title: "Sacramento RPG"
+    description: "Temas densos e realistas. Foca em narrativa e interpretação, abordando conflitos sociais, fé e dilemas morais — ideal para campanhas sérias."
+    port_difficulty: medium
+
+  - slug: tumulos-e-tigres
+    status: planned
+    type: rpg
+    genre: [oriental, martial-arts]
+    origin: brazilian
+    license: open-source
+    title: "Túmulos & Tigres"
+    creators: ["Lucas Rolim"]
+    description: "Inspirado em culturas orientais. Combina fantasia, espiritualidade e artes marciais, com foco em honra, tradição e conflitos místicos."
+    port_difficulty: medium
+
+  - slug: ashes-of-tomorrow
+    status: planned
+    type: rpg
+    genre: [post-apocalyptic, survival]
+    origin: brazilian
+    license: open-source
+    title: "Ashes of Tomorrow"
+    description: "Temática pós-apocalíptica. Mundo devastado onde cada decisão impacta a sobrevivência — escassez, reconstrução e escolhas difíceis."
+    port_difficulty: medium
+
+  - slug: brazil-vapor-magia
+    status: planned
+    type: rpg
+    genre: [steampunk, fantasy]
+    origin: brazilian
+    license: open-source
+    title: "Brazil Vapor & Magia"
+    description: "Steampunk com fantasia numa versão alternativa do Brasil. Tecnologia a vapor e forças místicas coexistem num cenário rico e original."
+    port_difficulty: medium
+
+  - slug: libra-rpg
+    status: planned
+    type: rpg
+    genre: [system-agnostic, rules-light]
+    origin: brazilian
+    license: open-source
+    title: "Libra RPG"
+    description: "Sistema flexível com publicação digital. Equilibra mecânica e narrativa, com regras adaptáveis a diferentes cenários."
+    port_difficulty: easy
+
+  - slug: espadas-afiadas
+    status: planned
+    type: rpg
+    genre: [old-school, fantasy]
+    origin: brazilian
+    license: open-source
+    title: "Espadas Afiadas & Feitiços Sinistros"
+    description: "Inspirado no movimento Old-School: regras simples, personalização limitada e combates mortais. Para mesas que querem mais dificuldade."
+    port_difficulty: easy
+
+  - slug: malditos-goblins
+    status: planned
+    type: rpg
+    genre: [comedy, indie]
+    origin: brazilian
+    license: open-source
+    title: "Malditos Goblins"
+    description: "Pegada cômica: jogue com Goblins que morrem com frequência. Interprete criaturas maléficas e crie planos ousados para vencer os desafios."
+    port_difficulty: easy
+
+  # ── Externos — comerciais/proprietários (link out, sem port) ─────────────
+
+  - slug: 3dt-alpha
+    status: external
+    type: rpg
+    genre: [super-heroes, anime]
+    origin: brazilian
+    license: commercial
+    title: "3D&T Alpha"
+    creators: ["Jambô Editora"]
+    description: "Sistema de heróis renomado da Jambô Editora (Dragão Brasil). Inspirado nos animes dos anos 90/2000, replica batalhas épicas com sistema simples e prático para iniciantes."
+    external_url: https://jamboeditora.com.br
+
+  - slug: tormenta-rpg
+    status: external
+    type: rpg
+    genre: [fantasy, established]
+    origin: brazilian
+    license: commercial
+    title: "Tormenta RPG"
+    creators: ["Marcelo Cassaro", "Rogério Saladino", "J. M. Trevisan", "Jambô Editora"]
+    description: "Um dos sistemas mais importantes do Brasil, ambientado em Arton. Marco da fantasia medieval brasileira, com elementos épicos, deuses ativos e ameaças únicas."
+    external_url: https://jamboeditora.com.br/tormenta
+
+  - slug: ordem-paranormal
+    status: external
+    type: rpg
+    genre: [investigation, horror, contemporary]
+    origin: brazilian
+    license: commercial
+    title: "Ordem Paranormal"
+    creators: ["Rafael Lange", "Jambô Editora"]
+    description: "Investigações sobrenaturais em cenário contemporâneo. Mistura terror, mistério e ação, com forte ênfase em narrativa e tensão. Sistema da Jambô Editora."
+    external_url: https://jamboeditora.com.br/ordem-paranormal

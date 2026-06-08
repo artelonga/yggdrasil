@@ -1,0 +1,15 @@
+[package]
+name = "universe-shandara"
+version = "0.1.0"
+edition = "2024"
+# Código (src/) é MIT; conteúdo (content/) é CC-BY-SA 4.0. Ver README.
+license = "MIT AND CC-BY-SA-4.0"
+description = "Shandara — SRD livre (CC-BY-SA 4.0) do mundo de fantasia, servido como content reader WASM"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+universe-sdk = { path = "../universe-sdk" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

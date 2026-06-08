@@ -24,7 +24,7 @@ use std::{
 use axum::{
     Json,
     extract::{
-        Path, State,
+        Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::StatusCode,
@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use yggdrasil_core::games::{YggGame, YggInvaders, YggSnake, YggTetris};
 
+use crate::catalog::{self, CatalogEntry, CatalogFilter, count_by_status};
 use crate::scores_store::ScoresStore;
 use crate::telemetria::TelemetriaDb;
 
@@ -431,16 +432,103 @@ struct WsStateMessage {
 
 // ─── Route handlers ──────────────────────────────────────────────────────────
 
+/// Funde uma entrada do catálogo (REGISTRY.yaml) com o runtime real do
+/// universo embedado (se existir), produzindo um objeto JSON enriquecido.
+///
+/// Campos de catálogo (status, type, genre, origin, license, …) sempre
+/// presentes; campos de runtime (`max_players`, `api_version`, `version`,
+/// `name`/`id` legados) só nos embedados que têm `UniversoMeta`. `playable`
+/// reflete `status == embedded`.
+fn merge_entry(entry: &CatalogEntry, runtime: Option<&UniversoMeta>) -> serde_json::Value {
+    let mut v = serde_json::to_value(entry).unwrap_or_else(|_| serde_json::json!({}));
+    let obj = v.as_object_mut().expect("CatalogEntry serializa em objeto");
+
+    obj.insert("playable".into(), serde_json::json!(entry.playable()));
+    // Aliases legados consumidos pelo frontend atual (index.js lê id/name).
+    obj.insert("id".into(), serde_json::json!(entry.slug));
+    obj.insert("name".into(), serde_json::json!(entry.title));
+
+    if let Some(meta) = runtime {
+        obj.insert("category".into(), serde_json::json!(meta.category));
+        obj.insert("tag".into(), serde_json::json!(meta.tag));
+        obj.insert("version".into(), serde_json::json!(meta.version));
+        obj.insert("max_players".into(), serde_json::json!(meta.max_players));
+        obj.insert("api_version".into(), serde_json::json!(meta.api_version));
+    }
+    v
+}
+
+/// Constrói a lista mesclada (catálogo × runtime) já filtrada.
+fn merged_catalog(filter: &CatalogFilter) -> (Vec<serde_json::Value>, catalog::StatusCounts) {
+    let runtime = universo_list();
+    let entries = catalog::catalog_entries().unwrap_or_default();
+    let filtered = filter.apply(&entries);
+    let counts = count_by_status(&filtered);
+
+    let merged = filtered
+        .iter()
+        .map(|e| {
+            let rt = runtime.iter().find(|m| m.id == e.slug);
+            merge_entry(e, rt)
+        })
+        .collect();
+    (merged, counts)
+}
+
+/// `?format=catalog` (ou qualquer filtro presente) → envelope rico.
+fn wants_envelope(f: &CatalogFilter, format: Option<&str>) -> bool {
+    format == Some("catalog")
+        || f.status.is_some()
+        || f.kind.is_some()
+        || f.origin.is_some()
+        || f.genre.is_some()
+        || f.license.is_some()
+        || f.search.is_some()
+}
+
+#[derive(Deserialize)]
+pub struct ListQuery {
+    #[serde(default)]
+    pub format: Option<String>,
+    #[serde(flatten)]
+    pub filter: CatalogFilter,
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/universos",
+    params(
+        ("status" = Option<String>, Query, description = "embedded | planned | external | all"),
+        ("type" = Option<String>, Query, description = "rpg | arcade | puzzle | ..."),
+        ("origin" = Option<String>, Query, description = "brazilian | international | original"),
+        ("genre" = Option<String>, Query, description = "lista separada por vírgula (match em qualquer)"),
+        ("license" = Option<String>, Query, description = "open-source | commercial | all"),
+        ("search" = Option<String>, Query, description = "substring em title + description"),
+        ("format" = Option<String>, Query, description = "catalog → envelope {universos,total,by_status}"),
+    ),
     responses(
-        (status = 200, description = "Lista de universos disponíveis", body = Vec<UniversoMeta>),
+        (status = 200, description = "Lista de universos do catálogo (merge embedados + planejados + externos)"),
     ),
     tag = "universos"
 )]
-pub async fn list_universos(_state: State<Arc<UniversosState>>) -> impl IntoResponse {
-    Json(universo_list())
+pub async fn list_universos(
+    _state: State<Arc<UniversosState>>,
+    Query(q): Query<ListQuery>,
+) -> impl IntoResponse {
+    let (universos, counts) = merged_catalog(&q.filter);
+
+    if wants_envelope(&q.filter, q.format.as_deref()) {
+        Json(serde_json::json!({
+            "universos": universos,
+            "total": universos.len(),
+            "by_status": counts,
+        }))
+        .into_response()
+    } else {
+        // Backwards-compat: cliente sem filtros recebe um array (mesmo formato
+        // do v1.0), agora com os campos novos (status, type, playable, …).
+        Json(universos).into_response()
+    }
 }
 
 /// `GET /api/v1/stats` — stats públicas/anônimas para a landing. Só agregados,
@@ -470,6 +558,25 @@ pub async fn get_universo(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if !is_known(&id) {
+        // Fallback de catálogo (YG-70/YG-69): universos não tick-based (ex.:
+        // shandara — content reader) não têm sessão de jogo, mas existem no
+        // REGISTRY. Retorna a metadata de catálogo, com capabilities.
+        if let Some(entry) = catalog::catalog_entries()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|e| e.slug == id)
+        {
+            state.telemetria.universe_view(&id);
+            let mut v = serde_json::to_value(&entry).unwrap_or_else(|_| serde_json::json!({}));
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("playable".into(), serde_json::json!(entry.playable()));
+                obj.insert(
+                    "capabilities".into(),
+                    serde_json::json!(catalog_capabilities(&entry)),
+                );
+            }
+            return (StatusCode::OK, Json(v)).into_response();
+        }
         return (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "erro": format!("Universo '{id}' não encontrado") })),
@@ -489,6 +596,20 @@ pub async fn get_universo(
         }
     });
     (StatusCode::OK, Json(meta)).into_response()
+}
+
+/// Capabilities declaradas por uma entrada de catálogo. Shandara é um content
+/// reader (SRD); demais RPGs herdam `["content", "rpg"]` por enquanto.
+fn catalog_capabilities(entry: &CatalogEntry) -> Vec<&'static str> {
+    if entry.slug == "shandara" {
+        return vec!["content", "rpg", "srd"];
+    }
+    match entry.kind.as_str() {
+        "rpg" => vec!["content", "rpg"],
+        "atlas" => vec!["content", "atlas"],
+        "lingua" => vec!["content", "lingua"],
+        _ => vec!["content"],
+    }
 }
 
 #[utoipa::path(
@@ -909,7 +1030,9 @@ mod tests {
     // ── GET /api/v1/universos ────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn lista_retorna_6_universos() {
+    async fn lista_sem_filtros_retorna_catalogo_completo_como_array() {
+        // Backwards-compat: sem filtros, o endpoint devolve um ARRAY (formato
+        // v1.0), agora enriquecido com os campos de catálogo (status, type…).
         let (app, _) = make_app();
         let resp = app
             .oneshot(
@@ -923,8 +1046,9 @@ mod tests {
 
         assert_eq!(resp.status(), StatusCode::OK);
         let v = body_json(resp).await;
-        let arr = v.as_array().unwrap();
-        assert_eq!(arr.len(), 6, "esperava 6 universos, got {}", arr.len());
+        let arr = v.as_array().expect("sem filtros deve ser array");
+        // Catálogo completo (embedados + planejados + externos).
+        assert!(arr.len() >= 40, "esperava >=40 entradas, got {}", arr.len());
 
         let ids: Vec<&str> = arr.iter().filter_map(|u| u["id"].as_str()).collect();
         for expected in ["snake", "tetris", "invaders", "poker", "vim", "neuro"] {
@@ -936,9 +1060,88 @@ mod tests {
             "pointset não deve mais ser um universo"
         );
 
+        // Cada entrada carrega os campos novos do catálogo.
         for u in arr {
-            assert_eq!(u["api_version"], 1);
-            assert!(u["max_players"].is_number());
+            assert!(u["status"].is_string(), "status ausente");
+            assert!(u["playable"].is_boolean(), "playable ausente");
+            assert!(u["type"].is_string(), "type ausente");
+        }
+
+        // Embedados mantêm metadados de runtime; planejados não são jogáveis.
+        let snake = arr.iter().find(|u| u["id"] == "snake").unwrap();
+        assert_eq!(snake["api_version"], 1);
+        assert!(snake["max_players"].is_number());
+        assert_eq!(snake["playable"], true);
+
+        let tagmar = arr.iter().find(|u| u["id"] == "tagmar").unwrap();
+        assert_eq!(tagmar["playable"], false);
+        assert_eq!(tagmar["status"], "planned");
+    }
+
+    #[tokio::test]
+    async fn lista_format_catalog_retorna_envelope_com_contagens() {
+        let (app, _) = make_app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/universos?format=catalog")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert!(v["universos"].is_array());
+        let total = v["total"].as_u64().unwrap();
+        assert!(total >= 40, "total: {total}");
+        assert!(v["by_status"]["embedded"].as_u64().unwrap() >= 7);
+        assert!(v["by_status"]["planned"].as_u64().unwrap() >= 30);
+        assert!(v["by_status"]["external"].as_u64().unwrap() >= 3);
+    }
+
+    #[tokio::test]
+    async fn lista_filtro_origin_brazilian_status_planned() {
+        let (app, _) = make_app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/universos?origin=brazilian&status=planned")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        let arr = v["universos"].as_array().unwrap();
+        assert!(arr.len() >= 30, "brazilian+planned: {}", arr.len());
+        for u in arr {
+            assert_eq!(u["origin"], "brazilian");
+            assert_eq!(u["status"], "planned");
+            assert_eq!(u["playable"], false);
+        }
+    }
+
+    #[tokio::test]
+    async fn lista_filtro_status_embedded_todos_playable() {
+        let (app, _) = make_app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/universos?status=embedded")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        let arr = v["universos"].as_array().unwrap();
+        assert!(arr.len() >= 7, "embedded: {}", arr.len());
+        for u in arr {
+            assert_eq!(u["playable"], true);
+            assert_eq!(u["status"], "embedded");
         }
     }
 
@@ -962,6 +1165,33 @@ mod tests {
         assert_eq!(v["id"], "snake");
         assert_eq!(v["api_version"], 1);
         assert!(v["sessoes"].is_string());
+    }
+
+    #[tokio::test]
+    async fn get_universo_shandara_retorna_metadata_de_catalogo_com_capabilities() {
+        let (app, _) = make_app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/universos/shandara")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["slug"], "shandara");
+        assert_eq!(v["type"], "rpg");
+        let caps: Vec<&str> = v["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c.as_str().unwrap())
+            .collect();
+        for c in ["content", "rpg", "srd"] {
+            assert!(caps.contains(&c), "capability '{c}' ausente");
+        }
     }
 
     #[tokio::test]

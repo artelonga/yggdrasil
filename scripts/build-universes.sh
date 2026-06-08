@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/build-universes.sh — Compile all 6 universe WASM crates and validate size budgets.
+# scripts/build-universes.sh — Compile all universe WASM crates and validate size budgets.
 #
 # Usage: bash scripts/build-universes.sh [--skip-opt]
 #
@@ -23,8 +23,10 @@ OUT="$REPO_ROOT/yggdrasil-web/embedded"
 TARGET=wasm32-unknown-unknown
 SKIP_OPT="${1:-}"
 
-UNIVERSES=(snake tetris invaders pointset poker vim)
-BUDGETS=(300000 300000 300000 200000 600000 250000)   # bytes
+# shandara (YG-69): content reader RPG — WASM + SRD markdown embedado.
+# Budget 700 KB (sugestão do YG-69: ~400 KB código + ~300 KB conteúdo).
+UNIVERSES=(snake tetris invaders pointset poker vim shandara)
+BUDGETS=(300000 300000 300000 200000 600000 250000 700000)   # bytes
 
 mkdir -p "$OUT"
 
@@ -56,14 +58,16 @@ for i in "${!UNIVERSES[@]}"; do
 done
 
 echo ""
-echo "==> Total size gate (budget: 2MB = 2097152B)"
+echo "==> Total size gate (budget: 3MB = 3145728B)"
+# Budget total elevado de 2MB → 3MB (YG-69) para acomodar o conteúdo markdown
+# embedado do Shandara conforme o SRD cresce.
 TOTAL=0
 for f in "$OUT"/*.wasm; do
     TOTAL=$((TOTAL + $(wc -c < "$f")))
 done
-MAX_TOTAL=2097152
+MAX_TOTAL=3145728
 if [ "$TOTAL" -gt "$MAX_TOTAL" ]; then
-    echo "❌ Total WASM: ${TOTAL}B > budget 2MB (${MAX_TOTAL}B)" >&2
+    echo "❌ Total WASM: ${TOTAL}B > budget 3MB (${MAX_TOTAL}B)" >&2
     exit 1
 fi
 echo "✅ Total: ${TOTAL}B / ${MAX_TOTAL}B"
