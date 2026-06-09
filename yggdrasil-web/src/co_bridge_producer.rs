@@ -1512,7 +1512,10 @@ mod tests {
         };
         let uri = ws_request(&cfg).unwrap().uri().to_string();
         // `&` quando já há query; token reservado é percent-encoded.
-        assert_eq!(uri, "wss://co.test/api/v1/events/bridge?x=1&source=ygg&token=t%2Fb%2Bc%3D");
+        assert_eq!(
+            uri,
+            "wss://co.test/api/v1/events/bridge?x=1&source=ygg&token=t%2Fb%2Bc%3D"
+        );
     }
 
     #[test]
@@ -1912,5 +1915,42 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0], "entry.created");
         assert_eq!(events[1], "entry.updated");
+    }
+    // temp diagnostic appended to the test module
+
+    #[tokio::test]
+    async fn dial_compativel_com_axum_websocket_upgrade() {
+        use axum::Router;
+        use axum::extract::ws::{WebSocket, WebSocketUpgrade};
+        use axum::response::Response;
+        use axum::routing::get;
+        use tokio::net::TcpListener;
+
+        async fn h(ws: WebSocketUpgrade) -> Response {
+            ws.protocols(["co.eda.bridge.v1"])
+                .on_upgrade(|mut s: WebSocket| async move {
+                    let _ = s.recv().await;
+                })
+        }
+        let app = Router::new().route("/api/v1/events/bridge", get(h));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+
+        let cfg = BridgeConfig {
+            url: format!("ws://{addr}/api/v1/events/bridge"),
+            token: "tok".into(),
+            node_id: "yggdrasil.artelonga.com.br".into(),
+        };
+        let req = ws_request(&cfg).unwrap();
+        let result = tokio_tungstenite::connect_async(req).await;
+        assert!(
+            result.is_ok(),
+            "axum recusou o handshake: {:?}",
+            result.err()
+        );
     }
 }
