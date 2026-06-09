@@ -835,8 +835,20 @@ fn ws_request(
     config: &BridgeConfig,
 ) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, BridgeError> {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-    let mut req = config
-        .url
+    // CO-384 (`bridge_ws_handler`) lê `source` + `token` dos **query params**
+    // (`Query<BridgeQuery>`), não do header — e só exige source na trust-list
+    // (`CO_BRIDGE_TRUSTED_SOURCES`) + token não-vazio (sem JWKS/validação cripto).
+    // Então o handshake precisa de `?source=<node_id>&token=<token>` na URL; o
+    // Bearer fica só por compat futura. (YG-120 — alinhamento de handshake.)
+    let sep = if config.url.contains('?') { '&' } else { '?' };
+    let url = format!(
+        "{}{}source={}&token={}",
+        config.url,
+        sep,
+        urlq(&config.node_id),
+        urlq(&config.token),
+    );
+    let mut req = url
         .as_str()
         .into_client_request()
         .map_err(|e| BridgeError::BadRequest(e.to_string()))?;
@@ -849,6 +861,22 @@ fn ws_request(
         .map_err(|_| BridgeError::BadRequest("subprotocol inválido".into()))?;
     req.headers_mut().insert("sec-websocket-protocol", proto);
     Ok(req)
+}
+
+/// Percent-encode mínimo p/ um valor de query (espaço + os reservados que
+/// quebram o parse da URL). Tokens/JWTs e hosts já são quase URL-safe; isto cobre
+/// os poucos casos (`+`, `/`, `=`, `&`, `?`, espaço) sem puxar uma dep nova.
+fn urlq(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 // ─── Spawn da task de fundo (gated) ──────────────────────────────────────────
@@ -1456,18 +1484,35 @@ mod tests {
     }
 
     #[test]
-    fn ws_request_inclui_url_bearer_e_subprotocol() {
+    fn ws_request_inclui_source_token_query_bearer_e_subprotocol() {
         let cfg = BridgeConfig {
             url: "wss://co.test/api/v1/events/bridge".into(),
             token: "service-jwt-abc".into(),
-            node_id: "node-1".into(),
+            node_id: "yggdrasil.artelonga.com.br".into(),
         };
         let req = ws_request(&cfg).expect("request válida");
-        assert_eq!(req.uri().to_string(), "wss://co.test/api/v1/events/bridge");
+        // CO-384 lê `?source=&token=` da query (não do header) — YG-120.
+        let uri = req.uri().to_string();
+        assert_eq!(
+            uri,
+            "wss://co.test/api/v1/events/bridge?source=yggdrasil.artelonga.com.br&token=service-jwt-abc"
+        );
         let auth = req.headers().get("authorization").unwrap();
         assert_eq!(auth, "Bearer service-jwt-abc");
         let proto = req.headers().get("sec-websocket-protocol").unwrap();
         assert_eq!(proto, "co.eda.bridge.v1");
+    }
+
+    #[test]
+    fn ws_request_anexa_query_com_amp_se_url_ja_tem_query() {
+        let cfg = BridgeConfig {
+            url: "wss://co.test/api/v1/events/bridge?x=1".into(),
+            token: "t/b+c=".into(),
+            node_id: "ygg".into(),
+        };
+        let uri = ws_request(&cfg).unwrap().uri().to_string();
+        // `&` quando já há query; token reservado é percent-encoded.
+        assert_eq!(uri, "wss://co.test/api/v1/events/bridge?x=1&source=ygg&token=t%2Fb%2Bc%3D");
     }
 
     #[test]
