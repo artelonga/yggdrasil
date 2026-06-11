@@ -459,6 +459,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/universos/vim", get(serve_vim))
         .route("/universos/comunicacao", get(serve_comunicacao))
         .route("/universos/corpus", get(serve_corpus))
+        // Fallback: o catálogo (YG-68) lista 41 universos mas só os embedded
+        // têm página própria — qualquer outro slug (planned/external/shandara)
+        // volta ao catálogo em vez de 404. Segmentos estáticos têm precedência
+        // sobre a captura, então as rotas acima não são afetadas.
+        .route("/universos/{slug}", get(redirect_to_catalogo))
         // 301 redirects para preservar bookmarks/links externos com a URL
         // antiga `/games/<slug>`. Remover quando todos os universos ativos
         // estiverem na nova URL por ≥ 1 release.
@@ -581,6 +586,13 @@ async fn serve_corpus() -> impl IntoResponse {
 /// das fontes acontece no cliente (`/static/universos/index.js`).
 async fn serve_universos_index() -> impl IntoResponse {
     Html(include_str!("../static/universos/index.html"))
+}
+
+/// Slug sem página própria (planned/external do catálogo) → catálogo.
+/// Temporário de propósito: quando o universo ganhar página, a rota
+/// específica passa a vencer a captura e o redirect deixa de disparar.
+async fn redirect_to_catalogo() -> impl IntoResponse {
+    Redirect::temporary("/universos")
 }
 
 // ── Legacy redirects (YG-N rename `/games/*` → `/universos/*`) ─────────────

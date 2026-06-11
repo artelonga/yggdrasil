@@ -2,6 +2,21 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.7.1] — 2026-06-11 — Slugs do catálogo sem página redirecionam ao catálogo (fim dos 404)
+
+### Fixed
+
+- **Todos os universos sem página própria davam 404**: o catálogo (YG-68) lista 41
+  universos e a landing/sidebar linka cada um para `/universos/<slug>`, mas só os
+  embedded têm rota. Novo fallback `/universos/{slug}` → 307 para `/universos`
+  (catálogo); rotas específicas continuam vencendo a captura. Cobre também
+  `shandara` (embedded/`playable: true` no catálogo, mas ainda sem reader de SRD).
+- **Dockerfile**: o builder não copiava `universes/REGISTRY.yaml` (`include_str!`
+  do catálogo) — todo deploy falhava desde a v2.6.0 e prod ficou presa na 2.1.0.
+  Também não copiava `yggdrasil-web/embedded/`: o `build.rs` gerava stubs de 8
+  bytes e os universos WASM iriam quebrados. Os artefatos reais agora entram na
+  imagem. (Commitado como parte do ciclo de deploy da 2.7.0.)
+
 ## [2.7.0] — 2026-06-11 — Bridge go-live (wire + dial CO-384) e sessão na landing
 
 ### Added — Wire congelado + producer alinhado ao contrato CO-384/389 — YG-118
