@@ -128,9 +128,9 @@
     <nav class="nav scroll" id="nav"><div class="lbl">Universos</div>
       <div class="loading" style="padding:1rem">carregando…</div></nav>
     <div class="foot">
-      <a class="cta" href="/login" id="cta-criar">✦ Criar universo</a>
+      <a class="cta" href="/login" data-criar>✦ Criar universo</a>
       <div class="links">
-        <a href="/login">↪ Entrar</a>
+        <a href="/login" id="link-entrar">↪ Entrar</a>
         <a href="/lobby">🗺 Mapa do lobby</a>
         <a href="/feedback">💬 Mural de feedback</a>
       </div>
@@ -149,7 +149,7 @@
     </div>
     <div class="right">
       <span class="sub" style="font-size:12px;color:var(--on-var)" id="whoami">visitante</span>
-      <a class="btn-ghost" href="/login">Entrar</a>
+      <a class="btn-ghost" href="/login" id="auth-action">Entrar</a>
     </div>
   </header>
 
@@ -162,7 +162,7 @@
         <h2>Crie, jogue e conecte universos</h2>
         <p class="lede">Uma plataforma viva de mundos digitais — arcade, anatomia 3D,
           léxicos e mais. Explore como visitante; crie o seu quando quiser.</p>
-        <a class="cta" href="/login" style="display:inline-block;width:auto;padding:.7rem 1.4rem">
+        <a class="cta" href="/login" data-criar style="display:inline-block;width:auto;padding:.7rem 1.4rem">
           ✦ Criar universo</a>
       </div>
       <div class="card">
@@ -250,11 +250,29 @@
       document.getElementById('s-hi').textContent  = maxHi?fmt(maxHi):'—';
     });
 
-    // já logado? mostra e ajusta CTAs
-    try{ if(localStorage.getItem('yggdrasil-jwt')){
-      document.getElementById('whoami').textContent='você está logado';
-      document.querySelectorAll('#cta-criar').forEach(a=>a.setAttribute('href','/universos/instance/new'));
-    }}catch(_){}
+    // ── sessão (mesmo JWT do lobby) — mostra email, troca Entrar→Sair e ajusta CTAs
+    const decodeJwt = t => { try {
+      return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    } catch(_) { return null; } };
+    let jwt = null;
+    try { jwt = localStorage.getItem('yggdrasil-jwt'); } catch(_) {}
+    if (jwt) {
+      const claims = decodeJwt(jwt);
+      document.getElementById('whoami').textContent = (claims && claims.email) || 'você está logado';
+      const btn = document.getElementById('auth-action');
+      btn.textContent = 'Sair';
+      btn.href = '#';
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        try { localStorage.removeItem('yggdrasil-jwt'); } catch(_) {}
+        location.reload();
+      });
+      // sem página de perfil ainda — o slot de conta segue o padrão do nav.js
+      const entrar = document.getElementById('link-entrar');
+      entrar.textContent = '👤 Conta';
+      entrar.href = '/login?force=1';
+      document.querySelectorAll('[data-criar]').forEach(a=>a.setAttribute('href','/universos/instance/new'));
+    }
   </script>
   <script defer src="/static/feedback.js"></script>
 </body></html>
