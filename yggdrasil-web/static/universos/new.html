@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yggdrasil — Criar universo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d12; color: #e8e3d3;
+      font-family: system-ui, monospace; min-height: 100vh; padding: 2rem 1rem;
+    }
+    .wrap { max-width: 60rem; margin: 0 auto; }
+    .top-bar { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+    .top-bar h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.8rem; }
+    .top-bar a.back { color: #d4af37; text-decoration: none; font-size: .8rem; letter-spacing: .1em; border: 1px solid #d4af37; padding: .35rem .8rem; }
+    .top-bar a.back:hover { background: rgba(212,175,55,.1); }
+    .sub { opacity: .55; font-size: .82rem; margin-top: .5rem; letter-spacing: .04em; }
+
+    .sec { margin-top: 2rem; }
+    .sec h2 { font-weight: 300; letter-spacing: .12em; font-size: 1.05rem; opacity: .85; margin-bottom: .9rem; }
+
+    label { display: block; font-size: .78rem; letter-spacing: .08em; opacity: .7; margin-bottom: .4rem; }
+    input[type=text] {
+      width: 100%; max-width: 28rem; background: #15151c; color: #e8e3d3;
+      border: 1px solid #2a2a35; font-family: inherit; font-size: .95rem;
+      padding: .55rem .75rem; border-radius: 6px;
+    }
+    input[type=text]:focus { outline: none; border-color: #d4af37; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }
+    .card {
+      display: flex; flex-direction: column; gap: .5rem; text-decoration: none; color: inherit;
+      background: #14141b; border: 1px solid #24242e; border-radius: 10px; padding: 1.1rem 1.15rem;
+      cursor: pointer; transition: border-color .12s, transform .12s;
+    }
+    .card:hover { border-color: #d4af37; transform: translateY(-2px); }
+    .card.sel { border-color: #d4af37; background: #1a1820; }
+    .card h3 { font-weight: 400; font-size: 1.05rem; letter-spacing: .02em; }
+    .card .desc { font-size: .8rem; opacity: .62; line-height: 1.45; }
+    .badge { font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; border: 1px solid currentColor; border-radius: 4px; padding: .12rem .4rem; align-self: flex-start; }
+    .badge.autorado { color: #b78cf0; }
+    .badge.pub { color: #6dbf8b; }
+    .badge.priv { color: #8a93a6; }
+
+    button.cta {
+      margin-top: 1.4rem; background: #d4af37; color: #1a1408; border: 0; cursor: pointer;
+      font-family: inherit; font-weight: 700; font-size: .8rem; letter-spacing: .14em;
+      text-transform: uppercase; padding: .75rem 1.6rem; border-radius: 6px;
+    }
+    button.cta:hover { filter: brightness(1.1); }
+    button.cta:disabled { opacity: .5; cursor: default; }
+    .erro { color: #e07a5f; font-size: .82rem; margin-top: .8rem; min-height: 1.2em; }
+    .empty { opacity: .5; font-style: italic; padding: 1rem 0; font-size: .85rem; }
+
+    .gate { margin-top: 3rem; text-align: center; }
+    .gate p { opacity: .7; margin-bottom: 1.2rem; }
+    .gate a { color: #d4af37; text-decoration: none; border: 1px solid #d4af37; padding: .55rem 1.2rem; letter-spacing: .1em; font-size: .85rem; }
+    .gate a:hover { background: rgba(212,175,55,.1); }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top-bar">
+      <div>
+        <h1>criar universo</h1>
+        <div class="sub">Escolha um modelo, dê um nome e comece a escrever notas e blocos.</div>
+      </div>
+      <a class="back" href="/universos">← universos</a>
+    </div>
+
+    <!-- visitante: precisa entrar -->
+    <div class="gate hidden" id="gate">
+      <p>Para criar um universo você precisa entrar.</p>
+      <a href="/login?next=/universos/instance/new">↪ Entrar</a>
+    </div>
+
+    <!-- logado: formulário -->
+    <div class="hidden" id="form">
+      <div class="sec">
+        <label for="titulo">Nome do universo</label>
+        <input type="text" id="titulo" maxlength="120" placeholder="Meu universo">
+      </div>
+      <div class="sec">
+        <h2>Modelo</h2>
+        <div class="grid" id="templates"><div class="empty">carregando modelos…</div></div>
+      </div>
+      <button class="cta" id="btn-criar" disabled>✦ Criar universo</button>
+      <div class="erro" id="erro"></div>
+
+      <div class="sec">
+        <h2>Meus universos</h2>
+        <div class="grid" id="meus"><div class="empty">carregando…</div></div>
+      </div>
+    </div>
+  </div>
+  <script src="/static/universos/new.js"></script>
+  <script defer src="/static/nav.js"></script>
+</body>
+</html>

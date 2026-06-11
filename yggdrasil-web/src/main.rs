@@ -487,6 +487,9 @@ async fn main() -> anyhow::Result<()> {
         .merge(instances_router)
         .merge(feedback_router)
         .merge(comunicacao_router)
+        // Criar universo autorado (template picker + meus universos). O segmento
+        // estático "new" vence a captura {id} da rota do player abaixo.
+        .route("/universos/instance/new", get(serve_instance_new))
         .route("/universos/instance/{id}", get(serve_instance_player))
         // YG-87: neuro = viewer multiescala Neuroglancer (atlas subcortical
         // Precomputed servido mesmo-origem). O viewer Godot macro fica em /anatomia.
@@ -529,6 +532,13 @@ async fn serve_login() -> impl IntoResponse {
 /// por `id` via `GET /api/v1/instances/{id}` e renderiza client-side.
 async fn serve_instance_player() -> impl IntoResponse {
     Html(include_str!("../static/universos/instance.html"))
+}
+
+/// Criar universo autorado: template picker + lista "meus universos". Fecha o
+/// loop do CTA "Criar universo" da landing (antes apontava para cá sem a rota
+/// existir).
+async fn serve_instance_new() -> impl IntoResponse {
+    Html(include_str!("../static/universos/new.html"))
 }
 
 /// YG-84: atalho `/anatomia` → bundle do Godot Web export servido em

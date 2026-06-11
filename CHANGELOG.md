@@ -2,6 +2,19 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.8.0] — 2026-06-11 — Criar universo de verdade: página de criação + meus universos
+
+### Added
+
+- **`/universos/instance/new`** — a página que faltava para o conteúdo existir: escolha
+  de modelo (`GET /api/v1/templates`), título, criação (`POST /api/v1/instances`) e
+  redirect direto para o player. Inclui a seção **"Meus universos"** (instâncias do
+  usuário logado, com badge público/privado) — antes não havia NENHUM caminho na UI
+  para criar ou reabrir uma instância; o jardim de notas era inalcançável.
+- Catálogo (`/universos`): botão "✦ criar universo" no topo.
+- Landing: CTAs "Criar universo" deslogados agora levam a
+  `/login?next=/universos/instance/new` (pós-login cai na criação, não no lobby).
+
 ## [2.7.1] — 2026-06-11 — Slugs do catálogo sem página redirecionam ao catálogo (fim dos 404)
 
 ### Fixed
