@@ -2,6 +2,26 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.9.0] — 2026-06-11 — Pastas na grade, ligações tipadas e drag-to-link
+
+### Added
+
+- **📁 Pasta** na paleta (jardim e blank): simula diretórios na grade. **Arrastar uma
+  nota para cima de uma pasta** cria a ligação `parent` (filho→pasta); sobre outra
+  nota cria `ref`. O tipo viaja em `Connection.props.kind` — sem migração de schema.
+- **Ligações separadas por tipo** com legenda clicável na sidebar: pasta (pai/filho,
+  dourada), referência (ciano), wikilink (tracejada roxa) e **irmãos da mesma pasta**
+  (derivada, pontilhada sutil, desligada por padrão) — "ser filho de um pai comum" é
+  um tipo de ligação por si só.
+- Inspetor de pasta lista o conteúdo do "diretório" (filhos via `parent`), com clique
+  para abrir cada nota.
+
+### Fixed
+
+- **Clicar na grade não fazia nada**: o player abria em modo visualizar mesmo para o
+  dono de um universo recém-criado. Agora: universo vazio do dono → entra direto em
+  ✏️ Editar; clique morto em modo visualizar mostra dica em vez de silêncio.
+
 ## [2.8.1] — 2026-06-11 — Bridge: User-Agent no dial (o "400 CO-side" do YG-122)
 
 ### Fixed

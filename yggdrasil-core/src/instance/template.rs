@@ -134,11 +134,14 @@ pub fn blank_template() -> Template {
         title: "Em branco".into(),
         description: "Grade 2D vazia — coloque blocos e anexe conteúdo.".into(),
         seed,
-        palette: vec![PaletteItem::new(
-            "note",
-            "Nota",
-            json!({ "color": "#d4af37", "icon": "📝" }),
-        )],
+        palette: vec![
+            PaletteItem::new("note", "Nota", json!({ "color": "#d4af37", "icon": "📝" })),
+            PaletteItem::new(
+                "pasta",
+                "Pasta",
+                json!({ "color": "#e9c349", "icon": "📁" }),
+            ),
+        ],
         render_hints: json!({ "grid_lines": true }),
     }
 }
@@ -168,11 +171,17 @@ pub fn jardim_template() -> Template {
         title: "Jardim".into(),
         description: "Visão notes-first — escreva notas e ligue-as com [[wikilinks]].".into(),
         seed,
-        palette: vec![PaletteItem::new(
-            "note",
-            "Nota",
-            json!({ "color": "#b48ead", "icon": "📝" }),
-        )],
+        // `pasta` simula diretórios na grade: arraste uma nota para cima de uma
+        // pasta para criar a ligação `parent` (filho→pasta); irmãos da mesma
+        // pasta viram um tipo de ligação derivado no player.
+        palette: vec![
+            PaletteItem::new("note", "Nota", json!({ "color": "#b48ead", "icon": "📝" })),
+            PaletteItem::new(
+                "pasta",
+                "Pasta",
+                json!({ "color": "#e9c349", "icon": "📁" }),
+            ),
+        ],
         render_hints: json!({ "grid_lines": true, "graph_view": true }),
     }
 }
@@ -299,13 +308,15 @@ mod tests {
     }
 
     #[test]
-    fn jardim_palette_so_nota() {
+    fn jardim_palette_nota_e_pasta() {
         // Está registrado no catálogo e acessível por slug.
         assert!(template_by_slug("jardim").is_some());
         let t = jardim_template();
-        // Paleta = só `note` (visão notes-first).
-        assert_eq!(t.palette.len(), 1);
+        // Paleta notes-first: `note` + `pasta` (diretório simulado; ligações
+        // `parent` por drag-and-drop no player).
+        assert_eq!(t.palette.len(), 2);
         assert_eq!(t.palette[0].block_type, "note");
+        assert_eq!(t.palette[1].block_type, "pasta");
         // Seed tem uma única camada de notas, sem fundos.
         let inst = t.instantiate("j1", "ana");
         assert_eq!(inst.template, "jardim");
