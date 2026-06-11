@@ -2,6 +2,17 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.8.1] — 2026-06-11 — Bridge: User-Agent no dial (o "400 CO-side" do YG-122)
+
+### Fixed
+
+- **O 400 que bloqueava o go-live da federação (YG-121/122) era o CO-397**: a abuse
+  protection do CO (merged 2026-06-09, mesmo dia da investigação do YG-122) recusa
+  requests sem `User-Agent` com 400 `missing_user_agent` — e o tokio-tungstenite não
+  manda um por padrão. O dial agora envia `User-Agent: yggdrasil-bridge/<versão>`.
+  Pré-flight contra co-staging confirmado nos dois lados: `conectado ao hub` (yggdrasil)
+  + `EDA bridge: peer connected source=yggdrasil.artelonga.com.br` (CO).
+
 ## [2.8.0] — 2026-06-11 — Criar universo de verdade: página de criação + meus universos
 
 ### Added

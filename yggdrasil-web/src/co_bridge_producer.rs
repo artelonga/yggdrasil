@@ -860,6 +860,13 @@ fn ws_request(
         .parse()
         .map_err(|_| BridgeError::BadRequest("subprotocol inválido".into()))?;
     req.headers_mut().insert("sec-websocket-protocol", proto);
+    // CO-397 (abuse protection) recusa requests sem User-Agent com 400
+    // `missing_user_agent`; o tungstenite não manda um por padrão. Identifica o
+    // client do bridge — era o 400 "CO-side" do YG-122.
+    let ua = concat!("yggdrasil-bridge/", env!("CARGO_PKG_VERSION"))
+        .parse()
+        .map_err(|_| BridgeError::BadRequest("user-agent inválido".into()))?;
+    req.headers_mut().insert("user-agent", ua);
     Ok(req)
 }
 
@@ -1501,6 +1508,10 @@ mod tests {
         assert_eq!(auth, "Bearer service-jwt-abc");
         let proto = req.headers().get("sec-websocket-protocol").unwrap();
         assert_eq!(proto, "co.eda.bridge.v1");
+        // CO-397 (abuse protection) responde 400 `missing_user_agent` a requests
+        // sem User-Agent — o tungstenite não manda um por padrão.
+        let ua = req.headers().get("user-agent").unwrap().to_str().unwrap();
+        assert_eq!(ua, concat!("yggdrasil-bridge/", env!("CARGO_PKG_VERSION")));
     }
 
     #[test]
