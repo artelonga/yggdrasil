@@ -70,6 +70,33 @@
     .hint { opacity: 0.45; font-size: 0.78rem; line-height: 1.4; }
     .edit-only { display: none; }
     body.edit .edit-only { display: block; }
+    /* ── editor de nota em popup (rascunho local; salvar = commit) ── */
+    #note-editor { position: fixed; inset: 0; z-index: 99998; display: none;
+      background: rgba(7,7,11,.72); backdrop-filter: blur(4px); }
+    #note-editor.open { display: flex; align-items: center; justify-content: center; }
+    #note-editor .box { width: min(1100px, 94vw); height: min(760px, 92vh);
+      background: #14141b; border: 1px solid #2a2a44; border-radius: 10px;
+      display: flex; flex-direction: column; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+    #note-editor .ed-head { display: flex; align-items: center; gap: .8rem;
+      padding: .7rem 1rem; border-bottom: 1px solid #201f1f; }
+    #note-editor .ed-head strong { font-weight: 400; letter-spacing: .04em; }
+    #note-editor .ed-head .grow { flex: 1; }
+    #note-editor .ed-split { flex: 1; display: flex; min-height: 0; }
+    #note-editor textarea { flex: 1; resize: none; border: 0; outline: none;
+      background: #07070b; color: #e5e2e1; padding: 1rem; font-size: .95rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.55; }
+    #note-editor .ed-preview { flex: 1; overflow-y: auto; padding: 1rem;
+      border-left: 1px solid #201f1f; font-size: .92rem; line-height: 1.55; }
+    #note-editor .ed-preview a.wikilink { color: #e9c349; }
+    #note-editor .ed-foot { display: flex; align-items: center; gap: .8rem;
+      padding: .6rem 1rem; border-top: 1px solid #201f1f; font-size: .78rem; }
+    #note-editor .ed-foot .status { opacity: .55; flex: 1; }
+    #note-editor .draft-banner { padding: .5rem 1rem; background: #2a2410;
+      border-bottom: 1px solid #4a3f14; font-size: .8rem; display: flex; gap: .8rem; align-items: center; }
+    #note-editor .draft-banner .grow { flex: 1; }
+    @media (max-width: 760px) { #note-editor .ed-split { flex-direction: column; }
+      #note-editor .ed-preview { border-left: 0; border-top: 1px solid #201f1f; } }
+
     #toast {
       position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
       background: #201f1f; border: 1px solid #e9c349; color: #e8a030;
@@ -128,6 +155,32 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
         <div id="inspector"><p class="hint">Clique num bloco para ver seu conteúdo.</p></div>
       </section>
     </aside>
+  </div>
+  <!-- Editor de nota em popup: rascunho local automático ("branch"); 💾 Salvar
+       é o commit (PUT → persiste e federa). Link da nota é só hash (#nota=…) —
+       não vaza em logs/Referer e editar continua owner-only por JWT. -->
+  <div id="note-editor" role="dialog" aria-modal="true" aria-label="Editor de nota">
+    <div class="box">
+      <div class="ed-head">
+        <strong id="ed-title">nota</strong>
+        <span class="grow"></span>
+        <button id="ed-link" title="Copiar link da nota">🔗 link</button>
+        <button id="ed-close" title="Fechar (Esc) — rascunho fica guardado">✕</button>
+      </div>
+      <div class="draft-banner" id="ed-draft-banner" hidden>
+        <span class="grow" id="ed-draft-txt">Há um rascunho não salvo.</span>
+        <button id="ed-draft-keep">Continuar rascunho</button>
+        <button id="ed-draft-drop">Descartar</button>
+      </div>
+      <div class="ed-split">
+        <textarea id="ed-text" placeholder="Escreva em Markdown. Use [[outra-nota]] para ligar." aria-label="Markdown da nota"></textarea>
+        <div class="ed-preview" id="ed-preview"></div>
+      </div>
+      <div class="ed-foot">
+        <span class="status" id="ed-status">rascunho local automático · nada publica até salvar</span>
+        <button id="ed-save">💾 Salvar (commit)</button>
+      </div>
+    </div>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/static/universos/instance.js"></script>

@@ -90,6 +90,8 @@ async function load() {
   wireNoteSearch();
   wireGraphToggle();
   render();
+  wireNoteEditor();
+  openFromHash();
 }
 
 async function loadNotes() {
@@ -634,26 +636,137 @@ function showNoteInspector(el, b, slug) {
     el.append(bl);
   }
 
-  if (state.edit) {
-    const ta = document.createElement('textarea');
-    ta.value = note?.body || '';
-    ta.placeholder = 'Escreva em Markdown. Use [[outra-nota]] para ligar.';
-    const save = document.createElement('button');
-    save.textContent = '💾 Salvar nota';
-    save.style.marginTop = '0.4rem';
-    save.onclick = () => saveNote(slug, note?.title || b.label || slug, ta.value);
-    const hint = document.createElement('p');
-    hint.className = 'hint';
-    hint.textContent = 'Ligue notas com [[slug]] ou [[slug|texto]].';
-    el.append(ta, save, hint);
-  } else if (state.me && state.inst && state.me === state.inst.owner) {
-    // Dono em modo visualizar: editar a nota não pode depender de descobrir o
-    // toggle no topo — o botão entra em modo edição e reabre este inspetor.
+  // Editar abre o popup (independe do modo do canvas) — só para o dono.
+  if (state.me && state.inst && state.me === state.inst.owner) {
     const edit = document.createElement('button');
     edit.textContent = '✎ Editar nota';
     edit.style.marginTop = '0.4rem';
-    edit.onclick = () => { toggleEditMode(true); showInspector(b); };
+    edit.onclick = () => openNoteEditor(slug, note?.title || b.label || slug);
     el.append(edit);
+  }
+}
+
+// ─── Editor de nota em popup (rascunho-como-branch; salvar = commit) ─────────
+//
+// O rascunho vive em localStorage por instância+nota+usuário — nunca toca a
+// nota canônica até 💾 Salvar (PUT → persiste no servidor e federa ao CO).
+// Fechar/Esc preserva o rascunho; reabrir oferece continuar ou descartar.
+
+const editor = { slug: null, title: null, baseline: '', timer: null };
+
+function draftKey(slug) {
+  return `ygg-draft:${state.id}:${slug}:${state.me || 'anon'}`;
+}
+
+function noteHashLink(slug) {
+  // Hash fragment: não vai a logs de servidor nem Referer; sem credencial —
+  // editar continua exigindo o JWT do dono (PUT owner-only no servidor).
+  return `${location.origin}/universos/instance/${encodeURIComponent(state.id)}#nota=${encodeURIComponent(slug)}&editar=1`;
+}
+
+function openNoteEditor(slug, title) {
+  const note = noteBySlug(slug);
+  editor.slug = slug;
+  editor.title = title || note?.title || slug;
+  editor.baseline = note?.body || '';
+  $id('ed-title').textContent = `✎ ${editor.title}`;
+  const ta = $id('ed-text');
+
+  // rascunho pendente (a "branch"): oferece continuar ou descartar
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(draftKey(slug))); } catch { /* corrompido → ignora */ }
+  const banner = $id('ed-draft-banner');
+  if (draft && typeof draft.text === 'string' && draft.text !== editor.baseline) {
+    banner.hidden = false;
+    const quando = draft.ts ? new Date(draft.ts).toLocaleTimeString('pt-BR') : '';
+    $id('ed-draft-txt').textContent = `Há um rascunho não salvo${quando ? ` (${quando})` : ''}.`;
+    ta.value = editor.baseline;
+    $id('ed-draft-keep').onclick = () => { ta.value = draft.text; banner.hidden = true; edPreview(); };
+    $id('ed-draft-drop').onclick = () => { localStorage.removeItem(draftKey(slug)); banner.hidden = true; };
+  } else {
+    banner.hidden = true;
+    ta.value = editor.baseline;
+  }
+
+  $id('note-editor').classList.add('open');
+  history.replaceState(null, '', `#nota=${encodeURIComponent(slug)}&editar=1`);
+  edPreview();
+  ta.focus();
+}
+
+function closeNoteEditor() {
+  edSaveDraft(); // fechar nunca perde nada — o rascunho fica
+  $id('note-editor').classList.remove('open');
+  history.replaceState(null, '', location.pathname);
+  editor.slug = null;
+}
+
+function edPreview() {
+  const view = $id('ed-preview');
+  view.innerHTML = renderMarkdown($id('ed-text').value || '_(nota vazia)_');
+  view.querySelectorAll('a.wikilink').forEach((a) =>
+    a.addEventListener('click', (e) => e.preventDefault()));
+}
+
+function edSaveDraft() {
+  if (!editor.slug) return;
+  const text = $id('ed-text').value;
+  if (text === editor.baseline) { localStorage.removeItem(draftKey(editor.slug)); return; }
+  try {
+    localStorage.setItem(draftKey(editor.slug), JSON.stringify({ text, ts: Date.now() }));
+    $id('ed-status').textContent = `rascunho guardado ${new Date().toLocaleTimeString('pt-BR')} · nada publica até salvar`;
+  } catch { /* LS cheio — segue só em memória */ }
+}
+
+async function edCommit() {
+  if (!editor.slug) return;
+  const slug = editor.slug;
+  const ok = await saveNote(slug, editor.title, $id('ed-text').value);
+  if (ok === false) return; // toast de erro já apareceu; rascunho intacto
+  localStorage.removeItem(draftKey(slug));
+  closeNoteEditor();
+  toast('💾 Nota publicada');
+}
+
+function $id(x) { return document.getElementById(x); }
+
+function wireNoteEditor() {
+  $id('ed-close').onclick = closeNoteEditor;
+  $id('ed-save').onclick = edCommit;
+  $id('ed-link').onclick = () => {
+    const url = noteHashLink(editor.slug);
+    (navigator.clipboard?.writeText(url) || Promise.reject())
+      .then(() => toast('🔗 Link copiado'))
+      .catch(() => prompt('Copie o link:', url));
+  };
+  const ta = $id('ed-text');
+  ta.addEventListener('input', () => {
+    edPreview();
+    clearTimeout(editor.timer);
+    editor.timer = setTimeout(edSaveDraft, 800);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!$id('note-editor').classList.contains('open')) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeNoteEditor(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); edCommit(); }
+  });
+  $id('note-editor').addEventListener('mousedown', (e) => {
+    if (e.target === $id('note-editor')) closeNoteEditor();
+  });
+}
+
+// Deep-link: #nota=<slug>[&editar=1] abre a nota (e o editor, se dono).
+function openFromHash() {
+  const m = location.hash.match(/#nota=([^&]+)(?:&editar=(1))?/);
+  if (!m) return;
+  const slug = decodeURIComponent(m[1]);
+  const editar = m[2] === '1';
+  const dono = state.me && state.inst && state.me === state.inst.owner;
+  if (editar && dono) {
+    const note = noteBySlug(slug);
+    openNoteEditor(slug, note?.title || slug);
+  } else {
+    openNote(slug);
   }
 }
 
@@ -679,14 +792,14 @@ async function saveNote(slug, title, markdown) {
     let msg = 'Falha ao salvar nota';
     try { msg = (await res.json()).erro || msg; } catch {}
     toast('⚠ ' + msg);
-    return;
+    return false;
   }
   await loadNotes();
   renderNotesList();
   const blk = noteBlock(slug);
   if (blk) showInspector(blk);
   render();
-  toast('Nota salva');
+  return true;
 }
 
 // Notas que casam com a busca (título OU corpo), client-side, sem API.

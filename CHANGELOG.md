@@ -2,6 +2,24 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.11.0] — 2026-06-11 — Editor de nota em popup: rascunho-como-branch, preview ao vivo, links seguros
+
+### Added
+
+- **Editor de nota em popup** (espelha as affordances do editor do CO, vanilla JS):
+  textarea monoespaçada + **preview de markdown ao vivo** lado a lado, fullscreen-ish,
+  fecha com Esc/✕/clique fora; ⌘/Ctrl+Enter salva. Substitui o textarea espremido na
+  sidebar.
+- **Rascunho-como-branch**: digitar guarda rascunho local automático (por
+  instância+nota+usuário, debounce 800ms) — **nada toca a nota canônica até
+  "💾 Salvar (commit)"** (PUT → persiste e federa ao CO). Fechar preserva o rascunho;
+  reabrir oferece "Continuar rascunho / Descartar".
+- **Links seguros por hash**: `#nota=<slug>&editar=1` abre a nota (e o editor, se
+  dono). Fragment não vai a logs de servidor nem Referer e não carrega credencial —
+  editar continua owner-only por JWT no servidor. Botão "🔗 link" copia o deep-link.
+- **YG-124** mintada: "Editar no CO" (round-trip v3.1) — bloqueada pelo gate
+  `ReadOnlyUniverse` do CO em universos federados; pré-requisito CO-side documentado.
+
 ## [2.10.1] — 2026-06-11 — Static com revalidação (fim do JS velho) + editar nota sem caçar o toggle
 
 ### Fixed
