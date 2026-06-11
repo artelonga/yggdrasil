@@ -25,10 +25,94 @@ const db = {
 };
 const uid = () => 's' + Math.random().toString(36).slice(2, 9);
 
+// ── sincronização com o Caderno do servidor (YG-116; backend YG-112) ─────────
+// Logado: cada escrita local também vai a /api/v1/comunicacao/caderno/* (JWT);
+// no boot o blob local é fundido no servidor (migrar, idempotente) e o
+// consolidado volta ao localStorage. Anônimo/offline: 100% local, como antes.
+const srv = (() => {
+  let token = null;
+  try { token = localStorage.getItem('yggdrasil-jwt'); } catch { /* sem LS */ }
+  const call = (method, path, body) =>
+    fetch('/api/v1/comunicacao/caderno' + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }).catch(() => null); // falha de rede/sessão → local-first segue valendo
+  return {
+    on: !!token,
+    migrar: (blob) => call('POST', '/migrar', blob).then((r) => (r && r.ok ? r.json() : null)),
+    putFav: (k) => call('PUT', '/favoritos/' + encodeURIComponent(k)),
+    delFav: (k) => call('DELETE', '/favoritos/' + encodeURIComponent(k)),
+    putNote: (k, title, markdown) => call('PUT', '/notas/' + encodeURIComponent(k), { title, markdown }),
+    delNote: (k) => call('DELETE', '/notas/' + encodeURIComponent(k)),
+    putProgress: (k, verse) => call('PUT', '/progresso/' + encodeURIComponent(k), { verse }),
+  };
+})();
+
+// Funde o Caderno local no servidor (primeiro login, idempotente) e traz de
+// volta o consolidado — favoritos/notas feitos noutro device aparecem aqui.
+// Chamado no boot DEPOIS do corpus carregar (labels de verso precisam dos
+// capítulos para reconstruir ci/vi — o servidor guarda só a âncora).
+async function syncCaderno() {
+  if (!srv.on) return;
+  const now = new Date().toISOString();
+  const blob = { fav: {}, notes: {}, progress: {} };
+  for (const [k, it] of Object.entries(db.fav)) blob.fav[k] = new Date(it.ts || Date.now()).toISOString();
+  for (const [k, text] of Object.entries(db.notes)) {
+    if (k.startsWith('__meta_')) continue;
+    const m = noteMeta(k) || {};
+    blob.notes[k] = { key: k, title: m.label || k, markdown: text, updated_at: now };
+  }
+  if (db.progress) blob.progress.corpus = `${db.progress.ci}:${db.progress.vi}`;
+  const merged = await srv.migrar(blob);
+  if (!merged) return;
+  for (const [k, when] of Object.entries(merged.fav || {})) {
+    if (!db.fav[k]) db.fav[k] = favFromKey(k, Date.parse(when) || Date.now());
+  }
+  for (const [k, n] of Object.entries(merged.notes || {})) {
+    if (!db.notes[k]) {
+      db.notes[k] = n.markdown || '';
+      db.notes['__meta_' + k] = metaFromKey(k, n.title);
+    }
+  }
+  const p = (merged.progress || {}).corpus;
+  if (p && !db.progress) {
+    const [ci, vi] = p.split(':').map(Number);
+    if (Number.isFinite(ci) && Number.isFinite(vi)) db.progress = { ci, vi, ts: Date.now() };
+  }
+  db.saveFav(); db.saveNotes(); db.saveProgress();
+}
+
+// Reconstrói os metadados de UI a partir da âncora (chave) vinda do servidor.
+function favFromKey(k, ts) {
+  const sep = k.indexOf(':');
+  const t = sep > 0 ? k.slice(0, sep) : 'verse', id = sep > 0 ? k.slice(sep + 1) : k;
+  const item = { t, id, label: id, ts };
+  if (t === 'verse') {
+    const [cn, v] = id.split('.');
+    const ci = state.chapters.findIndex((c) => String(c.n) === cn);
+    const ch = state.chapters[ci];
+    if (ch) {
+      const vi = ch.verses.findIndex((x) => String(x.v) === v);
+      Object.assign(item, { label: `Cap ${ch.roman} · v${v}`, ci, vi: vi >= 0 ? vi : 0 });
+    }
+  }
+  return item;
+}
+function metaFromKey(k, title) {
+  const m = { label: title || k };
+  if (k.startsWith('verse:')) {
+    const f = favFromKey(k, 0);
+    if (f.ci != null && f.ci >= 0) { m.ci = f.ci; m.vi = f.vi; }
+  }
+  return m;
+}
+
 function isFav(key) { return !!db.fav[key]; }
 function toggleFav(key, item) {
   if (db.fav[key]) delete db.fav[key]; else db.fav[key] = { ...item, ts: Date.now() };
   db.saveFav(); refreshCadCount();
+  if (srv.on) { if (db.fav[key]) srv.putFav(key); else srv.delFav(key); }
 }
 function getNote(key) { return db.notes[key] || ''; }
 function setNote(key, text, meta) {
@@ -36,6 +120,10 @@ function setNote(key, text, meta) {
   db.notes['__meta_' + key] = text.trim() ? meta : undefined;
   if (!text.trim()) delete db.notes['__meta_' + key];
   db.saveNotes(); refreshCadCount();
+  if (srv.on) {
+    if (text.trim()) srv.putNote(key, (meta && meta.label) || key, text);
+    else srv.delNote(key);
+  }
 }
 function noteMeta(key) { return db.notes['__meta_' + key]; }
 
@@ -57,6 +145,9 @@ async function boot() {
     return;
   }
   state.work = data.work; state.chapters = data.chapters || []; state.lex = data.lex || {};
+  // YG-116: logado → funde o Caderno local no servidor e traz o consolidado
+  // (precisa dos capítulos já carregados para reconstruir labels/ci/vi).
+  try { await syncCaderno(); } catch { /* local-first segue valendo */ }
   $('work-title').textContent = data.work.title || 'Ayvu Rapyta';
   $('work-sub').textContent = `${data.work.author || ''} · ${data.work.year || ''}`.replace(/^ · | · $/g, '');
 
@@ -100,7 +191,16 @@ function onKey(e) {
   else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { focusVerse(state.vi - 1); e.preventDefault(); }
   else if (e.key === '[') step(-1); else if (e.key === ']') step(1);
 }
-function saveProgress() { db.progress = { ci: state.ci, vi: state.vi, ts: Date.now() }; db.saveProgress(); }
+let progressTimer = null;
+function saveProgress() {
+  db.progress = { ci: state.ci, vi: state.vi, ts: Date.now() };
+  db.saveProgress();
+  // debounce: focusVerse dispara a cada seta — uma escrita por pausa basta
+  if (srv.on) {
+    clearTimeout(progressTimer);
+    progressTimer = setTimeout(() => srv.putProgress('corpus', `${state.ci}:${state.vi}`), 1200);
+  }
+}
 function focusVerse(i) {
   const ch = state.chapters[state.ci]; if (!ch || i < 0 || i >= ch.verses.length) return;
   state.vi = i; saveProgress();
@@ -298,7 +398,11 @@ function renderCaderno() {
         <button class="del" data-del="${esc(k)}">remover</button>
       </div>${it.gn ? `<div class="body">${esc(it.gn)}…</div>` : ''}</div>`).join('')
       : '<div class="empty">Nenhum favorito ainda. Toque ★ num verso, palavra ou partícula.</div>';
-    body.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { delete db.fav[b.dataset.del]; db.saveFav(); refreshCadCount(); renderCaderno(); refreshTokens(); });
+    body.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+      delete db.fav[b.dataset.del]; db.saveFav();
+      if (srv.on) srv.delFav(b.dataset.del);
+      refreshCadCount(); renderCaderno(); refreshTokens();
+    });
   } else if (state.tab === 'notes') {
     const keys = Object.keys(db.notes).filter((k) => !k.startsWith('__meta_'));
     body.innerHTML = keys.length ? keys.map((k) => { const m = noteMeta(k) || {}; return `

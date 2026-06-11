@@ -2,6 +2,19 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.10.0] — 2026-06-11 — YG-116: Caderno do corpus sincronizado com o servidor
+
+### Added
+
+- **`corpus.js` ligado ao Caderno servidor (YG-116, fecha o fold-in adiado de YG-112)**:
+  logado, cada ★ favorito, ✎ nota e avanço de leitura grava em
+  `/api/v1/comunicacao/caderno/*` (JWT) — durável e cross-device; as notas federam
+  via instância canônica do Ayvu (YG-114). No primeiro boot logado o blob do
+  `localStorage` é fundido no servidor (`POST .../migrar`, idempotente) e o
+  consolidado volta ao local (favoritos/notas de outros devices aparecem, com
+  labels/ci/vi reconstruídos da âncora). Anônimo/offline: 100% localStorage, sem
+  regressão. Progresso com debounce (1 escrita por pausa, não por tecla).
+
 ## [2.9.0] — 2026-06-11 — Pastas na grade, ligações tipadas e drag-to-link
 
 ### Added
