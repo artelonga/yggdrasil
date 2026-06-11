@@ -646,6 +646,14 @@ function showNoteInspector(el, b, slug) {
     hint.className = 'hint';
     hint.textContent = 'Ligue notas com [[slug]] ou [[slug|texto]].';
     el.append(ta, save, hint);
+  } else if (state.me && state.inst && state.me === state.inst.owner) {
+    // Dono em modo visualizar: editar a nota não pode depender de descobrir o
+    // toggle no topo — o botão entra em modo edição e reabre este inspetor.
+    const edit = document.createElement('button');
+    edit.textContent = '✎ Editar nota';
+    edit.style.marginTop = '0.4rem';
+    edit.onclick = () => { toggleEditMode(true); showInspector(b); };
+    el.append(edit);
   }
 }
 
@@ -974,6 +982,9 @@ function toggleEditMode(force) {
   document.body.classList.toggle('edit', state.edit);
   document.getElementById('modeBtn').classList.toggle('active', state.edit);
   document.getElementById('modeBtn').textContent = state.edit ? '👁️ Visualizar' : '✏️ Editar';
+  // O inspetor muda com o modo (editor de nota aparece/some) — re-renderiza.
+  const sel = state.selectedBlock && findBlock(state.selectedBlock);
+  if (sel) showInspector(sel.block);
 }
 document.getElementById('modeBtn').addEventListener('click', () => toggleEditMode());
 

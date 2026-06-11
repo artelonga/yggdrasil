@@ -504,10 +504,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/anatomia", get(serve_anatomia))
         // CORS aberto no estático: o Neuroglancer (hosted, outra origem) precisa
         // buscar os dados Precomputed em /static/neuro-data/ via fetch cross-origin.
+        // `Cache-Control: no-cache` ≠ "não cachear": o browser guarda mas REVALIDA
+        // (If-Modified-Since → 304). Sem isso o heuristic caching segurava JS
+        // velho por horas depois de cada deploy — paleta/editor "sumiam".
         .nest_service(
             "/static",
             tower::ServiceBuilder::new()
                 .layer(CorsLayer::permissive())
+                .layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
+                    axum::http::header::CACHE_CONTROL,
+                    axum::http::HeaderValue::from_static("no-cache"),
+                ))
                 .service(ServeDir::new("yggdrasil-web/static")),
         );
 

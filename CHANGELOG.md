@@ -2,6 +2,19 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.10.1] — 2026-06-11 — Static com revalidação (fim do JS velho) + editar nota sem caçar o toggle
+
+### Fixed
+
+- **"Pasta não funciona / não consigo editar notas" = JS velho em cache**: `/static/*`
+  não mandava `Cache-Control`, então o browser segurava o `instance.js` antigo por
+  heuristic caching mesmo depois do deploy (paleta/editor "sumiam"). Agora
+  `Cache-Control: no-cache` — o browser guarda mas revalida (304 quando inalterado);
+  cada deploy chega na hora, sem Cmd+Shift+R.
+- **Editar nota não depende mais de descobrir o ✏️ no topo**: no modo visualizar, o
+  dono vê "✎ Editar nota" direto no inspetor da nota (entra em edição e reabre o
+  editor). Alternar o modo também re-renderiza o inspetor do bloco selecionado.
+
 ## [2.10.0] — 2026-06-11 — YG-116: Caderno do corpus sincronizado com o servidor
 
 ### Added
