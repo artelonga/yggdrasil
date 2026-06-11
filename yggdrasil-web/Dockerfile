@@ -48,6 +48,11 @@ COPY yggdrasil/yggdrasil-web/src yggdrasil-web/src
 COPY yggdrasil/yggdrasil-web/static yggdrasil-web/static
 COPY yggdrasil/yggdrasil-web/build.rs yggdrasil-web/build.rs
 COPY yggdrasil/universes/universe-vim/src universes/universe-vim/src
+# YG-68: catálogo — REGISTRY.yaml é include_str! em catalog.rs; sem ele o build quebra
+COPY yggdrasil/universes/REGISTRY.yaml universes/REGISTRY.yaml
+# YG-55/61: artefatos WASM reais (scripts/build-universes.sh). Sem esta COPY o
+# build.rs gera stubs de 8 bytes e os universos WASM não funcionam em prod.
+COPY yggdrasil/yggdrasil-web/embedded yggdrasil-web/embedded
 
 RUN rm -rf target/release/.fingerprint/yggdrasil* \
            target/release/.fingerprint/universe-vim* \
