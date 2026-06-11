@@ -2,6 +2,58 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.7.0] — 2026-06-11 — Bridge go-live (wire + dial CO-384) e sessão na landing
+
+### Added — Wire congelado + producer alinhado ao contrato CO-384/389 — YG-118
+
+- `co_bridge_producer.rs` emite o envelope canônico `BridgeMessage::Event { federated:
+  FederatedEvent { event: CoEvent { … } } }` (espelha CO-380/CO-384) em vez da
+  `FederatedEvent` plana anterior.
+- Termos de léxico (`universe_key=comunicacao`): path inclui `_users/<user-slug>/` para
+  casar o filtro do consumer CO-389; `FederatedSource::Comunicacao` carrega `user_slug`.
+- Notas de instância: mantido `instances/<id>/notes/<slug>.md`, acrescentado `body_hash`
+  (SHA-256 hex) ao payload.
+- Atividade de sala: `Presence` → `UserJoined`; novo `TermContributed` (emitido em
+  `publicar_elemento`); `Unpublished` aposentado do wire.
+- `co_bridge_inbound.rs` lê o novo shape aninhado (`event.event.*`).
+
+### Added — Dial WS real ao hub CO-384 — YG-119
+
+- Substituído o stub `connect_and_stream` por conexão real via
+  `tokio_tungstenite::connect_async` com `Sec-WebSocket-Protocol: co.eda.bridge.v1`
+  (gate de env inalterado — sem `YGG_CO_BRIDGE_URL`/`TOKEN` é no-op).
+- Drena o `EventLog` pendente na (re)conexão; `log.ack()` ao receber
+  `BridgeMessage::Ack { event_id }` (novo no protocolo de fio).
+- Roteia frames inbound para `co_bridge_inbound::apply_inbound` com echo-filter;
+  heartbeat Ping 30s; reconexão com `Backoff` (1→30s).
+- Teste de integração com servidor WS mock (handshake, drain, round-trip de ACK).
+
+### Changed — Handshake alinhado ao contrato real do CO-384 — YG-120
+
+- O dial manda `source` + `token` como query params (`?source=<node_id>&token=<token>`,
+  percent-encoded), como o `bridge_ws_handler` do CO-384 de fato lê. Antes ia só no
+  header `Authorization` → o CO veria token vazio (401 silencioso).
+- JWKS dispensado: o CO-384 valida trust-list + token não-vazio, então Yggdrasil não
+  precisa expor `/.well-known/jwks.json`. O slot YG-120 (era "JWKS") foi reescopado.
+
+### Fixed — Handshake do dial recusado pelo axum (HTTP 400) — YG-122
+
+- E2E local pegou o `WebSocketUpgrade` do axum recusando o handshake com 400; o teste
+  mock (tungstenite lenient) mascarava. Fix + teste de regressão com servidor axum real.
+
+### Added — Estado de sessão na landing page
+
+- A landing (`/`) agora decodifica o mesmo `yggdrasil-jwt` do lobby: mostra o email no
+  topo, troca Entrar→Sair (limpa o token e recarrega) e aponta o link lateral para a
+  conta (`/login?force=1`, padrão do nav.js).
+- Corrigido: os DOIS CTAs "Criar universo" são religados quando logado (via
+  `[data-criar]`) — antes o CTA do hero ficava de fora por não ter id.
+
+### Docs — Runbook de go-live da federação — YG-121
+
+- `docs/` ganha o runbook de go-live (secrets + deploy + E2E) para ligar o bridge
+  Yggdrasil ⇄ CO em produção.
+
 ## [2.6.0] — 2026-06-08 — Wave Phase-2: corpus + Caderno, catálogo, versionamento, CI honesto
 
 Wave de 5 lanes paralelas (agentes) + decisão Godot, integrada com reconciliação manual.
