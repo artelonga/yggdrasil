@@ -27,6 +27,9 @@ const state = {
   graph: {},            // slug -> [slug-alvo] (wikilinks resolvidos)
   noteQuery: '',        // busca client-side sobre a sidebar Notas
   graphView: false,     // visão grafo (notas-como-nós + arestas de wikilink)
+  // visibilidade por tipo de ligação (legenda da sidebar). `sibling` é
+  // derivado: filhos da mesma pasta — desligado por padrão para não poluir.
+  linkFilter: { parent: true, ref: true, wikilink: true, sibling: false },
 };
 
 const canvas = document.getElementById('canvas');
@@ -65,6 +68,10 @@ async function load() {
   // dono autenticado vê o botão de edição
   if (state.me && state.me === state.inst.owner) {
     document.getElementById('modeBtn').hidden = false;
+    // Universo recém-criado (sem blocos): entra direto em modo edição —
+    // senão o primeiro clique na grade não faz nada e parece quebrado.
+    const temBlocos = (state.inst.layers || []).some((l) => (l.blocks || []).length);
+    if (!temBlocos && !state.edit) toggleEditMode(true);
   }
   if (state.inst.template) {
     try {
@@ -78,6 +85,7 @@ async function load() {
   sizeCanvas();
   renderLayers();
   renderPalette();
+  renderLinkLegend();
   renderNotesList();
   wireNoteSearch();
   wireGraphToggle();
@@ -255,23 +263,41 @@ function render() {
 
   if (!isIso() && (!state.template || state.template.render_hints?.grid_lines)) drawGridLines();
 
-  // conexões (sob os blocos)
+  // conexões (sob os blocos), separadas por tipo via legenda (state.linkFilter)
   for (const conn of state.inst.connections) {
+    const kind = connKind(conn);
+    if (state.linkFilter[kind] === false) continue;
     const a = findBlock(conn.from), b = findBlock(conn.to);
     if (!a || !b) continue;
     const p = cellCenter(a.block.pos.x, a.block.pos.y);
     const q = cellCenter(b.block.pos.x, b.block.pos.y);
-    drawEdge(p, q, conn.directed, conn.label);
+    drawEdge(p, q, conn.directed, conn.label, kind);
+  }
+
+  // arestas derivadas: irmãos (filhos da mesma pasta) — "ser filho de um pai
+  // comum" é um tipo de ligação por si só; desligado por padrão na legenda.
+  if (state.linkFilter.sibling) {
+    for (const grupo of Object.values(childrenByParent())) {
+      for (let i = 0; i < grupo.length; i++) {
+        for (let j = i + 1; j < grupo.length; j++) {
+          drawSiblingEdge(
+            cellCenter(grupo[i].pos.x, grupo[i].pos.y),
+            cellCenter(grupo[j].pos.x, grupo[j].pos.y));
+        }
+      }
+    }
   }
 
   // arestas de wikilink entre blocos-nota (tracejadas, derivadas do grafo)
-  for (const [from, targets] of Object.entries(state.graph || {})) {
-    const a = noteBlock(from);
-    if (!a) continue;
-    for (const to of targets) {
-      const b = noteBlock(to);
-      if (!b || b.id === a.id) continue;
-      drawWikiEdge(cellCenter(a.pos.x, a.pos.y), cellCenter(b.pos.x, b.pos.y));
+  if (state.linkFilter.wikilink) {
+    for (const [from, targets] of Object.entries(state.graph || {})) {
+      const a = noteBlock(from);
+      if (!a) continue;
+      for (const to of targets) {
+        const b = noteBlock(to);
+        if (!b || b.id === a.id) continue;
+        drawWikiEdge(cellCenter(a.pos.x, a.pos.y), cellCenter(b.pos.x, b.pos.y));
+      }
     }
   }
 
@@ -324,9 +350,32 @@ function drawBlock(b) {
   }
 }
 
-function drawEdge(p, q, directed, label) {
-  ctx.strokeStyle = '#7ec8e3aa';
-  ctx.lineWidth = 2;
+// Estilo por tipo de ligação (mesma chave da legenda/state.linkFilter).
+const EDGE_STYLE = {
+  parent: { stroke: '#e9c349cc', width: 2.5, text: '#e9c349' },
+  ref:    { stroke: '#7ec8e3aa', width: 2,   text: '#7ec8e3' },
+};
+
+function connKind(conn) {
+  return (conn.props && conn.props.kind) || 'ref';
+}
+
+// Filhos agrupados por pasta-pai (conexões `parent`): pai-id -> [blocos-filho].
+function childrenByParent() {
+  const grupos = {};
+  for (const conn of state.inst.connections) {
+    if (connKind(conn) !== 'parent') continue;
+    const filho = findBlock(conn.from), pai = findBlock(conn.to);
+    if (!filho || !pai) continue;
+    (grupos[pai.block.id] = grupos[pai.block.id] || []).push(filho.block);
+  }
+  return grupos;
+}
+
+function drawEdge(p, q, directed, label, kind) {
+  const st = EDGE_STYLE[kind] || EDGE_STYLE.ref;
+  ctx.strokeStyle = st.stroke;
+  ctx.lineWidth = st.width;
   ctx.beginPath();
   ctx.moveTo(p.cx, p.cy);
   ctx.lineTo(q.cx, q.cy);
@@ -339,15 +388,28 @@ function drawEdge(p, q, directed, label) {
     ctx.lineTo(q.cx - ah * Math.cos(ang - 0.4), q.cy - ah * Math.sin(ang - 0.4));
     ctx.lineTo(q.cx - ah * Math.cos(ang + 0.4), q.cy - ah * Math.sin(ang + 0.4));
     ctx.closePath();
-    ctx.fillStyle = '#7ec8e3aa';
+    ctx.fillStyle = st.stroke;
     ctx.fill();
   }
   if (label) {
-    ctx.fillStyle = '#7ec8e3';
+    ctx.fillStyle = st.text;
     ctx.font = '10px system-ui';
     ctx.textAlign = 'center';
     ctx.fillText(label, (p.cx + q.cx) / 2, (p.cy + q.cy) / 2 - 4);
   }
+}
+
+// Aresta derivada entre irmãos (mesma pasta): pontilhada curta, bem sutil.
+function drawSiblingEdge(p, q) {
+  ctx.save();
+  ctx.strokeStyle = '#e9c34955';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 5]);
+  ctx.beginPath();
+  ctx.moveTo(p.cx, p.cy);
+  ctx.lineTo(q.cx, q.cy);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // Aresta de wikilink: tracejada, cor distinta das conexões manuais.
@@ -495,6 +557,27 @@ function showInspector(b) {
   const el = document.getElementById('inspector');
   if (!b) { el.innerHTML = '<p class="hint">Clique num bloco para ver seu conteúdo.</p>'; return; }
   if (b.props?.note_slug) { showNoteInspector(el, b, b.props.note_slug); return; }
+  // Pasta: lista o "conteúdo do diretório" (blocos ligados por `parent`).
+  if (b.block_type === 'pasta') {
+    const filhos = childrenByParent()[b.id] || [];
+    el.innerHTML = `<strong>📁 ${escapeHtml(b.label || 'Pasta')}</strong>`;
+    if (!filhos.length) {
+      el.innerHTML += '<p class="hint">Pasta vazia — arraste uma nota para cima dela.</p>';
+      return;
+    }
+    filhos.forEach((f) => {
+      const d = document.createElement('div');
+      d.className = 'palette-item';
+      d.innerHTML = `<span class="ico">${f.props?.icon || '📝'}</span> ${escapeHtml(f.label || f.id)}`;
+      d.onclick = () => {
+        state.selectedBlock = f.id;
+        if (f.props?.note_slug) openNote(f.props.note_slug); else showInspector(f);
+        render();
+      };
+      el.append(d);
+    });
+    return;
+  }
   el.innerHTML = `<strong>${escapeHtml(b.label || b.block_type)}</strong>`;
   for (const a of (b.attachments || [])) {
     const div = document.createElement('div');
@@ -624,6 +707,34 @@ function renderNotesList() {
   });
 }
 
+// ─── Legenda de ligações (separa por tipo; clique alterna visibilidade) ──────
+
+const LINK_KINDS = [
+  { key: 'parent',   label: 'Pasta (pai/filho)', swatch: '#e9c349' },
+  { key: 'ref',      label: 'Referência',        swatch: '#7ec8e3' },
+  { key: 'wikilink', label: 'Wikilink',          swatch: '#b48ead' },
+  { key: 'sibling',  label: 'Irmãos (mesma pasta)', swatch: '#e9c34955' },
+];
+
+function renderLinkLegend() {
+  const el = document.getElementById('link-legend');
+  if (!el) return;
+  el.innerHTML = '';
+  LINK_KINDS.forEach((k) => {
+    const d = document.createElement('div');
+    d.className = 'palette-item' + (state.linkFilter[k.key] ? ' sel' : '');
+    d.setAttribute('role', 'checkbox');
+    d.setAttribute('aria-checked', String(!!state.linkFilter[k.key]));
+    d.innerHTML = `<span class="ico" style="color:${k.swatch}">${state.linkFilter[k.key] ? '◉' : '◯'}</span> ${k.label}`;
+    d.onclick = () => {
+      state.linkFilter[k.key] = !state.linkFilter[k.key];
+      renderLinkLegend();
+      render();
+    };
+    el.append(d);
+  });
+}
+
 // Liga o campo de busca (filtra a sidebar Notas sem chamar a API).
 function wireNoteSearch() {
   const input = document.getElementById('note-search');
@@ -688,6 +799,14 @@ async function placeBlock(cell) {
     if (!props.icon) props.icon = '📝';
   }
 
+  // Pasta: só um rótulo — simula diretório; notas viram filhas por drag-and-drop.
+  if (state.selectedType === 'pasta') {
+    const nome = prompt('Nome da pasta:');
+    if (nome === null || nome.trim() === '') return; // cancelou
+    label = nome.trim();
+    if (!props.icon) props.icon = '📁';
+  }
+
   const block = { id, block_type: state.selectedType, pos: { x: cell.x, y: cell.y }, props };
   if (label) block.label = label;
   await patch({ op: 'place_block', layer, block });
@@ -706,10 +825,18 @@ async function deleteBlock(blockId, layerId) {
   showInspector(null);
 }
 
-async function addConnection(from, to) {
+// `kind` viaja em `props.kind` (o schema já tem `props` livre — sem migração):
+// 'parent' = filho→pasta (hierarquia), 'ref' = referência manual (default).
+async function addConnection(from, to, kind) {
   await patch({
     op: 'add_connection',
-    connection: { id: `c-${Date.now().toString(36)}`, from, to, directed: true },
+    connection: {
+      id: `c-${Date.now().toString(36)}`,
+      from,
+      to,
+      directed: true,
+      props: { kind: kind || 'ref' },
+    },
   });
 }
 
@@ -777,6 +904,10 @@ canvas.addEventListener('mousedown', (e) => {
     state.selectedBlock = hit ? hit.id : null;
     showInspector(hit);
     render();
+    // Dono clicou em célula vazia no modo visualizar: dica em vez de silêncio.
+    if (!hit && state.me && state.inst && state.me === state.inst.owner) {
+      toast('Ative ✏️ Editar para colocar notas e pastas');
+    }
     return;
   }
 
@@ -818,7 +949,19 @@ canvas.addEventListener('mouseup', (e) => {
     const cell = screenToCell(mx, my);
     const g = gridSpec();
     if (cell.x >= 0 && cell.y >= 0 && cell.x < g.width && cell.y < g.height) {
-      moveBlock(state.drag.blockId, state.drag.layerId, cell);
+      // Soltar sobre OUTRO bloco = ligar (não mover): em cima de uma pasta o
+      // bloco vira filho (`parent`); em cima de nota/landmark vira `ref`.
+      const alvo = blockAt(mx, my);
+      if (alvo && alvo.id !== state.drag.blockId) {
+        const kind = alvo.block_type === 'pasta' ? 'parent' : 'ref';
+        addConnection(state.drag.blockId, alvo.id, kind).then(() => {
+          toast(kind === 'parent'
+            ? `📁 Movido para dentro de "${alvo.label || 'pasta'}"`
+            : '🔗 Ligação criada');
+        });
+      } else {
+        moveBlock(state.drag.blockId, state.drag.layerId, cell);
+      }
     }
   }
   state.drag = null;
@@ -826,12 +969,13 @@ canvas.addEventListener('mouseup', (e) => {
 
 // ─── Controles de modo ───────────────────────────────────────────────────────
 
-document.getElementById('modeBtn').addEventListener('click', () => {
-  state.edit = !state.edit;
+function toggleEditMode(force) {
+  state.edit = force === undefined ? !state.edit : !!force;
   document.body.classList.toggle('edit', state.edit);
   document.getElementById('modeBtn').classList.toggle('active', state.edit);
   document.getElementById('modeBtn').textContent = state.edit ? '👁️ Visualizar' : '✏️ Editar';
-});
+}
+document.getElementById('modeBtn').addEventListener('click', () => toggleEditMode());
 
 document.getElementById('connBtn').addEventListener('click', () => {
   if (!state.selectedBlock) { toast('Selecione um bloco de origem'); return; }
