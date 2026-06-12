@@ -2,6 +2,22 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.19.0] — 2026-06-12 — YG-131: nó = nota, sempre — pasta e índice são RENDER
+
+### Changed
+
+- **Unificação completa por composição**: todo nó do grid é uma nota (1ª linha do
+  composer = TÍTULO do artigo, slug extraído dele). O ícone é **computado no
+  render**, nunca gravado: nota **sem corpo** = 📁 pasta; **corpo + filhos** =
+  🗂 índice (index.html); **corpo sem filhos** = 📝 artigo. Uma pasta que ganha
+  corpo vira índice sem migração; `nome/` agora cria nota de corpo vazio.
+- **Arrastar sobre QUALQUER nó aninha** (`parent`) — gesto espacial é hierarquia,
+  como filesystem. Referência é gesto textual: wikilinks `[[…]]` (ou o botão 🔗).
+- **Inspetor unificado**: corpo renderizado (se houver) + "N dentro:" (filhos
+  clicáveis, se houver) + chips de status + editar — o mesmo painel para pasta,
+  artigo e índice, porque são a mesma coisa. Blocos `pasta` legados seguem
+  funcionando.
+
 ## [2.18.0] — 2026-06-12 — YG-130: tarefas por composição — tarefa = nota + status
 
 ### Added
