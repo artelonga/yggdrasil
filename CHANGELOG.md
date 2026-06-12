@@ -2,6 +2,16 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.14.1] — 2026-06-12 — Docs: experiência de usuário por exemplo
+
+### Docs
+
+- `docs/experiencia-usuario-exemplo.md`: jornada narrada (persona Marina) pelas
+  cenas reais do produto v2.14.0 — chegada anônima, login com intenção, criação
+  única, rascunho-branch/save-commit cross-device, links por hash, pastas e
+  ligações tipadas, lentes Mapa/Timeline/Grafo, federação invisível — com os 8
+  princípios de design e um checklist de regressão de UX.
+
 ## [2.14.0] — 2026-06-12 — YG-126: um tipo de universo, todas as formas (views de runtime)
 
 ### Changed
