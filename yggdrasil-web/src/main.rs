@@ -6,6 +6,7 @@ mod auth_co;
 pub mod catalog;
 pub mod co_bridge_inbound;
 pub mod co_bridge_producer;
+pub mod co_rollups;
 pub mod comunicacao_routes;
 pub mod feedback;
 mod games;
@@ -187,6 +188,8 @@ async fn main() -> anyhow::Result<()> {
         telemetria::TelemetriaDb::open(&db_path)
             .map_err(|e| anyhow::anyhow!("telemetria db: {e}"))?,
     );
+    // YG-127: rollups diários de jogo → hub de analytics do CO (gate por env)
+    co_rollups::spawn(telemetria.clone());
     let universos_state = universos_routes::UniversosState::new(
         Arc::new(
             SqliteScoresStore::open(&db_path)

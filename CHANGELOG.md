@@ -2,6 +2,24 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.15.0] — 2026-06-12 — YG-127 Fase 1: telemetria do yggdrasil no hub de analytics do CO
+
+### Added
+
+- **`static/telemetria.js`** (15 páginas): tracker privacy-first no contrato da
+  ArteLonga — `page_view`, `page_end` (duração), `js_error` em batches ao hub do CO
+  (`site: "yggdrasil"` → universe_key). vid/sid opacos aleatórios (zero PII);
+  respeita DNT e opt-out (`ygg_optout=1`); fila local + `sendBeacon`; hook
+  `window.yggTelemetria.track()` para eventos de app. O server-side do CO aplica
+  ip_hash com salt diário, filtro de bots e retenção 90d.
+- **`src/co_rollups.rs`**: push horário (upsert idempotente por dia) dos agregados
+  de telemetria de JOGO (`game_sessions`, `game_completions`, por universo) para
+  `co/api/v1/analytics/public/rollups` — env-gated (`YGG_CO_ROLLUP_TOKEN`; sem
+  token → no-op), só agregados anônimos.
+- **YG-127** (épico, Fase 1) + **YG-128** (Fase 2: página `/analytics`, stream WS
+  próprio, retenção agendada + redaction de drafts) mintadas, com os requisitos
+  R1–R8 derivados da revisão co/ArteLonga/quilombo.
+
 ## [2.14.1] — 2026-06-12 — Docs: experiência de usuário por exemplo
 
 ### Docs
