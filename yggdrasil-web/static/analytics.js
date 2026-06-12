@@ -105,6 +105,26 @@
 
   $('days').addEventListener('change', loadSummary);
 
+  // ── stream ao vivo (YG-128): stats em <1s via WS; polling fica de fallback ──
+  function ligarStream() {
+    try {
+      var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+      var ws = new WebSocket(proto + location.host + '/api/v1/analytics/stream');
+      ws.onmessage = function (m) {
+        try {
+          var d = JSON.parse(m.data);
+          var um = function (f) { if (f.ev === 'stats') {
+            $('k-agora').textContent = fmt(f.jogando_agora);
+            $('k-ses24').textContent = fmt(f.sessoes_24h);
+          } };
+          if (d.ev === 'snapshot') (d.eventos || []).forEach(um); else um(d);
+        } catch (_) { /* frame estranho → ignora */ }
+      };
+      ws.onclose = function () { setTimeout(ligarStream, 15_000); }; // reconecta
+    } catch (_) { /* sem WS → polling cobre */ }
+  }
+  ligarStream();
+
   loadLive(); loadScores(); loadSummary();
   setInterval(loadLive, 10_000);
   setInterval(loadScores, 20_000);

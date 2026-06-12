@@ -2,6 +2,21 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.20.0] — 2026-06-12 — YG-128 completa: stream WS ao vivo + retenção 90d agendada
+
+### Added
+
+- **`/api/v1/analytics/stream`** (WS público, padrão do hub do CO): snapshot do
+  ring buffer (200) no connect + broadcast; assinante lento é derrubado. Frames
+  **anônimos por construção**: `stats` (jogando agora / sessões 24h, a cada 10s)
+  e `nota.escrita` (tique sem slug/título/path). A página `/analytics` consome o
+  stream (KPIs vivos em <1s) com o polling de fallback.
+- **Retenção 90d agendada** na telemetria local (1×/dia, espelha o CO) — os
+  agregados históricos sobrevivem nos rollups diários.
+- **Redaction de drafts: satisfeita por construção** — o tracker envia só
+  `location.pathname` (nunca hash `#nota=…` nem query), e rascunhos vivem fora
+  do producer (YG-125); nenhum path privado alcança o hub.
+
 ## [2.19.0] — 2026-06-12 — YG-131: nó = nota, sempre — pasta e índice são RENDER
 
 ### Changed

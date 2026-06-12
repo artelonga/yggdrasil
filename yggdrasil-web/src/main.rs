@@ -1,5 +1,6 @@
 //! Yggdrasil web server — entrypoint.
 
+pub mod analytics_stream;
 mod api;
 mod auth;
 mod auth_co;
@@ -190,6 +191,29 @@ async fn main() -> anyhow::Result<()> {
     );
     // YG-127: rollups diários de jogo → hub de analytics do CO (gate por env)
     co_rollups::spawn(telemetria.clone());
+
+    // YG-128: retenção 90d agendada (espelha o CO) — 1×/dia, best-effort.
+    {
+        let t = telemetria.clone();
+        tokio::spawn(async move {
+            loop {
+                let corte = chrono::Utc::now().timestamp_millis() - 90 * 24 * 60 * 60 * 1000;
+                let (ev, ses) = t.cleanup_older_than(corte);
+                if ev + ses > 0 {
+                    tracing::info!(
+                        eventos = ev,
+                        sessoes = ses,
+                        "telemetria: retenção 90d aplicada"
+                    );
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
+            }
+        });
+    }
+
+    // YG-128: pulso ao vivo — ring + broadcast p/ o WS /api/v1/analytics/stream.
+    // Frames anônimos: stats a cada 10s + nota.escrita (sem slug/título/path).
+    let pulso = analytics_stream::Pulso::new();
     let universos_state = universos_routes::UniversosState::new(
         Arc::new(
             SqliteScoresStore::open(&db_path)
@@ -198,6 +222,28 @@ async fn main() -> anyhow::Result<()> {
         telemetria,
     );
     universos_routes::spawn_cleanup_job(universos_state.clone());
+    // YG-128: frame de stats anônimas no pulso (jogando agora / sessões 24h)
+    {
+        let p = pulso.clone();
+        let us = universos_state.clone();
+        tokio::spawn(async move {
+            loop {
+                let agora = us.jogando_agora();
+                let desde = chrono::Utc::now().timestamp_millis() - 24 * 60 * 60 * 1000;
+                let s24 = us.telemetria.sessions_since(desde);
+                p.push(serde_json::json!({
+                    "ev": "stats",
+                    "jogando_agora": agora,
+                    "sessoes_24h": s24,
+                    "ts": chrono::Utc::now().timestamp_millis(),
+                }));
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            }
+        });
+    }
+    let stream_router = axum::Router::new()
+        .route("/api/v1/analytics/stream", get(analytics_stream::ws_stream))
+        .with_state(pulso.clone());
     let universos_router = Router::new()
         .route("/api/v1/universos", get(universos_routes::list_universos))
         .route("/api/v1/stats", get(universos_routes::get_stats))
@@ -242,6 +288,19 @@ async fn main() -> anyhow::Result<()> {
     // benigno. `spawn` é adiado até o `comunicacao_store` existir (semeia os
     // termos publicados, YG-103). E2E aguarda os hubs CO-384/389.
     let co_bridge = co_bridge_producer::Producer::new();
+    // YG-128: cada nota escrita vira um tique anônimo no pulso (sem slug/título)
+    {
+        let mut rx_notas = co_bridge.sender().subscribe();
+        let p = pulso.clone();
+        tokio::spawn(async move {
+            while let Ok(_n) = rx_notas.recv().await {
+                p.push(serde_json::json!({
+                    "ev": "nota.escrita",
+                    "ts": chrono::Utc::now().timestamp_millis(),
+                }));
+            }
+        });
+    }
     let instance_store_for_bridge = instance_store.clone();
     // YG-112/114: as notas do Caderno do Ayvu Rapyta são gravadas via `NoteStore`
     // sob a instância canônica do Ayvu (`AYVU_INSTANCE`) no mesmo store de
@@ -498,6 +557,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(instances_router)
         .merge(feedback_router)
         .merge(comunicacao_router)
+        .merge(stream_router)
         // Criar universo autorado (template picker + meus universos). O segmento
         // estático "new" vence a captura {id} da rota do player abaixo.
         .route("/universos/instance/new", get(serve_instance_new))
