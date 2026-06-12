@@ -35,6 +35,10 @@ const state = {
   // visibilidade por tipo de ligação (legenda da sidebar). `sibling` é
   // derivado: filhos da mesma pasta — desligado por padrão para não poluir.
   linkFilter: { parent: true, ref: true, wikilink: true, sibling: false },
+  // YG-129: escopo das ligações — 'irmas' (mesmo pai, ou do nó selecionado)
+  // por padrão; 'todas' expande. Pais colapsados escondem a subárvore.
+  linkScope: 'irmas',
+  collapsed: {},        // id do pai → true (subárvore escondida)
 };
 
 const canvas = document.getElementById('canvas');
@@ -72,11 +76,9 @@ async function load() {
 
   // dono autenticado vê o botão de edição
   if (state.me && state.me === state.inst.owner) {
-    document.getElementById('modeBtn').hidden = false;
-    // Universo recém-criado (sem blocos): entra direto em modo edição —
-    // senão o primeiro clique na grade não faz nada e parece quebrado.
-    const temBlocos = (state.inst.layers || []).some((l) => (l.blocks || []).length);
-    if (!temBlocos && !state.edit) toggleEditMode(true);
+    // YG-129: manipulação direta — dono edita SEMPRE (sem toggle). O botão
+    // ✏️ some; clique cria, arrasto move, arrastar-sobre liga.
+    toggleEditMode(true);
   }
   if (state.inst.template) {
     try {
@@ -96,6 +98,7 @@ async function load() {
   wireGraphToggle();
   render();
   wireNoteEditor();
+  wireInline();
   // instâncias geradas com projection=timeline abrem direto na lente timeline
   if (state.inst.projection === 'timeline') setView('timeline');
   openFromHash();
@@ -349,7 +352,8 @@ function findBlock(id) {
 }
 
 function render() {
-  if (state.view === 'grafo') { renderGraph(); return; }
+  if (state.view === 'grafo') { renderGraph(); renderTree(); return; }
+  const _pais = parentMap();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const g = gridSpec();
   const c = g.cell_size;
@@ -372,6 +376,9 @@ function render() {
   for (const conn of state.inst.connections) {
     const kind = connKind(conn);
     if (state.linkFilter[kind] === false) continue;
+    // YG-129: escopo — irmãs/seleção primeiro; pais (estrutura) sempre passam
+    if (kind !== 'parent' && !arestaVisivel(conn.from, conn.to, _pais)) continue;
+    if (escondidoPorColapso(conn.from, _pais) || escondidoPorColapso(conn.to, _pais)) continue;
     const a = findBlock(conn.from), b = findBlock(conn.to);
     if (!a || !b) continue;
     const p = cellCenter(a.block.pos.x, a.block.pos.y);
@@ -385,6 +392,7 @@ function render() {
     for (const grupo of Object.values(childrenByParent())) {
       for (let i = 0; i < grupo.length; i++) {
         for (let j = i + 1; j < grupo.length; j++) {
+          if (escondidoPorColapso(grupo[i].id, _pais)) continue;
           drawSiblingEdge(
             cellCenter(grupo[i].pos.x, grupo[i].pos.y),
             cellCenter(grupo[j].pos.x, grupo[j].pos.y));
@@ -401,14 +409,19 @@ function render() {
       for (const to of targets) {
         const b = noteBlock(to);
         if (!b || b.id === a.id) continue;
+        if (!arestaVisivel(a.id, b.id, _pais)) continue;
         drawWikiEdge(cellCenter(a.pos.x, a.pos.y), cellCenter(b.pos.x, b.pos.y));
       }
     }
   }
 
-  // blocos
-  for (const { block } of allBlocks()) drawBlock(block);
+  // blocos (subárvores colapsadas ficam de fora; pastas fechadas mostram ▸)
+  for (const { block } of allBlocks()) {
+    if (!isTimeline() && escondidoPorColapso(block.id, _pais)) continue;
+    drawBlock(block);
+  }
 
+  renderTree();
   if (isTimeline()) drawTimeAxis();
 }
 
@@ -522,7 +535,9 @@ function drawBlock(b) {
   if (b.label) {
     ctx.font = `${Math.round(c * 0.42)}px system-ui`;
     ctx.fillStyle = '#e8e3d3';
-    ctx.fillText(b.label, cx, cy + r + c * 0.35);
+    // pasta fechada mostra quantos filhos guarda (▸N); aberta nada
+    const kids = state.collapsed[b.id] ? (childrenByParent()[b.id] || []).length : 0;
+    ctx.fillText(kids ? `${b.label} ▸${kids}` : b.label, cx, cy + r + c * 0.35);
   }
 }
 
@@ -546,6 +561,40 @@ function childrenByParent() {
     (grupos[pai.block.id] = grupos[pai.block.id] || []).push(filho.block);
   }
   return grupos;
+}
+
+// id do filho → id do pai (ligações `parent`). Raízes ficam de fora.
+function parentMap() {
+  const pais = {};
+  for (const conn of state.inst.connections) {
+    if (connKind(conn) === 'parent') pais[conn.from] = conn.to;
+  }
+  return pais;
+}
+
+// Irmãs = mesmo pai; duas raízes também são irmãs (o "pai" é a raiz comum).
+function saoIrmas(aId, bId, pais) {
+  return (pais[aId] || null) === (pais[bId] || null);
+}
+
+// Escondido por algum ancestral colapsado (pasta "fechada").
+function escondidoPorColapso(blockId, pais) {
+  let p = pais[blockId];
+  let guard = 0;
+  while (p && guard++ < 64) {
+    if (state.collapsed[p]) return true;
+    p = pais[p];
+  }
+  return false;
+}
+
+// A aresta aparece? Escopo 'irmas': endpoints irmãos OU encostando no nó
+// selecionado. 'todas': sempre (respeitando os toggles por tipo da legenda).
+function arestaVisivel(fromId, toId, pais) {
+  if (escondidoPorColapso(fromId, pais) || escondidoPorColapso(toId, pais)) return false;
+  if (state.linkScope === 'todas') return true;
+  if (state.selectedBlock && (fromId === state.selectedBlock || toId === state.selectedBlock)) return true;
+  return saoIrmas(fromId, toId, pais);
 }
 
 function drawEdge(p, q, directed, label, kind) {
@@ -1057,6 +1106,165 @@ function renderNotesList() {
   });
 }
 
+// ─── Árvore TUI (YG-129): a hierarquia da raiz, estilo terminal ──────────────
+//
+// ~/titulo
+// ├── 📁 pasta            (clique no pai alterna ▸/▾ — esconde no canvas tb.)
+// │   └── 📝 nota
+// └── solto
+function renderTree() {
+  const el = document.getElementById('tree');
+  if (!el) return;
+  const pais = parentMap();
+  const filhos = childrenByParent();
+  const todos = [];
+  for (const l of state.inst.layers) {
+    if (l.kind === 'background') continue;
+    for (const b of l.blocks) todos.push(b);
+  }
+  if (!todos.length) {
+    el.innerHTML = '<span class="hint">clique numa célula vazia e digite</span>';
+    return;
+  }
+  const raizes = todos.filter((b) => !pais[b.id])
+    .sort((a, b) => String(a.label || a.id).localeCompare(String(b.label || b.id), 'pt-BR'));
+
+  const linhas = [`<span style="opacity:.55">~/</span>${escapeHtml(state.inst.title || 'universo')}`];
+  function no(b, prefixo, ultimo) {
+    const kids = (filhos[b.id] || [])
+      .sort((x, y) => String(x.label || x.id).localeCompare(String(y.label || y.id), 'pt-BR'));
+    const ramo = ultimo ? '└── ' : '├── ';
+    const fechado = !!state.collapsed[b.id];
+    const seta = kids.length ? (fechado ? '▸ ' : '▾ ') : '';
+    const icone = b.props?.icon || (b.props?.note_slug ? '📝' : '·');
+    const sel = b.id === state.selectedBlock ? ';color:#e9c349' : '';
+    linhas.push(
+      `<span style="opacity:.4">${prefixo}${ramo}</span>` +
+      `<a data-tree="${escapeHtml(b.id)}" style="cursor:pointer${sel}">` +
+      `${seta}${icone} ${escapeHtml(b.label || b.id)}</a>`);
+    if (fechado) return;
+    const sub = prefixo + (ultimo ? '    ' : '│   ');
+    kids.forEach((k, i) => no(k, sub, i === kids.length - 1));
+  }
+  raizes.forEach((r, i) => no(r, '', i === raizes.length - 1));
+  el.innerHTML = linhas.join('\n');
+
+  el.querySelectorAll('[data-tree]').forEach((a) => {
+    a.onclick = () => {
+      const b = findBlock(a.dataset.tree)?.block;
+      if (!b) return;
+      toggleNo(b);
+    };
+  });
+}
+
+// Clique num nó (árvore OU canvas): pai alterna mostrar/esconder filhos;
+// qualquer nó seleciona (revela as ligações dele) e abre no inspetor.
+function toggleNo(b) {
+  const kids = childrenByParent()[b.id] || [];
+  if (kids.length) state.collapsed[b.id] = !state.collapsed[b.id];
+  state.selectedBlock = b.id;
+  if (b.props?.note_slug) openNote(b.props.note_slug); else showInspector(b);
+  render();
+}
+
+// ─── Composer inline (YG-129): clique numa célula vazia e digite ─────────────
+//
+// Idioma de terminal, zero popups:
+//   Enter cria · Shift+Enter quebra linha · Esc cancela
+//   `nome/`  → 📁 pasta (a barra é o gesto universal de diretório)
+//   resto    → 📝 nota: 1ª linha = título (renderiza inline na grade),
+//              linhas seguintes = corpo. Nota só-título = rótulo inline.
+let inlineCell = null;
+
+function abrirInline(cell) {
+  const input = document.getElementById('inline-input');
+  if (!input) return;
+  inlineCell = cell;
+  const { cx, cy } = cellCenter(cell.x, cell.y);
+  const r = canvas.getBoundingClientRect();
+  const stage = canvas.parentElement.getBoundingClientRect();
+  const sx = r.left - stage.left + (cx / canvas.width) * r.width;
+  const sy = r.top - stage.top + (cy / canvas.height) * r.height;
+  input.style.left = Math.max(0, sx - 8) + 'px';
+  input.style.top = Math.max(0, sy - 14) + 'px';
+  input.value = '';
+  input.hidden = false;
+  input.focus();
+}
+
+function fecharInline() {
+  const input = document.getElementById('inline-input');
+  if (input) { input.hidden = true; input.value = ''; }
+  inlineCell = null;
+}
+
+async function confirmarInline() {
+  const input = document.getElementById('inline-input');
+  const texto = (input?.value || '').replace(/\s+$/, '');
+  const cell = inlineCell;
+  fecharInline();
+  if (!texto.trim() || !cell) return;
+  const layer = targetBlocksLayer();
+  const id = `n-${Date.now().toString(36)}`;
+  const linhas = texto.split('\n');
+  const primeira = linhas[0].trim();
+
+  if (linhas.length === 1 && /\/$/.test(primeira)) {
+    // `nome/` → pasta (idioma de terminal)
+    const nome = primeira.replace(/\/+$/, '').trim();
+    if (!nome) return;
+    await patch({
+      op: 'place_block',
+      layer,
+      block: {
+        id, block_type: 'pasta', pos: { x: cell.x, y: cell.y },
+        label: nome, props: { icon: '📁' },
+      },
+    });
+  } else {
+    // nota: 1ª linha = título (inline na grade); resto = corpo
+    const titulo = primeira.slice(0, 80) || 'nota';
+    const corpo = linhas.slice(1).join('\n').trim();
+    let slug = slugifyJs(titulo) || id;
+    const res = await fetch(`${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ title: titulo, markdown: corpo }),
+    });
+    if (!res.ok) { toast('⚠ Falha ao criar nota'); return; }
+    slug = (await res.json()).slug;
+    await patch({
+      op: 'place_block',
+      layer,
+      block: {
+        id, block_type: 'note', pos: { x: cell.x, y: cell.y },
+        label: titulo, props: { icon: '📝', note_slug: slug },
+      },
+    });
+    await loadNotes();
+  }
+  renderNotesList();
+  render();
+}
+
+function wireInline() {
+  const input = document.getElementById('inline-input');
+  if (!input) return;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmarInline(); }
+    if (e.key === 'Escape') { e.preventDefault(); fecharInline(); }
+  });
+  input.addEventListener('input', () => {
+    // cresce com o texto (Shift+Enter abre o corpo da nota ali mesmo)
+    input.rows = Math.min(8, (input.value.match(/\n/g) || []).length + 1);
+  });
+  input.addEventListener('blur', () => {
+    // clicar fora: confirma se há texto, senão só fecha
+    if ((input.value || '').trim()) confirmarInline(); else fecharInline();
+  });
+}
+
 // ─── Legenda de ligações (separa por tipo; clique alterna visibilidade) ──────
 
 const LINK_KINDS = [
@@ -1070,6 +1278,19 @@ function renderLinkLegend() {
   const el = document.getElementById('link-legend');
   if (!el) return;
   el.innerHTML = '';
+  // YG-129: escopo — começa só entre irmãs (mesmo pai) + as do nó selecionado;
+  // "todas" expande para o emaranhado completo.
+  const scope = document.createElement('div');
+  scope.className = 'palette-item';
+  scope.innerHTML = state.linkScope === 'irmas'
+    ? '<span class="ico">🧍</span> só entre irmãs <small style="opacity:.5">(clique p/ todas)</small>'
+    : '<span class="ico">🌐</span> todas as ligações <small style="opacity:.5">(clique p/ irmãs)</small>';
+  scope.onclick = () => {
+    state.linkScope = state.linkScope === 'irmas' ? 'todas' : 'irmas';
+    renderLinkLegend();
+    render();
+  };
+  el.append(scope);
   LINK_KINDS.forEach((k) => {
     const d = document.createElement('div');
     d.className = 'palette-item' + (state.linkFilter[k.key] ? ' sel' : '');
@@ -1227,7 +1448,9 @@ document.getElementById('upload').addEventListener('change', async (e) => {
 
 function blockAt(mx, my) {
   const c = gridSpec().cell_size;
+  const pais = parentMap();
   for (const { block } of allBlocks()) {
+    if (!isTimeline() && escondidoPorColapso(block.id, pais)) continue; // pasta fechada
     const { cx, cy } = cellCenter(block.pos.x, block.pos.y);
     if (Math.hypot(mx - cx, my - cy) <= c * 0.5) return block;
   }
@@ -1265,17 +1488,14 @@ canvas.addEventListener('mousedown', (e) => {
   }
 
   if (!state.edit) {
+    // não-dono: leitura — clique seleciona/inspeciona, nada edita
     state.selectedBlock = hit ? hit.id : null;
     showInspector(hit);
     render();
-    // Dono clicou em célula vazia no modo visualizar: dica em vez de silêncio.
-    if (!hit && state.me && state.inst && state.me === state.inst.owner) {
-      toast('Ative ✏️ Editar para colocar notas e pastas');
-    }
     return;
   }
 
-  // modo edição
+  // ── manipulação direta (YG-129): sem modo — o grid É o editor ────────────
   if (state.deleteMode && hit) {
     const layer = findBlock(hit.id).layer.id;
     deleteBlock(hit.id, layer);
@@ -1288,18 +1508,21 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
   if (hit) {
+    // seleciona (revela as ligações do nó) + inspetor; arrasto move/liga;
+    // soltar sem mover alterna o colapso de pastas (ver mouseup)
     state.selectedBlock = hit.id;
     state.drag = { blockId: hit.id, layerId: findBlock(hit.id).layer.id, moved: false };
     showInspector(hit);
     render();
     return;
   }
-  // célula vazia + tipo selecionado → coloca
-  if (state.selectedType) {
-    const cell = screenToCell(mx, my);
-    const g = gridSpec();
-    if (cell.x >= 0 && cell.y >= 0 && cell.x < g.width && cell.y < g.height) placeBlock(cell);
-  }
+  // célula vazia → composer inline (digite; Enter cria). Paleta só para o
+  // tipo explícito `evento` (que pede data); nota/pasta nascem do texto.
+  const cell = screenToCell(mx, my);
+  const g = gridSpec();
+  if (cell.x < 0 || cell.y < 0 || cell.x >= g.width || cell.y >= g.height) return;
+  if (state.selectedType === 'evento') { placeBlock(cell); return; }
+  abrirInline(cell);
 });
 
 canvas.addEventListener('mousemove', (e) => {
@@ -1338,6 +1561,13 @@ canvas.addEventListener('mouseup', (e) => {
       } else {
         moveBlock(state.drag.blockId, state.drag.layerId, cell);
       }
+    }
+  } else if (state.drag && !state.drag.moved) {
+    // clique simples num PAI (sem arrastar): mostra/esconde os filhos
+    const b = findBlock(state.drag.blockId)?.block;
+    if (b && (childrenByParent()[b.id] || []).length) {
+      state.collapsed[b.id] = !state.collapsed[b.id];
+      render();
     }
   }
   state.drag = null;

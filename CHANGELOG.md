@@ -2,6 +2,24 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.17.0] — 2026-06-12 — YG-129: manipulação direta — o grid é o editor
+
+### Changed
+
+- **Fim do botão ✏️ Editar**: o dono edita por manipulação direta, sempre.
+  Clique em célula vazia abre o **composer inline** (idioma de terminal, zero
+  popups): **Enter cria · Shift+Enter quebra linha · Esc cancela**;
+  **`nome/` vira 📁 pasta**; o resto vira 📝 **nota** (1ª linha = título,
+  renderizado inline na grade; linhas seguintes = corpo). Arrastar move;
+  arrastar sobre pasta aninha; sobre nota referencia.
+- **Árvore TUI** na sidebar: a hierarquia da raiz em estilo terminal
+  (`~/título`, `├──`, `└──`); **clicar num pai mostra/esconde os filhos** — na
+  árvore E no canvas (pasta fechada exibe `▸N` com a contagem).
+- **Ligações começam só entre irmãs** (mesmo pai; raízes são irmãs entre si).
+  Selecionar um nó revela as ligações dele; o toggle "🌐 todas" na legenda
+  expande o emaranhado completo.
+- Não-dono e lentes Timeline/Grafo seguem read-only.
+
 ## [2.16.0] — 2026-06-12 — YG-128 (parte 1): /analytics — seção pública de analytics ao vivo
 
 ### Added
