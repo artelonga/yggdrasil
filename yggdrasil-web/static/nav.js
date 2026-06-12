@@ -99,4 +99,11 @@
   } else {
     document.body.appendChild(bar);
   }
+
+  // YG-133: a barra é fixa — sem isto ela COBRE o topo das páginas. Layouts em
+  // fluxo ganham padding; toolbars fixas leem var(--yg-nav-h) no próprio CSS.
+  var h = bar.offsetHeight || 36;
+  document.documentElement.style.setProperty("--yg-nav-h", h + "px");
+  var pad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+  document.body.style.paddingTop = (pad + h) + "px";
 })();

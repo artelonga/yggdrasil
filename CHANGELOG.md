@@ -2,6 +2,24 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.20.2] — 2026-06-12 — YG-133: corpus na imagem, nav sem cobrir toolbars, suíte Playwright
+
+### Fixed
+
+- **"Corpus indisponível (404)"**: a seed do Dockerfile nunca copiou
+  `comunicacao/corpus/` — o JSON do Ayvu Rapyta não existia em prod. Agora entra
+  (só os .json; fontes por capítulo fora via .dockerignore).
+- **Nav global cobria toolbars fixas**: `nav.js` agora expõe `--yg-nav-h` e
+  empurra o body; a toolbar do comunicação (e painéis ancorados) desloca junto.
+- **Comunicação sem sala** cai direto no 1º léxico público (**Mbyá**) em vez de
+  abrir o modal por cima da página.
+
+### Added
+
+- **Suíte Playwright** (`e2e/`): pega exatamente estas classes de bug — conteúdo
+  404 atrás de página 200, UI coberta por elemento fixo (elementFromPoint),
+  exceções de JS nas rotas principais. `BASE_URL=<alvo> npx playwright test`.
+
 ## [2.20.1] — 2026-06-12 — YG-132: fim do beco do Yorubá — léxicos e Ayvu sempre à mão
 
 ### Fixed
