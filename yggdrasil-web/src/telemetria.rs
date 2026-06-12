@@ -170,6 +170,26 @@ impl TelemetriaDb {
         .unwrap_or(0)
     }
 
+    /// Retenção (YG-128, espelha os 90 dias do CO): apaga eventos/sessões mais
+    /// antigos que `cutoff_ms`. Devolve (eventos, sessões) removidos. Os
+    /// agregados históricos sobrevivem nos rollups diários enviados ao CO.
+    pub fn cleanup_older_than(&self, cutoff_ms: i64) -> (usize, usize) {
+        let conn = self.db.lock().unwrap();
+        let ev = conn
+            .execute(
+                "DELETE FROM funnel_events WHERE created_at < ?1",
+                params![cutoff_ms],
+            )
+            .unwrap_or(0);
+        let ses = conn
+            .execute(
+                "DELETE FROM session_records WHERE started_at < ?1",
+                params![cutoff_ms],
+            )
+            .unwrap_or(0);
+        (ev, ses)
+    }
+
     /// Returns analytics report covering the window [since_ms, now).
     pub fn get_analytics(
         &self,
@@ -577,5 +597,15 @@ mod tests {
             "analytics took {elapsed:?} > 50ms"
         );
         assert!(report.funnel_24h.session_creates > 0);
+    }
+
+    #[test]
+    fn cleanup_remove_so_o_que_passou_do_corte() {
+        let t = TelemetriaDb::in_memory().unwrap();
+        t.session_create("velha", "snake", 1_000);
+        t.session_create("nova", "snake", 100_000);
+        let (_ev, ses) = t.cleanup_older_than(50_000);
+        assert_eq!(ses, 1, "só a sessão antiga sai");
+        assert_eq!(t.sessions_since(0), 1, "a nova fica");
     }
 }

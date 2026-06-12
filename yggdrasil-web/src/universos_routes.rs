@@ -328,6 +328,11 @@ pub struct UniversosState {
 }
 
 impl UniversosState {
+    /// Contagem anônima de sessões vivas (stats públicas / pulso YG-128).
+    pub fn jogando_agora(&self) -> usize {
+        self.sessions.lock().map(|s| s.len()).unwrap_or(0)
+    }
+
     pub fn new(scores: Arc<dyn ScoresStore>, telemetria: Arc<TelemetriaDb>) -> Arc<Self> {
         let admin_token = std::env::var("YGGDRASIL_ADMIN_TOKEN").ok();
         Arc::new(Self {
