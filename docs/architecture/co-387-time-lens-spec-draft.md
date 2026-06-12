@@ -43,6 +43,16 @@ agregação ("n eventos" num bloco expansível) — primeiro aprendizado real.
 5. **`at_iso`/`kind` ficam canônicos em `props`** do bloco; posição é projeção
    derivada e regenerável — espelha o princípio conteúdo×forma do ecossistema.
 
+## Adendo YG-126 (2026-06-12): timeline virou LENTE de runtime
+
+Validado o padrão do co (`state.view` em views.js): a timeline deixou de ser
+projeção fixa e virou view alternável (Mapa | Timeline | Grafo) sobre QUALQUER
+universo. A cena é derivada client-side por um **espelho JS** da mesma régua
+(`tlScene()` em instance.js): blocos com `props.at_iso` + criação de notas
+(fallback created_at, como o co faz com tasks) + criação do universo. O crate
+compartilhado (CO-396) deve portanto nascer com dupla face: Rust (gerador) e
+contrato espelhável em JS — ou WASM único consumido pelos dois renderers.
+
 ## O que falta para a lens co-compatível
 
 - Crate compartilhado com `x_for`/`lane_rows` + política de colisão/agregação.

@@ -26,9 +26,12 @@ const state = {
   backlinks: {},        // slug -> [{ source, label }]
   graph: {},            // slug -> [slug-alvo] (wikilinks resolvidos)
   noteQuery: '',        // busca client-side sobre a sidebar Notas
-  graphView: false,     // visão grafo (notas-como-nós + arestas de wikilink)
-  tl: { off: 0, scale: 1 }, // pan/zoom do eixo X (projection: timeline, YG-123)
+  // YG-126: view = lente de runtime sobre o MESMO universo (padrão co):
+  // 'mapa' (grade), 'timeline' (eixo do tempo, read-only), 'grafo' (wikilinks)
+  view: 'mapa',
+  tl: { off: 0, scale: 1 }, // pan/zoom do eixo X (view timeline, YG-123/126)
   tlPan: null,          // drag-pan em curso na timeline
+  tlCache: null,        // cena derivada da timeline (invalidada em writes)
   // visibilidade por tipo de ligação (legenda da sidebar). `sibling` é
   // derivado: filhos da mesma pasta — desligado por padrão para não poluir.
   linkFilter: { parent: true, ref: true, wikilink: true, sibling: false },
@@ -93,6 +96,8 @@ async function load() {
   wireGraphToggle();
   render();
   wireNoteEditor();
+  // instâncias geradas com projection=timeline abrem direto na lente timeline
+  if (state.inst.projection === 'timeline') setView('timeline');
   openFromHash();
 }
 
@@ -104,6 +109,7 @@ async function loadNotes() {
     state.notes = d.notes || [];
     state.backlinks = d.backlinks || {};
     state.graph = d.graph || {};
+    state.tlCache = null; // notas mudaram → eventos derivados renascem
   } catch { /* notas opcionais */ }
 }
 
@@ -182,11 +188,90 @@ async function loadImages() {
 
 // ─── Geometria ───────────────────────────────────────────────────────────────
 
-function gridSpec() { return state.inst.grid; }
+function gridSpec() {
+  // na view timeline a grade é a da cena derivada (48 colunas × faixas)
+  if (state.inst && isTimeline()) return tlScene().grid;
+  return state.inst.grid;
+}
+
+// ─── Cena derivada da timeline (YG-126) ──────────────────────────────────────
+//
+// Espelho JS do contrato puro do gerador (x_for/lane_rows — mesma régua; ver
+// docs/architecture/co-387-time-lens-spec-draft.md). Eventos de QUALQUER
+// universo: blocos com `props.at_iso` (evento explícito), criação de notas
+// (padrão co: created_at como fallback de data) e a criação do universo.
+// Futuro: eventos de sistema via bridge (scores etc.) aterrissam aqui.
+function tlScene() {
+  if (state.tlCache) return state.tlCache;
+  const eventos = [];
+  for (const l of state.inst.layers) {
+    for (const b of l.blocks) {
+      const t = Date.parse(b.props?.at_iso || '');
+      if (!Number.isFinite(t)) continue;
+      eventos.push({ at: t, src: b, kind: b.props?.kind || b.block_type });
+    }
+  }
+  for (const n of state.notes) {
+    const t = Date.parse(n.created || '');
+    if (!Number.isFinite(t)) continue;
+    eventos.push({
+      at: t,
+      kind: 'nota.criada',
+      virt: {
+        id: `evt-nota-${n.slug}`,
+        block_type: 'evento',
+        label: n.title,
+        props: { icon: '📝', kind: 'nota.criada', at_iso: n.created, note_slug: n.slug },
+      },
+    });
+  }
+  const criado = Date.parse(state.inst.created_at || '');
+  if (Number.isFinite(criado)) {
+    eventos.push({
+      at: criado,
+      kind: 'universo.criado',
+      virt: {
+        id: 'evt-universo-criado',
+        block_type: 'evento',
+        label: `${state.inst.title || 'Universo'} criado`,
+        props: { icon: '✦', kind: 'universo.criado', at_iso: state.inst.created_at },
+      },
+    });
+  }
+
+  eventos.sort((a, b) => a.at - b.at);
+  const WIDTH = 48, LANE_H = 3;
+  const min = eventos.length ? eventos[0].at : 0;
+  const max = eventos.length ? eventos[eventos.length - 1].at : 0;
+  // lanes por família (prefixo até o 1º '.'), ordem determinística
+  const fams = [...new Set(eventos.map((e) => e.kind.split('.')[0]))].sort();
+  const lane = Object.fromEntries(fams.map((f, i) => [f, i]));
+  const height = Math.max(fams.length * LANE_H, LANE_H);
+
+  const stack = {};
+  const items = eventos.map((e) => {
+    const span = max - min;
+    const x = span <= 0 ? Math.floor(WIDTH / 2)
+      : Math.round(((e.at - min) / span) * (WIDTH - 1));
+    const fam = e.kind.split('.')[0];
+    const key = `${fam}:${x}`;
+    const s = (stack[key] = (stack[key] || 0) + 1) - 1;
+    const y = Math.min(lane[fam] * LANE_H + Math.min(s, LANE_H - 1), height - 1);
+    const base = e.src || e.virt;
+    // clone com posição derivada; mantém id/props (inspetor/nota funcionam)
+    return { ...base, pos: { x, y } };
+  });
+
+  state.tlCache = {
+    grid: { width: WIDTH, height, cell_size: 28 },
+    items,
+  };
+  return state.tlCache;
+}
 
 function isIso() { return state.inst.projection === 'isometric'; }
-// YG-123: mundo-timeline — eixo X = tempo, pan/zoom só no X.
-function isTimeline() { return state.inst.projection === 'timeline'; }
+// YG-126: timeline é uma VIEW de runtime (qualquer universo), não projeção fixa.
+function isTimeline() { return state.view === 'timeline'; }
 const TL_AXIS_H = 28; // faixa do eixo de tempo no rodapé
 
 function cellToScreen(x, y) {
@@ -245,6 +330,8 @@ function sizeCanvas() {
 // ─── Render ──────────────────────────────────────────────────────────────────
 
 function allBlocks() {
+  // view timeline: cena derivada (eventos virtuais com posição no tempo)
+  if (isTimeline()) return tlScene().items.map((b) => ({ block: b, layer: null }));
   const out = [];
   for (const l of state.inst.layers) {
     if (l.kind === 'background') continue;
@@ -262,7 +349,7 @@ function findBlock(id) {
 }
 
 function render() {
-  if (state.graphView) { renderGraph(); return; }
+  if (state.view === 'grafo') { renderGraph(); return; }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const g = gridSpec();
   const c = g.cell_size;
@@ -384,7 +471,7 @@ function drawTimeAxis() {
 
 // Zoom no eixo X ancorado no cursor (scroll/trackpad).
 canvas.addEventListener('wheel', (e) => {
-  if (!state.inst || !isTimeline() || state.graphView) return;
+  if (!state.inst || !isTimeline()) return;
   e.preventDefault();
   const { mx } = mouseXY(e);
   const f = e.deltaY < 0 ? 1.15 : 1 / 1.15;
@@ -589,16 +676,19 @@ function graphNodeAt(mx, my) {
   return null;
 }
 
-// Liga o toggle da visão grafo.
+// Seletor de views (YG-126): Mapa | Timeline | Grafo — lentes do mesmo universo.
+function setView(v) {
+  state.view = v;
+  state.tlCache = null; // cena derivada renasce com os dados atuais
+  state.tl = { off: 0, scale: 1 };
+  document.querySelectorAll('#views button').forEach((b) =>
+    b.classList.toggle('active', b.dataset.view === v));
+  sizeCanvas();
+  render();
+}
 function wireGraphToggle() {
-  const btn = document.getElementById('graphBtn');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    state.graphView = !state.graphView;
-    btn.classList.toggle('active', state.graphView);
-    btn.textContent = state.graphView ? '🗺️ Mapa' : '🕸️ Grafo';
-    render();
-  });
+  document.querySelectorAll('#views button').forEach((b) =>
+    b.addEventListener('click', () => setView(b.dataset.view)));
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -1021,6 +1111,7 @@ async function patch(op) {
     return null;
   }
   state.inst = await res.json();
+  state.tlCache = null; // blocos mudaram → eventos derivados renascem
   renderLayers();
   render();
   return state.inst;
@@ -1152,7 +1243,7 @@ canvas.addEventListener('mousedown', (e) => {
   const { mx, my } = mouseXY(e);
 
   // Visão grafo: clicar num nó seleciona/abre a nota (sem edição no grafo).
-  if (state.graphView) {
+  if (state.view === 'grafo') {
     const note = graphNodeAt(mx, my);
     if (note) openNote(note.slug);
     return;
@@ -1160,9 +1251,16 @@ canvas.addEventListener('mousedown', (e) => {
 
   const hit = blockAt(mx, my);
 
-  // Timeline: arrastar o vazio = pan no eixo do tempo (qualquer modo).
-  if (isTimeline() && !hit) {
-    state.tlPan = { startMx: mx, startOff: state.tl.off, moved: false };
+  // View timeline é uma LENTE read-only: pan no vazio, clique abre/inspeciona.
+  if (isTimeline()) {
+    if (!hit) {
+      state.tlPan = { startMx: mx, startOff: state.tl.off, moved: false };
+      return;
+    }
+    state.selectedBlock = hit.id;
+    if (hit.props?.note_slug) openNote(hit.props.note_slug);
+    else showInspector(hit);
+    render();
     return;
   }
 

@@ -117,7 +117,12 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
     <h1 id="title">Universo</h1>
     <span class="desc" id="desc"></span>
     <span class="grow"></span>
-    <button id="graphBtn">🕸️ Grafo</button>
+    <!-- YG-126: views = lentes de runtime sobre o MESMO universo (padrão co) -->
+    <span id="views">
+      <button id="view-mapa" class="active" data-view="mapa">🗺️ Mapa</button>
+      <button id="view-timeline" data-view="timeline">🕐 Timeline</button>
+      <button id="view-grafo" data-view="grafo">🕸️ Grafo</button>
+    </span>
     <button id="modeBtn" hidden>✏️ Editar</button>
     <a href="/lobby"><button>← Lobby</button></a>
   </header>

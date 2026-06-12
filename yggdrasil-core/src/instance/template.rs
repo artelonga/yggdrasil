@@ -80,8 +80,15 @@ impl From<&Template> for TemplateSummary {
     }
 }
 
-/// Todos os templates disponíveis.
+/// Templates oferecidos na CRIAÇÃO (YG-126: um único tipo de universo — as
+/// formas Mapa/Timeline/Grafo são views de runtime do player, padrão co).
 pub fn all_templates() -> Vec<Template> {
+    vec![universo_template()]
+}
+
+/// Templates legados: instâncias existentes resolvem a paleta por estes slugs
+/// (`template_by_slug`), mas eles não aparecem mais na criação.
+fn legacy_templates() -> Vec<Template> {
     vec![
         blank_template(),
         jardim_template(),
@@ -90,14 +97,58 @@ pub fn all_templates() -> Vec<Template> {
     ]
 }
 
-/// Resumos de todos os templates.
+/// Resumos dos templates de criação.
 pub fn template_summaries() -> Vec<TemplateSummary> {
     all_templates().iter().map(TemplateSummary::from).collect()
 }
 
-/// Busca um template pelo slug.
+/// Busca um template pelo slug — inclui os legados (paleta de instâncias antigas).
 pub fn template_by_slug(slug: &str) -> Option<Template> {
-    all_templates().into_iter().find(|t| t.slug == slug)
+    all_templates()
+        .into_iter()
+        .chain(legacy_templates())
+        .find(|t| t.slug == slug)
+}
+
+/// Template único `universo` (YG-126): nota + pasta + evento. A forma é
+/// escolhida no player (views), não na criação; eventos (`props.at_iso`)
+/// aparecem na view timeline junto com criação de notas e do próprio universo.
+pub fn universo_template() -> Template {
+    let grid = GridSpec {
+        width: 32,
+        height: 20,
+        cell_size: 32,
+    };
+    let mut seed = empty_seed(
+        Projection::TwoDGrid,
+        grid,
+        vec![Layer::blocks("conteudo", "Conteúdo")],
+    );
+    seed.title = "Universo".into();
+    seed.description =
+        "Notas, pastas e eventos num só lugar — alterne entre Mapa, Timeline e Grafo.".into();
+
+    Template {
+        slug: "universo".into(),
+        title: "Universo".into(),
+        description: "Um universo, todas as formas — mapa, timeline e grafo do mesmo conteúdo."
+            .into(),
+        seed,
+        palette: vec![
+            PaletteItem::new("note", "Nota", json!({ "color": "#b48ead", "icon": "📝" })),
+            PaletteItem::new(
+                "pasta",
+                "Pasta",
+                json!({ "color": "#e9c349", "icon": "📁" }),
+            ),
+            PaletteItem::new(
+                "evento",
+                "Evento",
+                json!({ "color": "#7ec8e3", "icon": "📌" }),
+            ),
+        ],
+        render_hints: json!({ "grid_lines": true, "graph_view": true, "time_axis": true }),
+    }
 }
 
 fn empty_seed(projection: Projection, grid: GridSpec, layers: Vec<Layer>) -> UniverseInstance {
@@ -418,7 +469,25 @@ mod tests {
 
     #[test]
     fn summaries_lista_todos() {
-        assert_eq!(template_summaries().len(), 4);
+        // YG-126: a criação oferece UM tipo; formas são views de runtime.
+        assert_eq!(template_summaries().len(), 1);
+        assert_eq!(template_summaries()[0].slug, "universo");
+    }
+
+    #[test]
+    fn universo_template_nota_pasta_evento() {
+        let t = template_by_slug("universo").unwrap();
+        let tipos: Vec<&str> = t.palette.iter().map(|p| p.block_type.as_str()).collect();
+        assert_eq!(tipos, vec!["note", "pasta", "evento"]);
+        assert_eq!(t.seed.projection, Projection::TwoDGrid);
+    }
+
+    #[test]
+    fn templates_legados_seguem_resolvendo_por_slug() {
+        // instâncias antigas mantêm a paleta (não aparecem na criação)
+        for slug in ["blank", "jardim", "neuroanatomia", "timeline"] {
+            assert!(template_by_slug(slug).is_some(), "legado {slug} resolve");
+        }
     }
 
     #[test]
