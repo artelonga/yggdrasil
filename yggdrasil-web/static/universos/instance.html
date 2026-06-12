@@ -127,8 +127,20 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
     <a href="/lobby"><button>← Lobby</button></a>
   </header>
   <div class="layout">
-    <div class="stage"><canvas id="canvas" width="640" height="360" aria-label="Universo"></canvas></div>
+    <div class="stage" style="position:relative">
+      <canvas id="canvas" width="640" height="360" aria-label="Universo"></canvas>
+      <!-- YG-129: composer inline — clique numa célula vazia e digite.
+           Enter cria · Shift+Enter nova linha (vira corpo de nota) · Esc cancela.
+           `nome/` (idioma de terminal) cria pasta; o resto vira nota. -->
+      <textarea id="inline-input" hidden autocomplete="off" rows="1"
+        placeholder="digite…  ·  nome/ = pasta  ·  Enter cria  ·  ⇧Enter corpo"
+        style="position:absolute;z-index:20;background:#07070b;color:#e5e2e1;border:1px solid #e9c349;border-radius:4px;padding:.3rem .55rem;font:0.85rem/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;min-width:17rem;resize:none;overflow:hidden"></textarea>
+    </div>
     <aside>
+      <section>
+        <h2>Árvore</h2>
+        <div id="tree" style="font:0.78rem ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.6;white-space:pre"></div>
+      </section>
       <section>
         <h2>Camadas</h2>
         <div id="layers"></div>
