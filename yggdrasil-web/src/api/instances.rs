@@ -15,8 +15,8 @@ use axum::{
 use nanoid::nanoid;
 use serde::Deserialize;
 use yggdrasil_core::instance::{
-    AttachmentKind, ContentRef, EditError, EditOp, InstanceStore, NoteError, NoteStore, StoreError,
-    UniverseInstance, note, template_by_slug, template_summaries,
+    AttachmentKind, ContentRef, DraftStore, EditError, EditOp, InstanceStore, NoteError, NoteStore,
+    StoreError, UniverseInstance, note, template_by_slug, template_summaries,
 };
 
 use crate::auth::verify_jwt;
@@ -469,6 +469,86 @@ fn note_store(state: &InstancesState, id: &str) -> NoteStore {
     NoteStore::for_instance(state.store.root(), id)
 }
 
+// ─── Rascunhos (YG-125): branch cross-device do editor; NUNCA federam ────────
+
+fn draft_store(state: &InstancesState, id: &str, user: &str) -> DraftStore {
+    DraftStore::for_user(state.store.root(), id, user)
+}
+
+fn map_draft_err(e: NoteError) -> axum::response::Response {
+    match e {
+        NoteError::NotFound(_) => err_json(StatusCode::NOT_FOUND, "rascunho_nao_encontrado"),
+        NoteError::InvalidSlug => err_json(StatusCode::UNPROCESSABLE_ENTITY, "slug_invalido"),
+        NoteError::Io(_) => err_json(StatusCode::INTERNAL_SERVER_ERROR, "erro_io"),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct DraftBody {
+    #[serde(default)]
+    pub markdown: String,
+}
+
+/// `GET /api/v1/instances/{id}/notes/{slug}/draft` — rascunho do dono (404 se não há).
+pub async fn get_draft(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path((id, slug)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+    match draft_store(&state, &id, &user).load(&slug) {
+        Ok(d) => Json(d).into_response(),
+        Err(e) => map_draft_err(e),
+    }
+}
+
+/// `PUT /api/v1/instances/{id}/notes/{slug}/draft` — grava o rascunho. Não toca
+/// a nota canônica e **não emite** nada ao producer do bridge (privacidade por
+/// construção: rascunho não federa).
+pub async fn put_draft(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path((id, slug)): Path<(String, String)>,
+    Json(body): Json<DraftBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+    match draft_store(&state, &id, &user).save(&slug, &body.markdown) {
+        Ok(d) => Json(d).into_response(),
+        Err(e) => map_draft_err(e),
+    }
+}
+
+/// `DELETE /api/v1/instances/{id}/notes/{slug}/draft` — descarta o rascunho.
+pub async fn delete_draft(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path((id, slug)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+    match draft_store(&state, &id, &user).delete(&slug) {
+        Ok(()) => Json(serde_json::json!({ "slug": slug, "descartado": true })).into_response(),
+        Err(e) => map_draft_err(e),
+    }
+}
+
 /// Carrega a instância para **leitura**: pública se `published`, senão owner-only.
 /// Espelha o gating de [`get_instance`]/[`serve_attachment`].
 #[allow(clippy::result_large_err)] // o `Err` é uma `Response` axum por design
@@ -657,6 +737,10 @@ mod tests {
                 "/api/v1/instances/{id}/notes/{slug}",
                 get(get_note).put(put_note).delete(delete_note),
             )
+            .route(
+                "/api/v1/instances/{id}/notes/{slug}/draft",
+                get(get_draft).put(put_draft).delete(delete_draft),
+            )
             .route("/api/v1/templates", get(list_templates))
             .route("/api/v1/templates/{slug}", get(get_template))
             .with_state(state);
@@ -684,6 +768,10 @@ mod tests {
             .route(
                 "/api/v1/instances/{id}/notes/{slug}",
                 get(get_note).put(put_note).delete(delete_note),
+            )
+            .route(
+                "/api/v1/instances/{id}/notes/{slug}/draft",
+                get(get_draft).put(put_draft).delete(delete_draft),
             )
             .with_state(state);
         (router, dir, rx)
@@ -1147,5 +1235,109 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // ─── Rascunhos (YG-125) ──────────────────────────────────────────────────
+
+    async fn draft_req(
+        app: &Router,
+        method: &str,
+        id: &str,
+        user: Option<&str>,
+        slug: &str,
+        body: Option<serde_json::Value>,
+    ) -> axum::response::Response {
+        let mut b = Request::builder()
+            .method(method)
+            .uri(format!("/api/v1/instances/{id}/notes/{slug}/draft"));
+        if let Some(u) = user {
+            b = b.header("authorization", format!("Bearer {}", token(u)));
+        }
+        let req = match body {
+            Some(v) => b
+                .header("content-type", "application/json")
+                .body(Body::from(v.to_string())),
+            None => b.body(Body::empty()),
+        }
+        .unwrap();
+        app.clone().oneshot(req).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn draft_round_trip_owner_only() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+
+        // sem rascunho ainda → 404
+        let resp = draft_req(&app, "GET", &id, Some("alice"), "n", None).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        // grava e lê de volta
+        let resp = draft_req(
+            &app,
+            "PUT",
+            &id,
+            Some("alice"),
+            "n",
+            Some(serde_json::json!({ "markdown": "rascunho v1" })),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp = draft_req(&app, "GET", &id, Some("alice"), "n", None).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["markdown"], "rascunho v1");
+
+        // não-dono e anônimo não acessam (link é seguro por construção)
+        let resp = draft_req(&app, "GET", &id, Some("bob"), "n", None).await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let resp = draft_req(&app, "GET", &id, None, "n", None).await;
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // descarta → some
+        let resp = draft_req(&app, "DELETE", &id, Some("alice"), "n", None).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp = draft_req(&app, "GET", &id, Some("alice"), "n", None).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Privacidade por construção: rascunho NÃO emite NoteWritten (não federa)
+    /// e não toca a nota canônica.
+    #[tokio::test]
+    async fn draft_nao_federa_nem_toca_a_nota() {
+        let (app, _d, mut rx) = app_with_events();
+        let id = create_blank(&app, "alice").await;
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/instances/{id}/notes/n/draft"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "markdown": "segredo" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(rx.try_recv().is_err(), "rascunho nunca passa pelo producer");
+
+        // a nota canônica continua inexistente
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/instances/{id}/notes/n"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }

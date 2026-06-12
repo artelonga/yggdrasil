@@ -158,6 +158,89 @@ impl NoteStore {
     }
 }
 
+// ─── Rascunhos (draft-as-branch, YG-125) ─────────────────────────────────────
+
+/// Um rascunho de nota: corpo cru, por usuário, fora do caminho federado.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Draft {
+    pub slug: String,
+    pub markdown: String,
+    pub updated: DateTime<Utc>,
+}
+
+/// Store de rascunhos por usuário: `<store_root>/<id>/drafts/<user-slug>/<slug>.md`.
+///
+/// Deliberadamente FORA de `notes/`: o producer do bridge só publica notas
+/// canônicas, então um rascunho **nunca federa** — privacidade por construção.
+/// O corpo é gravado cru (sem frontmatter); `updated` vem do mtime do arquivo.
+pub struct DraftStore {
+    dir: PathBuf,
+}
+
+impl DraftStore {
+    pub fn for_user(store_root: &Path, instance_id: &str, user: &str) -> Self {
+        let user_slug = {
+            let s = slugify(user);
+            if s.is_empty() { "anon".to_string() } else { s }
+        };
+        Self {
+            dir: store_root.join(instance_id).join("drafts").join(user_slug),
+        }
+    }
+
+    fn draft_path(&self, slug: &str) -> Result<PathBuf, NoteError> {
+        let slug = note_slug(slug).ok_or(NoteError::InvalidSlug)?;
+        Ok(self.dir.join(format!("{slug}.md")))
+    }
+
+    /// Grava/substitui o rascunho (escrita atômica: temp + rename).
+    pub fn save(&self, slug: &str, markdown: &str) -> Result<Draft, NoteError> {
+        let path = self.draft_path(slug)?;
+        std::fs::create_dir_all(&self.dir)?;
+        let tmp = path.with_extension("md.tmp");
+        std::fs::write(&tmp, markdown)?;
+        std::fs::rename(&tmp, &path)?;
+        Ok(Draft {
+            slug: note_slug(slug).unwrap_or_default(),
+            markdown: markdown.to_string(),
+            updated: Utc::now(),
+        })
+    }
+
+    /// Lê o rascunho; `updated` = mtime do arquivo.
+    pub fn load(&self, slug: &str) -> Result<Draft, NoteError> {
+        let path = self.draft_path(slug)?;
+        let markdown = std::fs::read_to_string(&path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                NoteError::NotFound(slug.to_string())
+            } else {
+                NoteError::Io(e)
+            }
+        })?;
+        let updated = std::fs::metadata(&path)?
+            .modified()
+            .map(DateTime::<Utc>::from)
+            .unwrap_or_else(|_| Utc::now());
+        Ok(Draft {
+            slug: note_slug(slug).unwrap_or_default(),
+            markdown,
+            updated,
+        })
+    }
+
+    /// Descarta o rascunho.
+    pub fn delete(&self, slug: &str) -> Result<(), NoteError> {
+        let path = self.draft_path(slug)?;
+        std::fs::remove_file(&path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                NoteError::NotFound(slug.to_string())
+            } else {
+                NoteError::Io(e)
+            }
+        })
+    }
+}
+
 // ─── Wikilinks + grafo ────────────────────────────────────────────────────────
 
 /// Extrai wikilinks `[[target]]` / `[[target|alias]]` de um texto, preservando o
@@ -457,6 +540,47 @@ mod tests {
                 label: None
             }
         );
+    }
+
+    // ── DraftStore (YG-125) ───────────────────────────────────────────────
+
+    #[test]
+    fn draft_round_trip_e_descartar() {
+        let dir = tempdir().unwrap();
+        let d = DraftStore::for_user(dir.path(), "inst-1", "yuri@artelonga.com.br");
+        d.save("minha-nota", "# rascunho\ncorpo").unwrap();
+        let got = d.load("minha-nota").unwrap();
+        assert_eq!(got.markdown, "# rascunho\ncorpo");
+        assert_eq!(got.slug, "minha-nota");
+        d.delete("minha-nota").unwrap();
+        assert!(matches!(d.load("minha-nota"), Err(NoteError::NotFound(_))));
+        assert!(matches!(
+            d.delete("minha-nota"),
+            Err(NoteError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn draft_fica_fora_de_notes_e_isolado_por_usuario() {
+        let dir = tempdir().unwrap();
+        let a = DraftStore::for_user(dir.path(), "i", "ana@x.com");
+        let b = DraftStore::for_user(dir.path(), "i", "bia@x.com");
+        a.save("n", "de ana").unwrap();
+        assert!(matches!(b.load("n"), Err(NoteError::NotFound(_))));
+        // nada vaza para notes/ (o caminho que o producer federa)
+        assert!(!dir.path().join("i/notes").exists());
+        assert!(dir.path().join("i/drafts").exists());
+    }
+
+    #[test]
+    fn draft_slug_invalido_rejeitado() {
+        let dir = tempdir().unwrap();
+        let d = DraftStore::for_user(dir.path(), "i", "u");
+        // o slug é normalizado por note_slug/slugify — nunca escapa do dir
+        d.save("../escape", "x").unwrap();
+        assert!(dir.path().join("i/drafts/u/escape.md").exists());
+        assert!(!dir.path().parent().unwrap().join("escape.md").exists());
+        assert!(matches!(d.save("///", "x"), Err(NoteError::InvalidSlug)));
     }
 
     #[test]
