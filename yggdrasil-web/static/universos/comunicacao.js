@@ -338,6 +338,7 @@ async function loadRoom(id) {
   } catch (_) {}
   const room = await api('GET', `/salas/${id}`);
   setRoom(room);
+  renderLexChips();
 }
 
 async function createRoom(template) {
@@ -660,6 +661,38 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+// ─── Léxicos sempre à mão (YG-132) ───────────────────────────────────────────
+// O modal "Salas" não bastava: quem caía numa sala (ou era devolvido à última
+// pelo localStorage) ficava preso nela. Chips fixos na toolbar: um por léxico
+// público + o corpus do Ayvu Rapyta.
+let _publicas = [];
+async function renderLexChips() {
+  const el = document.getElementById('lexicos');
+  if (!el) return;
+  try {
+    if (!_publicas.length) _publicas = await api('GET', '/salas?published=true');
+  } catch (_) { /* sem rede → sem chips */ }
+  const NOME = { 'gn-mbya': 'Mbyá', yo: 'Iorubá', 'pt-br': 'Português', pt: 'Português' };
+  const chip = (rotulo, ativo, onclick, href) => {
+    const a = document.createElement('a');
+    a.textContent = rotulo;
+    a.style.cssText = 'cursor:pointer;padding:.2rem .6rem;border-radius:999px;font-size:.72rem;' +
+      (ativo ? 'background:#d4af37;color:#1a1408;font-weight:700'
+             : 'border:1px solid #3a3a4a;color:#c9c9d6');
+    if (href) a.href = href; else a.onclick = onclick;
+    return a;
+  };
+  el.innerHTML = '';
+  _publicas.forEach((sala) => {
+    el.appendChild(chip(
+      NOME[sala.lang] || sala.lang,
+      state.room && state.room.id === sala.id,
+      () => { history.replaceState(null, '', `${location.pathname}?id=${sala.id}`); loadRoom(sala.id); },
+    ));
+  });
+  el.appendChild(chip('📜 Ayvu Rapyta', false, null, '/universos/corpus'));
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 async function boot() {
   const params = new URLSearchParams(location.search);
@@ -675,6 +708,7 @@ async function boot() {
     if (err.message !== 'nao_autenticado') toast('Erro: ' + err.message);
     await openSalas();
   }
+  renderLexChips();
   refreshReviewCount();
 }
 boot();

@@ -80,6 +80,16 @@
       });
     });
 
+    // 2b. Ayvu Rapyta — corpus de leitura (YG-132): antes só alcançável por
+    // URL direta; agora é card de primeira classe do catálogo.
+    items.push({
+      nome: "Ayvu Rapyta (corpus)",
+      desc: "Leitura interlinear Mbyá ⟷ Español — capítulos, glosas, partículas e Caderno.",
+      status: "embedded", type: "lingua", origin: "original",
+      genre: [], lang: "Mbyá Guarani",
+      url: "/universos/corpus"
+    });
+
     // 3. instâncias autoradas publicadas (data-driven)
     (instances || []).forEach(function (i) {
       items.push({
