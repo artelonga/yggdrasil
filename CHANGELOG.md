@@ -2,6 +2,16 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.20.1] — 2026-06-12 — YG-132: fim do beco do Yorubá — léxicos e Ayvu sempre à mão
+
+### Fixed
+
+- **`/universos/comunicacao` prendia o usuário na última sala** (localStorage):
+  Mbyá publicada só era alcançável pelo modal "Salas", e o corpus do Ayvu Rapyta
+  não existia em nenhuma navegação. Agora a toolbar tem **chips fixos** — Mbyá ·
+  Iorubá · 📜 Ayvu Rapyta — com o ativo destacado, e o catálogo `/universos`
+  ganhou o card "Ayvu Rapyta (corpus)".
+
 ## [2.20.0] — 2026-06-12 — YG-128 completa: stream WS ao vivo + retenção 90d agendada
 
 ### Added
