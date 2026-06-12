@@ -86,6 +86,7 @@ pub fn all_templates() -> Vec<Template> {
         blank_template(),
         jardim_template(),
         neuroanatomia_template(),
+        timeline_template(),
     ]
 }
 
@@ -183,6 +184,89 @@ pub fn jardim_template() -> Template {
             ),
         ],
         render_hints: json!({ "grid_lines": true, "graph_view": true }),
+    }
+}
+
+/// Template `timeline` (YG-123) — mundo-timeline: eixo X = tempo, faixa Y por
+/// `kind`. Semeado com eventos astronômicos de 2026 (equinócios, solstícios,
+/// luas cheias, eclipse) para algo renderizar antes do conteúdo do universo
+/// `time` fluir pelo bridge (P-B). Datas fixas → seed determinístico.
+pub fn timeline_template() -> Template {
+    use super::generators::timeline::{TimelineEntry, generate};
+    let at = |s: &str| {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .expect("data fixa válida")
+            .with_timezone(&Utc)
+    };
+    let ev = |id: &str, title: &str, iso: &str, kind: &str| TimelineEntry {
+        id: id.into(),
+        title: title.into(),
+        at: at(iso),
+        kind: kind.into(),
+        note_slug: None,
+    };
+    let entries = vec![
+        ev(
+            "equinocio-marco",
+            "Equinócio de março",
+            "2026-03-20T14:46:00Z",
+            "equinox",
+        ),
+        ev(
+            "solsticio-junho",
+            "Solstício de junho",
+            "2026-06-21T08:25:00Z",
+            "solstice",
+        ),
+        ev(
+            "equinocio-setembro",
+            "Equinócio de setembro",
+            "2026-09-23T00:05:00Z",
+            "equinox",
+        ),
+        ev(
+            "solsticio-dezembro",
+            "Solstício de dezembro",
+            "2026-12-21T20:50:00Z",
+            "solstice",
+        ),
+        ev(
+            "lua-cheia-jan",
+            "Lua cheia de janeiro",
+            "2026-01-03T10:03:00Z",
+            "moon.full",
+        ),
+        ev(
+            "lua-cheia-jul",
+            "Lua cheia de julho",
+            "2026-07-29T14:36:00Z",
+            "moon.full",
+        ),
+        ev(
+            "eclipse-solar-ago",
+            "Eclipse solar total",
+            "2026-08-12T17:46:00Z",
+            "eclipse.solar",
+        ),
+    ];
+    let mut seed = generate("", "", "Timeline", &entries);
+    // seed de template é atemporal (espelha `empty_seed`): timestamps no epoch
+    let epoch = chrono::DateTime::UNIX_EPOCH.with_timezone(&Utc);
+    seed.template = String::new();
+    seed.created_at = epoch;
+    seed.updated_at = epoch;
+
+    Template {
+        slug: "timeline".into(),
+        title: "Timeline".into(),
+        description: "Mundo-timeline — eixo X é o tempo; faixas por tipo de evento.".into(),
+        seed,
+        palette: vec![PaletteItem::new(
+            "evento",
+            "Evento",
+            json!({ "color": "#7ec8e3", "icon": "📌" }),
+        )],
+        render_hints: json!({ "grid_lines": false, "time_axis": true }),
     }
 }
 
@@ -334,6 +418,18 @@ mod tests {
 
     #[test]
     fn summaries_lista_todos() {
-        assert_eq!(template_summaries().len(), 3);
+        assert_eq!(template_summaries().len(), 4);
+    }
+
+    #[test]
+    fn timeline_template_semeia_eventos_em_projecao_timeline() {
+        let t = template_by_slug("timeline").unwrap();
+        assert_eq!(t.seed.projection, Projection::Timeline);
+        let total: usize = t.seed.layers.iter().map(|l| l.blocks.len()).sum();
+        assert_eq!(total, 7, "7 eventos astronômicos de 2026 no seed");
+        // instanciar carimba dono/template e preserva a projeção
+        let inst = t.instantiate("t1", "ana");
+        assert_eq!(inst.template, "timeline");
+        assert_eq!(inst.projection, Projection::Timeline);
     }
 }

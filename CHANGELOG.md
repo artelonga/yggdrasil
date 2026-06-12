@@ -2,6 +2,27 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.13.0] — 2026-06-12 — YG-123: Projection::Timeline — mundo-timeline navegável
+
+### Added
+
+- **`Projection::Timeline`** (SCHEMA_VERSION 2→3, aditivo — v1/v2 seguem legíveis):
+  eixo X = tempo (`props.at_iso`), uma faixa Y por família de `kind`.
+- **Gerador** `instance/generators/timeline.rs`: entradas (`at_iso` + `kind`) →
+  instância com uma layer por família (toggle de kind de graça), colisões empilham
+  na faixa. Layout em **funções puras** (`x_for`, `lane_rows`) — candidatas
+  declaradas ao crate compartilhado do CO-396; não evoluir layout aqui.
+- **Renderer timeline** no player: pan (arrastar o vazio) + zoom no X (scroll,
+  ancorado no cursor) sem distorcer blocos (escala o pitch das colunas, não o
+  canvas — hit-test exato via inversa em `screenToCell`); eixo de tempo no rodapé
+  com ticks pt-BR pela mesma régua do gerador; inspetor mostra 🕐 `at_iso` + `kind`.
+- **Template `timeline`** semeado com o céu de 2026 (equinócios, solstícios, luas
+  cheias, eclipse solar) — datas fixas, seed determinístico.
+- **Aprendizados → spec**: `docs/architecture/co-387-time-lens-spec-draft.md`
+  (contrato do crate de layout, política de colisão, o que falta para a lens do co).
+- Conteúdo vivo do universo `time` continua chegando só via bridge inbound (P-B) —
+  nenhum importador paralelo foi criado, conforme o escopo.
+
 ## [2.12.0] — 2026-06-12 — YG-125: rascunho server-side — a branch cross-device do editor
 
 ### Added

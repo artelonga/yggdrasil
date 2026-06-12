@@ -27,6 +27,8 @@ const state = {
   graph: {},            // slug -> [slug-alvo] (wikilinks resolvidos)
   noteQuery: '',        // busca client-side sobre a sidebar Notas
   graphView: false,     // visão grafo (notas-como-nós + arestas de wikilink)
+  tl: { off: 0, scale: 1 }, // pan/zoom do eixo X (projection: timeline, YG-123)
+  tlPan: null,          // drag-pan em curso na timeline
   // visibilidade por tipo de ligação (legenda da sidebar). `sibling` é
   // derivado: filhos da mesma pasta — desligado por padrão para não poluir.
   linkFilter: { parent: true, ref: true, wikilink: true, sibling: false },
@@ -183,6 +185,9 @@ async function loadImages() {
 function gridSpec() { return state.inst.grid; }
 
 function isIso() { return state.inst.projection === 'isometric'; }
+// YG-123: mundo-timeline — eixo X = tempo, pan/zoom só no X.
+function isTimeline() { return state.inst.projection === 'timeline'; }
+const TL_AXIS_H = 28; // faixa do eixo de tempo no rodapé
 
 function cellToScreen(x, y) {
   const g = gridSpec();
@@ -190,6 +195,10 @@ function cellToScreen(x, y) {
   if (isIso()) {
     const originX = g.height * c / 2;
     return { sx: (x - y) * (c / 2) + originX, sy: (x + y) * (c / 4) + c };
+  }
+  if (isTimeline()) {
+    // pan/zoom horizontal: o pitch das colunas escala, a célula não distorce
+    return { sx: x * c * state.tl.scale + state.tl.off, sy: y * c };
   }
   return { sx: x * c, sy: y * c };
 }
@@ -211,6 +220,9 @@ function screenToCell(mx, my) {
     const y = Math.round((iy - ix) / 2);
     return { x, y };
   }
+  if (isTimeline()) {
+    return { x: Math.floor((mx - state.tl.off) / (c * state.tl.scale)), y: Math.floor(my / c) };
+  }
   return { x: Math.floor(mx / c), y: Math.floor(my / c) };
 }
 
@@ -220,6 +232,10 @@ function sizeCanvas() {
   if (isIso()) {
     canvas.width = (g.width + g.height) * (c / 2);
     canvas.height = (g.width + g.height) * (c / 4) + 2 * c;
+  } else if (isTimeline()) {
+    // viewport fixo (pan/zoom em vez de canvas gigante) + faixa do eixo
+    canvas.width = Math.min(g.width * c, 1100);
+    canvas.height = g.height * c + TL_AXIS_H;
   } else {
     canvas.width = g.width * c;
     canvas.height = g.height * c;
@@ -305,7 +321,78 @@ function render() {
 
   // blocos
   for (const { block } of allBlocks()) drawBlock(block);
+
+  if (isTimeline()) drawTimeAxis();
 }
+
+// ─── Timeline (YG-123): eixo de tempo + zoom ─────────────────────────────────
+
+// Intervalo [min, max] dos `props.at_iso` dos blocos visíveis.
+function tlRange() {
+  let min = Infinity, max = -Infinity;
+  for (const { block } of allBlocks()) {
+    const t = Date.parse(block.props?.at_iso || '');
+    if (!Number.isFinite(t)) continue;
+    if (t < min) min = t;
+    if (t > max) max = t;
+  }
+  return min <= max ? { min, max } : null;
+}
+
+// Eixo de tempo no rodapé: linha + ~6 ticks com datas interpoladas entre o
+// primeiro e o último evento (mesma interpolação linear do gerador x_for).
+function drawTimeAxis() {
+  const g = gridSpec();
+  const c = g.cell_size;
+  const yAxis = g.height * c + 4;
+  const range = tlRange();
+
+  ctx.save();
+  ctx.fillStyle = '#14141b';
+  ctx.fillRect(0, g.height * c, canvas.width, TL_AXIS_H);
+  ctx.strokeStyle = '#45474c';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, yAxis);
+  ctx.lineTo(canvas.width, yAxis);
+  ctx.stroke();
+  if (!range) { ctx.restore(); return; }
+
+  const span = range.max - range.min;
+  const fmt = new Intl.DateTimeFormat('pt-BR', span > 90 * 86400e3
+    ? { month: 'short', year: 'numeric' }
+    : { day: '2-digit', month: 'short' });
+  ctx.fillStyle = '#c5c6cc';
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'center';
+  const ticks = 6;
+  for (let i = 0; i < ticks; i++) {
+    const frac = ticks === 1 ? 0 : i / (ticks - 1);
+    // mesma régua do gerador: coluna 0..width-1 ↔ min..max
+    const col = frac * (g.width - 1);
+    const px = (col + 0.5) * c * state.tl.scale + state.tl.off;
+    if (px < -40 || px > canvas.width + 40) continue;
+    ctx.strokeStyle = '#45474c';
+    ctx.beginPath();
+    ctx.moveTo(px, yAxis);
+    ctx.lineTo(px, yAxis + 5);
+    ctx.stroke();
+    ctx.fillText(fmt.format(new Date(range.min + frac * span)), px, yAxis + 17);
+  }
+  ctx.restore();
+}
+
+// Zoom no eixo X ancorado no cursor (scroll/trackpad).
+canvas.addEventListener('wheel', (e) => {
+  if (!state.inst || !isTimeline() || state.graphView) return;
+  e.preventDefault();
+  const { mx } = mouseXY(e);
+  const f = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  const novo = Math.min(8, Math.max(0.3, state.tl.scale * f));
+  state.tl.off = mx - (mx - state.tl.off) * (novo / state.tl.scale);
+  state.tl.scale = novo;
+  render();
+}, { passive: false });
 
 function drawCover(img, dx, dy, dw, dh) {
   const ir = img.width / img.height, dr = dw / dh;
@@ -581,6 +668,17 @@ function showInspector(b) {
     return;
   }
   el.innerHTML = `<strong>${escapeHtml(b.label || b.block_type)}</strong>`;
+  // Bloco-evento (timeline): instante + kind canônicos
+  if (b.props?.at_iso) {
+    const t = Date.parse(b.props.at_iso);
+    const quando = Number.isFinite(t)
+      ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(t)) + ' UTC'
+      : b.props.at_iso;
+    const linha = document.createElement('div');
+    linha.className = 'att';
+    linha.innerHTML = `🕐 ${escapeHtml(quando)}${b.props.kind ? ` · <code>${escapeHtml(b.props.kind)}</code>` : ''}`;
+    el.append(linha);
+  }
   for (const a of (b.attachments || [])) {
     const div = document.createElement('div');
     div.className = 'att';
@@ -1062,6 +1160,12 @@ canvas.addEventListener('mousedown', (e) => {
 
   const hit = blockAt(mx, my);
 
+  // Timeline: arrastar o vazio = pan no eixo do tempo (qualquer modo).
+  if (isTimeline() && !hit) {
+    state.tlPan = { startMx: mx, startOff: state.tl.off, moved: false };
+    return;
+  }
+
   if (!state.edit) {
     state.selectedBlock = hit ? hit.id : null;
     showInspector(hit);
@@ -1101,11 +1205,23 @@ canvas.addEventListener('mousedown', (e) => {
 });
 
 canvas.addEventListener('mousemove', (e) => {
+  if (state.tlPan) {
+    const { mx } = mouseXY(e);
+    state.tl.off = state.tlPan.startOff + (mx - state.tlPan.startMx);
+    if (Math.abs(mx - state.tlPan.startMx) > 3) state.tlPan.moved = true;
+    render();
+    return;
+  }
   if (!state.drag) return;
   state.drag.moved = true;
 });
 
 canvas.addEventListener('mouseup', (e) => {
+  if (state.tlPan) {
+    if (!state.tlPan.moved) { state.selectedBlock = null; showInspector(null); render(); }
+    state.tlPan = null;
+    return;
+  }
   if (state.drag && state.drag.moved) {
     const { mx, my } = mouseXY(e);
     const cell = screenToCell(mx, my);

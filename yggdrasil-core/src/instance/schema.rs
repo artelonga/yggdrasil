@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 /// `Block.props.note_slug`). Mudança puramente aditiva em disco — instâncias v1
 /// carregam sem migração (campos/props novos têm default); só são reescritas como
 /// v2 no próximo `save`.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// Um universo autorado por usuário: grade + camadas + blocos + conexões.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -124,11 +124,15 @@ impl GridSpec {
 }
 
 /// Projeção de render. Começa em `TwoDGrid` (grade tipo xadrez); iso depois.
+/// `Timeline` (YG-123, SCHEMA_VERSION 3): eixo X = tempo (`props.at_iso` dos
+/// blocos), uma faixa Y por layer/`kind` — protótipo do time-rendering lens
+/// CO-387.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Projection {
     TwoDGrid,
     Isometric,
+    Timeline,
 }
 
 /// Uma camada z-ordenada da instância.
@@ -377,6 +381,10 @@ mod tests {
             serde_json::to_string(&Projection::Isometric).unwrap(),
             "\"isometric\""
         );
+        assert_eq!(
+            serde_json::to_string(&Projection::Timeline).unwrap(),
+            "\"timeline\""
+        );
     }
 
     #[test]
@@ -435,7 +443,9 @@ mod tests {
         assert_eq!(inst.schema_version, 1, "campo cru preservado na leitura");
         assert_eq!(inst.id, "i");
         assert_eq!(inst.layers[0].blocks[0].id, "b1");
-        // Reserializa como v2 só quando explicitamente carimbado.
-        assert_eq!(SCHEMA_VERSION, 2);
+        // Reserializa na versão corrente só quando explicitamente carimbado.
+        // v3 = Projection::Timeline (YG-123) — variante aditiva, leitura de
+        // v1/v2 segue intacta (serde default não exige a variante nova).
+        assert_eq!(SCHEMA_VERSION, 3);
     }
 }

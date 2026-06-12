@@ -12,6 +12,7 @@
 //!   disco, referenciado pelo grafo via `Block.props.note_slug`.
 
 pub mod edit;
+pub mod generators;
 pub mod note;
 pub mod schema;
 pub mod store;
