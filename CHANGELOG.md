@@ -2,6 +2,21 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.12.0] — 2026-06-12 — YG-125: rascunho server-side — a branch cross-device do editor
+
+### Added
+
+- **`DraftStore`** (`yggdrasil-core`): rascunhos por usuário em
+  `<id>/drafts/<user-slug>/<slug>.md` — deliberadamente **fora de `notes/`**, então um
+  rascunho **nunca passa pelo producer do bridge** (privacidade por construção; teste
+  cobre zero `NoteWritten` em writes de draft).
+- **API** `GET/PUT/DELETE /api/v1/instances/{id}/notes/{slug}/draft` (owner-only por
+  JWT; 401 anônimo, 403 não-dono).
+- **Editor popup**: a branch de rascunho agora sincroniza com o servidor (debounce) —
+  trocar de navegador/dispositivo oferece "Há um rascunho de outro dispositivo
+  (HH:MM) — Continuar / Descartar". localStorage segue como fallback offline; commit
+  ou descartar dissolve a branch nos dois lados. Anônimo: 100% local, sem regressão.
+
 ## [2.11.0] — 2026-06-11 — Editor de nota em popup: rascunho-como-branch, preview ao vivo, links seguros
 
 ### Added

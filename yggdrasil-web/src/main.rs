@@ -282,6 +282,14 @@ async fn main() -> anyhow::Result<()> {
                 .put(api::instances::put_note)
                 .delete(api::instances::delete_note),
         )
+        // YG-125: rascunho server-side (branch cross-device do editor popup) —
+        // owner-only, fora de notes/, nunca passa pelo producer do bridge.
+        .route(
+            "/api/v1/instances/{id}/notes/{slug}/draft",
+            get(api::instances::get_draft)
+                .put(api::instances::put_draft)
+                .delete(api::instances::delete_draft),
+        )
         .route("/api/v1/templates", get(api::instances::list_templates))
         .route(
             "/api/v1/templates/{slug}",

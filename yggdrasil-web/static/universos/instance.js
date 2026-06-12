@@ -664,6 +664,40 @@ function noteHashLink(slug) {
   return `${location.origin}/universos/instance/${encodeURIComponent(state.id)}#nota=${encodeURIComponent(slug)}&editar=1`;
 }
 
+// Rascunho server-side (YG-125): a mesma branch, cross-device. Endpoints
+// owner-only; falha de rede degrada para o localStorage em silêncio.
+function draftUrl(slug) {
+  return `${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}/draft`;
+}
+async function fetchServerDraft(slug) {
+  if (!state.token) return null;
+  try {
+    const r = await fetch(draftUrl(slug), { headers: authHeaders() });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return { text: d.markdown, ts: Date.parse(d.updated) || 0 };
+  } catch { return null; }
+}
+function pushServerDraft(slug, text) {
+  if (!state.token) return;
+  fetch(draftUrl(slug), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ markdown: text }),
+  }).catch(() => { /* offline → LS cobre */ });
+}
+function discardDraft(slug) {
+  localStorage.removeItem(draftKey(slug));
+  if (state.token) fetch(draftUrl(slug), { method: 'DELETE', headers: authHeaders() }).catch(() => {});
+}
+
+function offerDraft(ta, banner, texto, origem, quando, slug) {
+  banner.hidden = false;
+  $id('ed-draft-txt').textContent = `Há um rascunho não salvo${origem}${quando ? ` (${quando})` : ''}.`;
+  $id('ed-draft-keep').onclick = () => { ta.value = texto; banner.hidden = true; edPreview(); };
+  $id('ed-draft-drop').onclick = () => { discardDraft(slug); banner.hidden = true; };
+}
+
 function openNoteEditor(slug, title) {
   const note = noteBySlug(slug);
   editor.slug = slug;
@@ -671,22 +705,26 @@ function openNoteEditor(slug, title) {
   editor.baseline = note?.body || '';
   $id('ed-title').textContent = `✎ ${editor.title}`;
   const ta = $id('ed-text');
+  ta.value = editor.baseline;
 
-  // rascunho pendente (a "branch"): oferece continuar ou descartar
+  // rascunho pendente (a "branch"): local primeiro, depois o do servidor se
+  // for mais novo (feito noutro dispositivo)
   let draft = null;
   try { draft = JSON.parse(localStorage.getItem(draftKey(slug))); } catch { /* corrompido → ignora */ }
   const banner = $id('ed-draft-banner');
+  banner.hidden = true;
   if (draft && typeof draft.text === 'string' && draft.text !== editor.baseline) {
-    banner.hidden = false;
-    const quando = draft.ts ? new Date(draft.ts).toLocaleTimeString('pt-BR') : '';
-    $id('ed-draft-txt').textContent = `Há um rascunho não salvo${quando ? ` (${quando})` : ''}.`;
-    ta.value = editor.baseline;
-    $id('ed-draft-keep').onclick = () => { ta.value = draft.text; banner.hidden = true; edPreview(); };
-    $id('ed-draft-drop').onclick = () => { localStorage.removeItem(draftKey(slug)); banner.hidden = true; };
-  } else {
-    banner.hidden = true;
-    ta.value = editor.baseline;
+    offerDraft(ta, banner, draft.text, '',
+      draft.ts ? new Date(draft.ts).toLocaleTimeString('pt-BR') : '', slug);
   }
+  fetchServerDraft(slug).then((sd) => {
+    if (!sd || editor.slug !== slug) return;          // editor já fechou/trocou
+    if (sd.text === editor.baseline) return;          // igual à nota → nada a oferecer
+    if (draft && (draft.ts || 0) >= sd.ts) return;    // a branch local é mais nova
+    if (ta.value !== editor.baseline) return;         // usuário já está digitando
+    offerDraft(ta, banner, sd.text, ' de outro dispositivo',
+      sd.ts ? new Date(sd.ts).toLocaleTimeString('pt-BR') : '', slug);
+  });
 
   $id('note-editor').classList.add('open');
   history.replaceState(null, '', `#nota=${encodeURIComponent(slug)}&editar=1`);
@@ -711,11 +749,12 @@ function edPreview() {
 function edSaveDraft() {
   if (!editor.slug) return;
   const text = $id('ed-text').value;
-  if (text === editor.baseline) { localStorage.removeItem(draftKey(editor.slug)); return; }
+  if (text === editor.baseline) { discardDraft(editor.slug); return; }
   try {
     localStorage.setItem(draftKey(editor.slug), JSON.stringify({ text, ts: Date.now() }));
-    $id('ed-status').textContent = `rascunho guardado ${new Date().toLocaleTimeString('pt-BR')} · nada publica até salvar`;
-  } catch { /* LS cheio — segue só em memória */ }
+  } catch { /* LS cheio — o servidor cobre */ }
+  pushServerDraft(editor.slug, text); // branch cross-device (YG-125)
+  $id('ed-status').textContent = `rascunho guardado ${new Date().toLocaleTimeString('pt-BR')} · nada publica até salvar`;
 }
 
 async function edCommit() {
@@ -723,7 +762,9 @@ async function edCommit() {
   const slug = editor.slug;
   const ok = await saveNote(slug, editor.title, $id('ed-text').value);
   if (ok === false) return; // toast de erro já apareceu; rascunho intacto
-  localStorage.removeItem(draftKey(slug));
+  // baseline = texto commitado, senão o edSaveDraft do close recriaria a branch
+  editor.baseline = $id('ed-text').value;
+  discardDraft(slug); // commit feito → a branch (local + servidor) se dissolve
   closeNoteEditor();
   toast('💾 Nota publicada');
 }
