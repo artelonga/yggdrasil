@@ -2,6 +2,19 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.16.0] — 2026-06-12 — YG-128 (parte 1): /analytics — seção pública de analytics ao vivo
+
+### Added
+
+- **`/analytics`** no yggdrasil (padrão do dashboard público da ArteLonga): KPIs de
+  site (views, visitantes, sessões, países — `summary?universe=yggdrasil` do hub do
+  CO, PII-stripped, cache 5min), KPIs **vivos** de jogo (jogando agora ●, sessões
+  24h — `/api/v1/stats` local, polling 10s), gráfico de visitas por dia, páginas
+  mais visitadas, geografia e placares recentes. Período selecionável (1/7/30/90d).
+  Nota de privacidade com opt-out documentado. Link "📈 Ao vivo" na nav global.
+- Pendente na YG-128: stream WebSocket próprio, retenção agendada, redaction de
+  paths privados.
+
 ## [2.15.0] — 2026-06-12 — YG-127 Fase 1: telemetria do yggdrasil no hub de analytics do CO
 
 ### Added
