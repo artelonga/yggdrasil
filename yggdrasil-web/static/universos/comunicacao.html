@@ -19,10 +19,10 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-    #app { position: fixed; top: 48px; left: 0; right: 0; bottom: 0; overflow: hidden; }
+    #app { position: fixed; top: calc(48px + var(--yg-nav-h, 0px)); left: 0; right: 0; bottom: 0; overflow: hidden; }
 
     /* Toolbar */
-    #toolbar { position: fixed; top: 0; left: 0; right: 0; height: 48px; display: flex; align-items: center;
+    #toolbar { position: fixed; top: var(--yg-nav-h, 0px); left: 0; right: 0; height: 48px; display: flex; align-items: center;
       gap: .5rem; padding: 0 .75rem; background: rgba(13,13,18,.86); border-bottom: 1px solid var(--line);
       backdrop-filter: blur(6px); z-index: 10; }
     #toolbar .title { font-weight: 300; letter-spacing: .14em; text-transform: uppercase; font-size: .82rem; color: var(--gold); }
@@ -37,7 +37,7 @@
     #inspector input:disabled, #inspector textarea:disabled { opacity: .8; cursor: default; }
 
     /* Inspector */
-    #inspector { position: fixed; top: 48px; right: 0; bottom: 0; width: 320px; background: var(--panel);
+    #inspector { position: fixed; top: calc(48px + var(--yg-nav-h, 0px)); right: 0; bottom: 0; width: 320px; background: var(--panel);
       border-left: 1px solid var(--line); padding: 1rem; overflow-y: auto; transform: translateX(100%);
       transition: transform .18s ease; z-index: 9; }
     #inspector.open { transform: none; }

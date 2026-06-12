@@ -703,7 +703,17 @@ async function boot() {
     if (id) await loadRoom(id);
     else if (template && state.token) await createRoom(template);
     else if (last) { history.replaceState(null, '', `${location.pathname}?id=${last}`); await loadRoom(last); }
-    else await openSalas();
+    else {
+      // YG-133: sem sala na URL/histórico, cai direto no primeiro léxico
+      // público (Mbyá ordena primeiro) — nada de modal cobrindo a página;
+      // os chips (YG-132) deixam a troca sempre visível.
+      _publicas = await api('GET', '/salas?published=true');
+      const primeira = _publicas.slice().sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+      if (primeira) {
+        history.replaceState(null, '', `${location.pathname}?id=${primeira.id}`);
+        await loadRoom(primeira.id);
+      } else await openSalas();
+    }
   } catch (err) {
     if (err.message !== 'nao_autenticado') toast('Erro: ' + err.message);
     await openSalas();

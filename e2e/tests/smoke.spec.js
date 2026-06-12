@@ -1,0 +1,54 @@
+// Smoke E2E (YG-133) — pega exatamente as classes de bug reportadas em
+// 2026-06-12: conteúdo 404 atrás de página 200, e UI coberta pela nav fixa.
+const { test, expect } = require('@playwright/test');
+
+// Falha o teste em qualquer exceção de página (js_error silencioso).
+function guardErrors(page) {
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+  return erros;
+}
+
+test('corpus do Ayvu Rapyta carrega capítulos (não "indisponível")', async ({ page }) => {
+  const erros = guardErrors(page);
+  await page.goto('/universos/corpus');
+  // o reader mostra "Corpus indisponível (NNN)" quando a API falha
+  await expect(page.locator('#trail')).not.toContainText('indisponível', { timeout: 10_000 });
+  // capítulos populados no <select>
+  const opcoes = page.locator('#chapsel option');
+  await expect(opcoes.first()).toBeAttached({ timeout: 10_000 });
+  expect(await opcoes.count()).toBeGreaterThan(0);
+  expect(erros).toEqual([]);
+});
+
+test('comunicação: toolbar e chips de léxicos visíveis, NÃO cobertos pela nav', async ({ page }) => {
+  const erros = guardErrors(page);
+  await page.goto('/universos/comunicacao');
+  const toolbar = page.locator('#toolbar');
+  await expect(toolbar).toBeVisible();
+
+  // o ponto central do topo da toolbar deve pertencer à própria toolbar —
+  // se a nav fixa a cobre, elementFromPoint devolve a nav (o bug reportado)
+  const box = await toolbar.boundingBox();
+  expect(box).not.toBeNull();
+  const coberta = await page.evaluate(([x, y]) => {
+    const el = document.elementFromPoint(x, y);
+    return el ? !document.getElementById('toolbar').contains(el) : true;
+  }, [box.x + box.width / 2, box.y + 8]);
+  expect(coberta, 'toolbar coberta por outro elemento fixo').toBe(false);
+
+  // chips de léxicos (YG-132): Mbyá alcançável + link ao Ayvu Rapyta
+  await expect(page.locator('#lexicos a', { hasText: 'Mbyá' })).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('#lexicos a', { hasText: 'Ayvu Rapyta' })).toBeVisible();
+  expect(erros).toEqual([]);
+});
+
+test('páginas principais respondem sem exceção de JS', async ({ page }) => {
+  for (const rota of ['/', '/universos', '/lobby', '/analytics', '/feedback']) {
+    const erros = guardErrors(page);
+    const resp = await page.goto(rota);
+    expect(resp.status(), rota).toBe(200);
+    await page.waitForTimeout(600); // dá tempo do JS inicial rodar
+    expect(erros, `exceção de página em ${rota}`).toEqual([]);
+  }
+});

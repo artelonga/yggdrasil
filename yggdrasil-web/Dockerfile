@@ -81,6 +81,10 @@ COPY --from=builder /usr/src/yggdrasil/yggdrasil-web/static /app/yggdrasil-web/s
 COPY comunicacao/yoruba       /app/comunicacao-seed/yoruba
 COPY comunicacao/guarani-mbya /app/comunicacao-seed/guarani-mbya
 COPY comunicacao/portuguese   /app/comunicacao-seed/portuguese
+# YG-133: corpus baked (Ayvu Rapyta) — sem isto, /universos/corpus dá 404 em
+# prod (o reader lê <lexicon-root>/corpus/<slug>.json). Só os .json entram; as
+# fontes por-capítulo ficam fora via .dockerignore.
+COPY comunicacao/corpus       /app/comunicacao-seed/corpus
 
 # Entrypoint: copia a semente para o volume gravável no boot (preserva _users/),
 # depois exec do servidor. Best-effort — nunca aborta o boot.
