@@ -62,8 +62,8 @@
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(card); }
         });
       });
-      // pré-seleciona "jardim" (notes-first) se existir, senão o primeiro
-      var pref = elTemplates.querySelector('[data-slug="jardim"]') || cards[0];
+      // pré-seleciona "universo" (tipo único, YG-126), senão o primeiro
+      var pref = elTemplates.querySelector('[data-slug="universo"]') || cards[0];
       if (pref) select(pref);
     });
 

@@ -2,6 +2,23 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.14.0] — 2026-06-12 — YG-126: um tipo de universo, todas as formas (views de runtime)
+
+### Changed
+
+- **Um único modelo de criação** ("Universo": nota + pasta + evento) — revisado o
+  padrão do co: view é toggle de runtime (`state.view`), nunca propriedade do
+  universo. Os modelos legados (blank/jardim/neuroanatomia/timeline) saem da
+  criação mas seguem resolvendo por slug (paleta de instâncias existentes intacta).
+- **Player ganha seletor de views**: 🗺 Mapa | 🕐 Timeline | 🕸 Grafo sobre a MESMA
+  instância. A timeline virou **lente read-only derivada** de qualquer universo:
+  blocos com `props.at_iso` (evento explícito), **criação de notas** (fallback
+  `created_at`, como o co faz) e a **criação do próprio universo** viram eventos,
+  em faixas por família de kind — eventos de sistema futuros (scores etc., via
+  bridge) já têm onde aterrissar. Cena derivada client-side espelha a régua
+  `x_for`/`lane_rows` do gerador (adendo registrado na spec draft do CO-387).
+- Instâncias com `projection: timeline` abrem direto na lente timeline.
+
 ## [2.13.0] — 2026-06-12 — YG-123: Projection::Timeline — mundo-timeline navegável
 
 ### Added
