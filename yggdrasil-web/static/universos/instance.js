@@ -133,6 +133,19 @@ const STATUS_GLIFO = { todo: '☐', doing: '◐', done: '☑' };
 const STATUS_TUI = { todo: '[ ]', doing: '[~]', done: '[x]' };
 const STATUS_NOME = { todo: 'a fazer', doing: 'fazendo', done: 'feita' };
 
+// YG-131: a forma emerge do conteúdo — ícone é RENDER, nunca verdade gravada.
+// nota sem corpo = 📁 pasta · corpo + filhos = 🗂 índice (index.html) ·
+// corpo sem filhos = 📝 artigo · blocos legados mantêm o próprio ícone.
+function iconeDoNo(b) {
+  const slug = b?.props?.note_slug;
+  if (!slug) return b?.props?.icon || (b?.block_type === 'pasta' ? '📁' : '■');
+  const note = noteBySlug(slug);
+  const temCorpo = !!(note?.body || '').trim();
+  const temFilhos = (childrenByParent()[b.id] || []).length > 0;
+  if (!temCorpo) return '📁';
+  return temFilhos ? '🗂' : '📝';
+}
+
 function statusDoBloco(b) {
   const slug = b?.props?.note_slug;
   return slug ? (noteBySlug(slug)?.status || null) : null;
@@ -548,7 +561,7 @@ function drawBlock(b) {
   const { cx, cy } = cellCenter(b.pos.x, b.pos.y);
   const r = c * 0.45;
   const color = b.props?.color || '#d4af37';
-  const icon = b.props?.icon || '■';
+  const icon = iconeDoNo(b);
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = color + '33';
@@ -912,13 +925,43 @@ function showNoteInspector(el, b, slug) {
     el.append(chips);
   }
 
-  const view = document.createElement('div');
-  view.className = 'att note-view';
-  view.innerHTML = renderMarkdown(note?.body || '_(nota vazia)_');
-  view.querySelectorAll('a.wikilink').forEach((a) => {
-    a.addEventListener('click', (e) => { e.preventDefault(); openNote(a.dataset.slug); });
-  });
-  el.append(view);
+  // YG-131: índice (index.html) — corpo renderizado (se houver)…
+  const temCorpo = !!(note?.body || '').trim();
+  if (temCorpo) {
+    const view = document.createElement('div');
+    view.className = 'att note-view';
+    view.innerHTML = renderMarkdown(note.body);
+    view.querySelectorAll('a.wikilink').forEach((a) => {
+      a.addEventListener('click', (e) => { e.preventDefault(); openNote(a.dataset.slug); });
+    });
+    el.append(view);
+  }
+  // …+ conteúdo da pasta (filhos clicáveis, se houver) — o mesmo painel para
+  // pasta (sem corpo), artigo (sem filhos) e índice (ambos).
+  const filhos = childrenByParent()[b.id] || [];
+  if (filhos.length) {
+    const cab = document.createElement('p');
+    cab.className = 'hint';
+    cab.textContent = `📁 ${filhos.length} dentro:`;
+    el.append(cab);
+    filhos.forEach((f) => {
+      const d = document.createElement('div');
+      d.className = 'palette-item';
+      d.innerHTML = `<span class="ico">${iconeDoNo(f)}</span> ${escapeHtml(f.label || f.id)}`;
+      d.onclick = () => {
+        state.selectedBlock = f.id;
+        if (f.props?.note_slug) openNote(f.props.note_slug); else showInspector(f);
+        render();
+      };
+      el.append(d);
+    });
+  }
+  if (!temCorpo && !filhos.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'hint';
+    vazio.textContent = 'Vazia — escreva um corpo (vira artigo) ou arraste nós para dentro (vira pasta).';
+    el.append(vazio);
+  }
 
   const back = state.backlinks?.[slug] || [];
   if (back.length) {
@@ -1194,7 +1237,7 @@ function renderTree() {
     const ramo = ultimo ? '└── ' : '├── ';
     const fechado = !!state.collapsed[b.id];
     const seta = kids.length ? (fechado ? '▸ ' : '▾ ') : '';
-    const icone = b.props?.icon || (b.props?.note_slug ? '📝' : '·');
+    const icone = iconeDoNo(b);
     const sel = b.id === state.selectedBlock ? ';color:#e9c349' : '';
     const st = statusDoBloco(b);
     const chk = st
@@ -1276,17 +1319,27 @@ async function confirmarInline() {
   const primeira = linhas[0].trim();
 
   if (linhas.length === 1 && /\/$/.test(primeira)) {
-    // `nome/` → pasta (idioma de terminal)
+    // `nome/` → NOTA de corpo vazio (YG-131): pasta é render, não tipo.
+    // Ganhar corpo depois vira índice; os filhos ficam.
     const nome = primeira.replace(/\/+$/, '').trim();
     if (!nome) return;
+    let slug = slugifyJs(nome) || id;
+    const res = await fetch(`${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ title: nome, markdown: '' }),
+    });
+    if (!res.ok) { toast('⚠ Falha ao criar pasta'); return; }
+    slug = (await res.json()).slug;
     await patch({
       op: 'place_block',
       layer,
       block: {
-        id, block_type: 'pasta', pos: { x: cell.x, y: cell.y },
-        label: nome, props: { icon: '📁' },
+        id, block_type: 'note', pos: { x: cell.x, y: cell.y },
+        label: nome, props: { note_slug: slug },
       },
     });
+    await loadNotes();
   } else {
     // nota: 1ª linha = título (inline na grade); resto = corpo.
     // `[] …`/`[x] …`/`[~] …` = tarefa por composição (YG-130): nota + status.
@@ -1621,11 +1674,10 @@ canvas.addEventListener('mouseup', (e) => {
       // bloco vira filho (`parent`); em cima de nota/landmark vira `ref`.
       const alvo = blockAt(mx, my);
       if (alvo && alvo.id !== state.drag.blockId) {
-        const kind = alvo.block_type === 'pasta' ? 'parent' : 'ref';
-        addConnection(state.drag.blockId, alvo.id, kind).then(() => {
-          toast(kind === 'parent'
-            ? `📁 Movido para dentro de "${alvo.label || 'pasta'}"`
-            : '🔗 Ligação criada');
+        // YG-131: soltar sobre qualquer nó ANINHA (filesystem mental model).
+        // Referência é gesto textual: wikilink [[...]] (ou o botão 🔗).
+        addConnection(state.drag.blockId, alvo.id, 'parent').then(() => {
+          toast(`📁 Movido para dentro de "${alvo.label || 'nó'}"`);
         });
       } else {
         moveBlock(state.drag.blockId, state.drag.layerId, cell);
