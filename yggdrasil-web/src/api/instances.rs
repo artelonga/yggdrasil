@@ -574,6 +574,10 @@ pub struct NoteBody {
     pub title: String,
     #[serde(default)]
     pub markdown: String,
+    /// Tarefa por composição (YG-130): ausente = preserva o status atual;
+    /// `""` limpa (volta a nota); `todo|doing|done` define.
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 /// `PUT /api/v1/instances/{id}/notes/{slug}` — cria/atualiza uma nota (owner-only).
@@ -599,7 +603,12 @@ pub async fn put_note(
     let store_for_notes = note_store(&state, &id);
     // created vs updated: a nota já existia em disco antes deste save?
     let existed = store_for_notes.load(&slug).is_ok();
-    match store_for_notes.save(&slug, &title, &body.markdown) {
+    // YG-130: status ausente preserva (save); presente define/limpa por composição
+    let saved = match &body.status {
+        None => store_for_notes.save(&slug, &title, &body.markdown),
+        Some(st) => store_for_notes.save_with_status(&slug, &title, &body.markdown, Some(st)),
+    };
+    match saved {
         Ok(n) => {
             state.emit_note(NoteWritten {
                 instance: id.clone(),
@@ -613,7 +622,11 @@ pub async fn put_note(
                 title: n.title.clone(),
                 body: n.body.clone(),
                 updated_at: Some(n.updated.to_rfc3339()),
-                frontmatter: None,
+                // tarefa federa como nota + frontmatter de status (composição)
+                frontmatter: n
+                    .status
+                    .as_ref()
+                    .map(|st| serde_json::json!({ "status": st })),
                 actor: None,
                 visibility: crate::co_bridge_producer::Visibility::Public,
             });
@@ -1235,6 +1248,51 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // ─── Tarefa por composição (YG-130) ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn nota_vira_tarefa_por_status_e_put_sem_status_preserva() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+
+        // cria já como tarefa (composer `[] …` manda status=todo)
+        let resp = put_note_req(
+            &app,
+            &id,
+            "alice",
+            "comprar-tinta",
+            serde_json::json!({ "title": "Comprar tinta", "markdown": "", "status": "todo" }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["status"], "todo");
+
+        // editar o corpo SEM mandar status preserva a tarefa
+        let resp = put_note_req(
+            &app,
+            &id,
+            "alice",
+            "comprar-tinta",
+            serde_json::json!({ "title": "Comprar tinta", "markdown": "acrílica 500ml" }),
+        )
+        .await;
+        let v = body_json(resp).await;
+        assert_eq!(v["status"], "todo", "PUT sem status não destarefa");
+
+        // status:"" limpa — volta a nota pura (sem o campo na resposta)
+        let resp = put_note_req(
+            &app,
+            &id,
+            "alice",
+            "comprar-tinta",
+            serde_json::json!({ "title": "Comprar tinta", "markdown": "acrílica 500ml", "status": "" }),
+        )
+        .await;
+        let v = body_json(resp).await;
+        assert!(v.get("status").is_none() || v["status"].is_null());
     }
 
     // ─── Rascunhos (YG-125) ──────────────────────────────────────────────────

@@ -35,6 +35,11 @@ pub enum NoteError {
 }
 
 /// Uma nota: Markdown canônico + metadados derivados do frontmatter.
+///
+/// **Tarefa por composição (YG-130)**: `status: Some("todo"|"doing"|"done")`
+/// torna a nota uma *tarefa* (item de quadro); `None` é a nota pura (jardim).
+/// Nenhum tipo novo — a diferença entre os dois conceitos do glossário é
+/// exatamente este campo opcional.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Note {
     pub slug: String,
@@ -43,6 +48,9 @@ pub struct Note {
     pub body: String,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
+    /// Status de tarefa (composição: nota + status = tarefa).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
     /// Wikilinks de saída, na ordem do corpo (alvo já resolvido a slug).
     #[serde(default)]
     pub links: Vec<NoteLink>,
@@ -85,13 +93,28 @@ impl NoteStore {
     }
 
     /// Cria/atualiza uma nota. `slug` é sempre normalizado por [`note_slug`] (defesa
-    /// contra path traversal). Preserva `created` se a nota já existir.
+    /// contra path traversal). Preserva `created` — e o `status` (tarefa) — se a
+    /// nota já existir: editar o corpo nunca "destarefa".
     pub fn save(&self, slug: &str, title: &str, body: &str) -> Result<Note, NoteError> {
+        let status = self.load(slug).ok().and_then(|n| n.status);
+        self.save_with_status(slug, title, body, status.as_deref())
+    }
+
+    /// [`save`] com o status de tarefa explícito (`None` = nota pura).
+    /// Composição: o status é só um campo de frontmatter — mesmo arquivo.
+    pub fn save_with_status(
+        &self,
+        slug: &str,
+        title: &str,
+        body: &str,
+        status: Option<&str>,
+    ) -> Result<Note, NoteError> {
         let slug = note_slug(slug).ok_or(NoteError::InvalidSlug)?;
         std::fs::create_dir_all(&self.dir)?;
         let now = Utc::now();
         let created = self.load(&slug).map(|n| n.created).unwrap_or(now);
-        let md = render_note_markdown(&slug, title, body, created, now);
+        let status = status.map(str::trim).filter(|s| !s.is_empty());
+        let md = render_note_markdown(&slug, title, body, created, now, status);
         let path = self.note_path(&slug);
         let tmp = self.dir.join(format!("{slug}.md.tmp"));
         std::fs::write(&tmp, md)?;
@@ -102,8 +125,15 @@ impl NoteStore {
             body: body.to_string(),
             created,
             updated: now,
+            status: status.map(str::to_string),
             links: links_from_body(body),
         })
+    }
+
+    /// Define/limpa só o status (tarefa ⇄ nota), preservando título e corpo.
+    pub fn set_status(&self, slug: &str, status: Option<&str>) -> Result<Note, NoteError> {
+        let n = self.load(slug)?;
+        self.save_with_status(slug, &n.title, &n.body, status)
     }
 
     /// Lê uma nota pelo slug.
@@ -346,11 +376,16 @@ fn render_note_markdown(
     body: &str,
     created: DateTime<Utc>,
     updated: DateTime<Utc>,
+    status: Option<&str>,
 ) -> String {
     let mut s = String::from("---\n");
     s.push_str("type: nota\n");
     s.push_str(&format!("slug: {}\n", yaml_scalar(slug)));
     s.push_str(&format!("title: {}\n", yaml_scalar(title)));
+    // tarefa = nota + status (YG-130): um campo, não um tipo
+    if let Some(st) = status {
+        s.push_str(&format!("status: {}\n", yaml_scalar(st)));
+    }
     s.push_str(&format!(
         "created: {}\n",
         yaml_scalar(&created.to_rfc3339())
@@ -391,6 +426,7 @@ fn parse_note(slug: &str, raw: &str) -> Note {
     let updated = fm_get(&fm, "updated")
         .and_then(|s| parse_dt(&s))
         .unwrap_or(created);
+    let status = fm_get(&fm, "status").filter(|s| !s.trim().is_empty());
     Note {
         slug: slug.to_string(),
         title,
@@ -398,6 +434,7 @@ fn parse_note(slug: &str, raw: &str) -> Note {
         body,
         created,
         updated,
+        status,
     }
 }
 
@@ -540,6 +577,39 @@ mod tests {
                 label: None
             }
         );
+    }
+
+    // ── Tarefa por composição (YG-130) ────────────────────────────────────
+
+    #[test]
+    fn status_round_trip_e_preservado_no_save() {
+        let (s, _d) = store();
+        // nota pura não tem status
+        let n = s.save("ideia", "Ideia", "corpo").unwrap();
+        assert_eq!(n.status, None);
+        // vira tarefa por composição: só o campo muda
+        let t = s.set_status("ideia", Some("todo")).unwrap();
+        assert_eq!(t.status.as_deref(), Some("todo"));
+        assert_eq!(t.body.trim_end(), "corpo");
+        // round-trip do markdown preserva
+        assert_eq!(s.load("ideia").unwrap().status.as_deref(), Some("todo"));
+        // editar o corpo NÃO destarefa (save preserva status existente)
+        s.save("ideia", "Ideia", "corpo v2").unwrap();
+        let n2 = s.load("ideia").unwrap();
+        assert_eq!(n2.status.as_deref(), Some("todo"));
+        assert_eq!(n2.body.trim_end(), "corpo v2");
+        // limpar devolve a nota pura
+        s.set_status("ideia", None).unwrap();
+        assert_eq!(s.load("ideia").unwrap().status, None);
+    }
+
+    #[test]
+    fn save_with_status_normaliza_vazio_para_none() {
+        let (s, _d) = store();
+        let n = s.save_with_status("t", "T", "x", Some("  ")).unwrap();
+        assert_eq!(n.status, None);
+        let n = s.save_with_status("t", "T", "x", Some("doing")).unwrap();
+        assert_eq!(n.status.as_deref(), Some("doing"));
     }
 
     // ── DraftStore (YG-125) ───────────────────────────────────────────────

@@ -128,6 +128,35 @@ function noteBlock(slug) {
 
 function noteTitle(slug) { return noteBySlug(slug)?.title || slug; }
 
+// ─── Tarefa por composição (YG-130): nota + status ───────────────────────────
+const STATUS_GLIFO = { todo: '☐', doing: '◐', done: '☑' };
+const STATUS_TUI = { todo: '[ ]', doing: '[~]', done: '[x]' };
+const STATUS_NOME = { todo: 'a fazer', doing: 'fazendo', done: 'feita' };
+
+function statusDoBloco(b) {
+  const slug = b?.props?.note_slug;
+  return slug ? (noteBySlug(slug)?.status || null) : null;
+}
+
+// todo → doing → done → (limpa: volta a nota) → todo …
+async function ciclarStatus(slug) {
+  const n = noteBySlug(slug);
+  if (!n) return;
+  const ordem = { todo: 'doing', doing: 'done', done: '' };
+  const novo = n.status == null ? 'todo' : (ordem[n.status] ?? 'todo');
+  const res = await fetch(`${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ title: n.title, markdown: n.body, status: novo }),
+  });
+  if (!res.ok) { toast('⚠ Falha ao mudar status'); return; }
+  await loadNotes();
+  renderNotesList();
+  render();
+  const blk = noteBlock(slug);
+  if (blk && state.selectedBlock === blk.id) showInspector(blk);
+}
+
 // ─── Markdown + slug (espelha o slugify do servidor para ASCII/PT) ────────────
 
 function slugifyJs(s) {
@@ -535,9 +564,11 @@ function drawBlock(b) {
   if (b.label) {
     ctx.font = `${Math.round(c * 0.42)}px system-ui`;
     ctx.fillStyle = '#e8e3d3';
-    // pasta fechada mostra quantos filhos guarda (▸N); aberta nada
+    // pasta fechada mostra quantos filhos guarda (▸N); tarefa mostra ☐/◐/☑
     const kids = state.collapsed[b.id] ? (childrenByParent()[b.id] || []).length : 0;
-    ctx.fillText(kids ? `${b.label} ▸${kids}` : b.label, cx, cy + r + c * 0.35);
+    const st = statusDoBloco(b);
+    const rotulo = (st ? STATUS_GLIFO[st] + ' ' : '') + b.label + (kids ? ` ▸${kids}` : '');
+    ctx.fillText(rotulo, cx, cy + r + c * 0.35);
   }
 }
 
@@ -854,6 +885,33 @@ function showNoteInspector(el, b, slug) {
   const note = noteBySlug(slug);
   el.innerHTML = `<strong>${escapeHtml(note?.title || b.label || slug)}</strong>`;
 
+  // tarefa por composição: chips de status (dono) — nota · ☐ · ◐ · ☑
+  if (state.me && state.inst && state.me === state.inst.owner) {
+    const chips = document.createElement('div');
+    chips.className = 'layer-row';
+    [[null, '· nota'], ['todo', '☐ a fazer'], ['doing', '◐ fazendo'], ['done', '☑ feita']]
+      .forEach(([st, rotulo]) => {
+        const btn = document.createElement('button');
+        btn.textContent = rotulo;
+        btn.style.fontSize = '0.7rem';
+        if ((note?.status || null) === st) btn.classList.add('active');
+        btn.onclick = async () => {
+          const res = await fetch(`${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify({ title: note?.title || slug, markdown: note?.body || '', status: st || '' }),
+          });
+          if (!res.ok) { toast('⚠ Falha ao mudar status'); return; }
+          await loadNotes();
+          renderNotesList();
+          render();
+          showInspector(b);
+        };
+        chips.append(btn);
+      });
+    el.append(chips);
+  }
+
   const view = document.createElement('div');
   view.className = 'att note-view';
   view.innerHTML = renderMarkdown(note?.body || '_(nota vazia)_');
@@ -1138,8 +1196,12 @@ function renderTree() {
     const seta = kids.length ? (fechado ? '▸ ' : '▾ ') : '';
     const icone = b.props?.icon || (b.props?.note_slug ? '📝' : '·');
     const sel = b.id === state.selectedBlock ? ';color:#e9c349' : '';
+    const st = statusDoBloco(b);
+    const chk = st
+      ? `<a data-ciclar="${escapeHtml(b.props.note_slug)}" style="cursor:pointer;color:#6dbf8b" title="clique p/ avançar">${STATUS_TUI[st]}</a> `
+      : '';
     linhas.push(
-      `<span style="opacity:.4">${prefixo}${ramo}</span>` +
+      `<span style="opacity:.4">${prefixo}${ramo}</span>` + chk +
       `<a data-tree="${escapeHtml(b.id)}" style="cursor:pointer${sel}">` +
       `${seta}${icone} ${escapeHtml(b.label || b.id)}</a>`);
     if (fechado) return;
@@ -1155,6 +1217,9 @@ function renderTree() {
       if (!b) return;
       toggleNo(b);
     };
+  });
+  el.querySelectorAll('[data-ciclar]').forEach((a) => {
+    a.onclick = (e) => { e.stopPropagation(); ciclarStatus(a.dataset.ciclar); };
   });
 }
 
@@ -1223,14 +1288,18 @@ async function confirmarInline() {
       },
     });
   } else {
-    // nota: 1ª linha = título (inline na grade); resto = corpo
-    const titulo = primeira.slice(0, 80) || 'nota';
+    // nota: 1ª linha = título (inline na grade); resto = corpo.
+    // `[] …`/`[x] …`/`[~] …` = tarefa por composição (YG-130): nota + status.
+    const chk = primeira.match(/^\[( |x|~)?\]\s*/);
+    const status = chk ? ({ x: 'done', '~': 'doing' }[chk[1]] || 'todo') : undefined;
+    const semChk = chk ? primeira.slice(chk[0].length).trim() : primeira;
+    const titulo = semChk.slice(0, 80) || 'nota';
     const corpo = linhas.slice(1).join('\n').trim();
     let slug = slugifyJs(titulo) || id;
     const res = await fetch(`${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ title: titulo, markdown: corpo }),
+      body: JSON.stringify(status ? { title: titulo, markdown: corpo, status } : { title: titulo, markdown: corpo }),
     });
     if (!res.ok) { toast('⚠ Falha ao criar nota'); return; }
     slug = (await res.json()).slug;

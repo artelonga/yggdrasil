@@ -2,6 +2,22 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.18.0] — 2026-06-12 — YG-130: tarefas por composição — tarefa = nota + status
+
+### Added
+
+- **Tarefa é nota com um campo a mais** (composição sobre herança): `status:
+  todo|doing|done` opcional no frontmatter da nota. Zero tipos/storage novos;
+  limpar o status devolve a nota pura. Editar o corpo **nunca destarefa**
+  (PUT sem `status` preserva; `status:""` limpa).
+- **Composer**: `[] texto` cria tarefa (idioma checkbox markdown); `[x]` = feita,
+  `[~]` = fazendo.
+- **Grade**: rótulo ganha ☐/◐/☑; **Árvore TUI**: `[ ]`/`[~]`/`[x]` clicável —
+  cicla a fazer → fazendo → feita → nota. **Inspetor**: chips
+  nota · ☐ a fazer · ◐ fazendo · ☑ feita.
+- **Federação**: tarefa federa como nota com `status` no frontmatter do
+  `NoteWritten` — o CO a vê como entry com status (mesma composição do kanban dele).
+
 ## [2.17.0] — 2026-06-12 — YG-129: manipulação direta — o grid é o editor
 
 ### Changed
