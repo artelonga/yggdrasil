@@ -2,6 +2,25 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.23.0] — 2026-06-13 — YG-139: framework NLP de corpus (DuckDB) — frequência + joins cross-linguísticos
+
+### Added
+
+- **Motor de corpus sobre DuckDB** (`corpus_nlp.rs`, crate `duckdb` bundled):
+  índice colunar montado em memória no boot a partir do canônico (corpus JSON +
+  léxicos) — derivado e reconstruível, como o índice do léxico.
+- **Corpora nomeados e intercambiáveis**: `ayvu-rapyta` (transcrição),
+  `mbya-lexico` (4.8k termos), `yoruba-lexico`.
+- **Frequência por corpus** (`GET /api/v1/corpus/{nome}/freq`) — palavras mais
+  usadas, por popularidade.
+- **Join cross-linguístico via pivô-português** das glosas
+  (`GET /api/v1/corpus/compare?a=&b=&mode=inner|left`): *inner* = top de A só com
+  equivalente em B; *left* = todos de A. Liga línguas sem casar ortografias.
+- **Página `/universos/corpus-lab`**: seletor de corpora A/B + modo de join,
+  tabela de frequência + comparação; card no catálogo. Design em
+  `docs/architecture/nlp-corpus-framework.md`. Fases F3/F4 (salvar-como-corpus,
+  módulos pedagógicos) abertas no épico.
+
 ## [2.22.0] — 2026-06-13 — YG-137: perfil universal de usuário + catálogo com dois comportamentos
 
 ### Added

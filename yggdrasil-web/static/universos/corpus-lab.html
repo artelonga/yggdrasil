@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laboratório de corpus — Yggdrasil</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; min-width: 0; }
+    html, body { overflow-x: hidden; }
+    body { background: #0d0d12; color: #e8e3d3; font-family: system-ui, monospace;
+      min-height: 100vh; padding: 2rem 1rem; }
+    .wrap { max-width: 64rem; margin: 0 auto; }
+    h1 { font-weight: 300; letter-spacing: .2em; font-size: 1.6rem; }
+    .sub { opacity: .55; font-size: .82rem; margin: .4rem 0 1.4rem; line-height: 1.5; }
+    .controls { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-bottom: 1.4rem; }
+    select, .controls label { background: #15151c; color: #e8e3d3; border: 1px solid #2a2a35;
+      font: inherit; font-size: .85rem; padding: .45rem .6rem; border-radius: 6px; }
+    .controls .mode { display: flex; gap: .3rem; }
+    .controls .mode button { cursor: pointer; color: #d4af37; }
+    .controls .mode button.on { background: #d4af37; color: #1a1408; border-color: #d4af37; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1.4fr; gap: 1.2rem; }
+    @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+    .card { background: #14141b; border: 1px solid #24242e; border-radius: 10px; padding: 1rem 1.1rem; }
+    .card h2 { font-weight: 300; letter-spacing: .1em; font-size: .9rem; opacity: .8;
+      margin-bottom: .8rem; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; font-size: .84rem; table-layout: fixed; }
+    td, th { padding: .3rem .4rem; text-align: left; }
+    th { font-size: .6rem; text-transform: uppercase; letter-spacing: .1em; opacity: .5; }
+    td.n { text-align: right; color: #d4af37; }
+    td.t { word-break: break-all; }
+    td.eq { color: #6dbf8b; word-break: break-all; }
+    td.none { opacity: .35; font-style: italic; }
+    .empty { opacity: .5; font-style: italic; font-size: .85rem; padding: .6rem 0; }
+    .foot { opacity: .5; font-size: .74rem; margin-top: 1.4rem; line-height: 1.5; }
+    a { color: #d4af37; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>laboratório de corpus</h1>
+    <div class="sub">Frequência por corpus e comparação cross-linguística (join via
+      pivô-português das glosas). Mbyá ⟷ Iorubá e a transcrição do Ayvu Rapyta —
+      escolha os corpora e o modo de join.</div>
+
+    <div class="controls">
+      <label>A <select id="sel-a"></select></label>
+      <label>B <select id="sel-b"></select></label>
+      <span class="mode" id="mode">
+        <button data-mode="inner" class="on">∩ inner (só com equivalente)</button>
+        <button data-mode="left">⊇ left (todos de A)</button>
+      </span>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2 id="freq-title">Frequência de A</h2>
+        <table><thead><tr><th>#</th><th>termo</th><th>freq</th></tr></thead>
+          <tbody id="freq"></tbody></table>
+        <div class="empty" id="freq-empty" hidden>Sem dados.</div>
+      </div>
+      <div class="card">
+        <h2 id="cmp-title">A ⟷ B</h2>
+        <table><thead><tr><th>termo (A)</th><th>freq</th><th>equivalente (B)</th><th>freq</th></tr></thead>
+          <tbody id="cmp"></tbody></table>
+        <div class="empty" id="cmp-empty" hidden>Sem equivalências nesse modo.</div>
+      </div>
+    </div>
+
+    <p class="foot">O join liga termos de línguas diferentes quando suas glosas
+      (português) compartilham uma palavra de conteúdo — bridge de tradução sem
+      casar ortografias. O resultado é, ele próprio, um corpus (salvar/consultar:
+      fase futura). Backend: DuckDB. Ver <code>docs/architecture/nlp-corpus-framework.md</code>.</p>
+  </div>
+  <script src="/static/universos/corpus-lab.js"></script>
+  <script defer src="/static/nav.js"></script>
+  <script defer src="/static/telemetria.js"></script>
+</body>
+</html>

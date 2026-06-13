@@ -9,6 +9,7 @@ pub mod co_bridge_inbound;
 pub mod co_bridge_producer;
 pub mod co_rollups;
 pub mod comunicacao_routes;
+pub mod corpus_nlp;
 pub mod feedback;
 mod games;
 pub mod hint_engine;
@@ -405,6 +406,26 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "data/comunicacao".to_string());
     let comunicacao_lexicon_dir =
         std::env::var("COMUNICACAO_DIR").unwrap_or_else(|_| "../comunicacao".to_string());
+
+    // YG-139: motor NLP de corpus (DuckDB em memória, montado do canônico no
+    // boot). Best-effort: se o DuckDB falhar, o router de corpus não sobe.
+    let corpus_router = match corpus_nlp::CorpusDb::build(std::path::Path::new(
+        &comunicacao_lexicon_dir,
+    )) {
+        Ok(db) => {
+            tracing::info!("corpus-nlp: índice DuckDB montado");
+            Router::new()
+                .route("/api/v1/corpus", get(serve_corpus_list))
+                .route("/api/v1/corpus/compare", get(serve_corpus_compare))
+                .route("/api/v1/corpus/{name}/freq", get(serve_corpus_freq))
+                .with_state(Arc::new(db))
+        }
+        Err(e) => {
+            tracing::warn!(erro = %e, "corpus-nlp: DuckDB indisponível — rotas /corpus desligadas");
+            Router::new()
+        }
+    };
+
     let comunicacao_store = Arc::new(
         yggdrasil_core::comunicacao::RoomStore::new(&comunicacao_rooms_dir)
             .map_err(|e| anyhow::anyhow!("comunicacao store: {e}"))?,
@@ -554,6 +575,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/universos/vim", get(serve_vim))
         .route("/universos/comunicacao", get(serve_comunicacao))
         .route("/universos/corpus", get(serve_corpus))
+        .route("/universos/corpus-lab", get(serve_corpus_lab))
         // Fallback: o catálogo (YG-68) lista 41 universos mas só os embedded
         // têm página própria — qualquer outro slug (planned/external/shandara)
         // volta ao catálogo em vez de 404. Segmentos estáticos têm precedência
@@ -584,6 +606,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(feedback_router)
         .merge(comunicacao_router)
         .merge(stream_router)
+        .merge(corpus_router)
         // Criar universo autorado (template picker + meus universos). O segmento
         // estático "new" vence a captura {id} da rota do player abaixo.
         .route("/universos/instance/new", get(serve_instance_new))
@@ -701,6 +724,66 @@ async fn serve_comunicacao() -> impl IntoResponse {
 /// a capítulo: Mbyá ⟷ Español + NOTAS de Cadogan + partículas do léxico.
 async fn serve_corpus() -> impl IntoResponse {
     Html(include_str!("../static/universos/corpus.html"))
+}
+
+/// YG-139: laboratório de corpus — frequência + comparação cross-linguística.
+async fn serve_corpus_lab() -> impl IntoResponse {
+    Html(include_str!("../static/universos/corpus-lab.html"))
+}
+
+// ─── YG-139: API do framework NLP de corpus (DuckDB) ─────────────────────────
+
+#[derive(serde::Deserialize)]
+struct FreqQuery {
+    #[serde(default = "freq_limit")]
+    limit: usize,
+}
+fn freq_limit() -> usize {
+    50
+}
+
+#[derive(serde::Deserialize)]
+struct CompareQuery {
+    a: String,
+    b: String,
+    #[serde(default = "compare_mode")]
+    mode: String,
+    #[serde(default = "freq_limit")]
+    limit: usize,
+}
+fn compare_mode() -> String {
+    "inner".into()
+}
+
+async fn serve_corpus_list(
+    axum::extract::State(db): axum::extract::State<Arc<corpus_nlp::CorpusDb>>,
+) -> impl IntoResponse {
+    match db.list_corpora() {
+        Ok(v) => axum::Json(v).into_response(),
+        Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "erro").into_response(),
+    }
+}
+
+async fn serve_corpus_freq(
+    axum::extract::State(db): axum::extract::State<Arc<corpus_nlp::CorpusDb>>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    axum::extract::Query(q): axum::extract::Query<FreqQuery>,
+) -> impl IntoResponse {
+    match db.freq(&name, q.limit.min(500)) {
+        Ok(v) => axum::Json(v).into_response(),
+        Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "erro").into_response(),
+    }
+}
+
+async fn serve_corpus_compare(
+    axum::extract::State(db): axum::extract::State<Arc<corpus_nlp::CorpusDb>>,
+    axum::extract::Query(q): axum::extract::Query<CompareQuery>,
+) -> impl IntoResponse {
+    let mode = if q.mode == "left" { "left" } else { "inner" };
+    match db.compare(&q.a, &q.b, mode, q.limit.min(500)) {
+        Ok(v) => axum::Json(v).into_response(),
+        Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "erro").into_response(),
+    }
 }
 
 /// Índice `/universos` — catálogo unificado e filtrável de todos os universos

@@ -36,6 +36,9 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 rusqlite = { workspace = true }
+# YG-139: motor de análise de corpus (frequência + joins cross-linguísticos).
+# `bundled` compila o DuckDB do source (precisa de g++, já presente no builder).
+duckdb = { version = "1.1", features = ["bundled"] }
 
 lettre = { version = "0.11", default-features = false, features = [
     "smtp-transport",

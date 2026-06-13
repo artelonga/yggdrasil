@@ -91,6 +91,15 @@
       url: "/universos/corpus"
     });
 
+    // 2c. Laboratório de corpus (YG-139): frequência + comparação cross-linguística.
+    items.push({
+      slug: "corpus-lab",
+      nome: "Laboratório de corpus (NLP)",
+      desc: "Palavras mais usadas por corpus e comparação cross-linguística (Mbyá ⟷ Iorubá) via join.",
+      status: "embedded", type: "ferramentas", origin: "original",
+      genre: [], url: "/universos/corpus-lab"
+    });
+
     // 3. instâncias autoradas publicadas (data-driven)
     (instances || []).forEach(function (i) {
       items.push({
