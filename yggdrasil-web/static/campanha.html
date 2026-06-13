@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apoie o Yggdrasil — campanha</title>
+  <meta name="description" content="Apoie a campanha do Yggdrasil — plataforma de universos digitais. Da semente ao topo: tiers de recompensa e o estado vivo da plataforma.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; min-width: 0; }
+    html, body { overflow-x: hidden; }
+    :root { --gold:#e9c349; --rose:#ffb3b5; --ink:#e5e2e1; --dim:#c5c6cc; --bg:#131313; --bg2:#1c1b1b; --line:#2a2a2a; }
+    body { background: var(--bg); color: var(--ink); font-family: system-ui, sans-serif; min-height: 100vh; line-height: 1.55; }
+    .wrap { max-width: 64rem; margin: 0 auto; padding: 3.5rem 1.2rem 5rem; }
+    .hero { text-align: center; margin-bottom: 2.4rem; }
+    .hero .kick { font-size: 11px; letter-spacing: .32em; text-transform: uppercase; color: var(--gold); }
+    .hero h1 { font-family: Georgia, serif; font-style: italic; font-size: 2.6rem; margin: .5rem 0 .7rem; line-height: 1.08; }
+    .hero p { color: var(--dim); max-width: 42ch; margin: 0 auto; font-size: 1.02rem; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 1rem; margin: 2.2rem 0; }
+    .stat { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; text-align: center; }
+    .stat .n { font-family: Georgia, serif; font-size: 1.9rem; color: var(--gold); line-height: 1; }
+    .stat .k { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-top: .4rem; }
+    h2.sec { font-family: Georgia, serif; font-style: italic; font-size: 1.7rem; margin: 2.4rem 0 1.2rem; }
+    .tiers { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1.1rem; }
+    .tier { background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 1.3rem 1.4rem;
+      display: flex; flex-direction: column; gap: .6rem; position: relative; }
+    .tier.hl { border-color: var(--gold); box-shadow: 0 12px 40px rgba(233,195,73,.1); }
+    .tier .tname { font-family: Georgia, serif; font-style: italic; font-size: 1.25rem; color: var(--gold); }
+    .tier .price { font-size: 1.5rem; font-weight: 700; }
+    .tier .price small { font-size: .8rem; font-weight: 400; color: var(--dim); }
+    .tier ul { list-style: none; display: flex; flex-direction: column; gap: .35rem; font-size: .86rem; color: var(--dim); }
+    .tier li::before { content: "✦ "; color: var(--gold); }
+    .tier .limit { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--rose); }
+    .tier button { margin-top: auto; background: var(--gold); color: #1a1408; border: 0; cursor: pointer;
+      font: inherit; font-weight: 700; font-size: .8rem; letter-spacing: .1em; text-transform: uppercase;
+      padding: .7rem; border-radius: 8px; }
+    .tier button:hover { filter: brightness(1.08); }
+    .tier button:disabled { opacity: .6; cursor: default; }
+    .foot { margin-top: 2.6rem; color: var(--dim); font-size: .82rem; line-height: 1.6; text-align: center; }
+    .foot a { color: var(--gold); }
+    /* modal de interesse */
+    #ap { position: fixed; inset: 0; z-index: 999; display: none; align-items: center; justify-content: center;
+      background: rgba(7,7,11,.72); backdrop-filter: blur(4px); padding: 1rem; }
+    #ap.open { display: flex; }
+    #ap .box { width: min(28rem, 96vw); background: var(--bg2); border: 1px solid var(--gold); border-radius: 14px; padding: 1.6rem; }
+    #ap h3 { font-family: Georgia, serif; font-style: italic; margin-bottom: .3rem; }
+    #ap p { color: var(--dim); font-size: .85rem; margin-bottom: 1rem; }
+    #ap input, #ap textarea { width: 100%; background: #07070b; color: var(--ink); border: 1px solid var(--line);
+      border-radius: 8px; padding: .6rem .7rem; font: inherit; font-size: 16px; margin-bottom: .7rem; }
+    #ap .row { display: flex; gap: .6rem; }
+    #ap .row button { flex: 1; border: 1px solid var(--line); background: #15151c; color: var(--ink); cursor: pointer;
+      border-radius: 8px; padding: .6rem; font: inherit; }
+    #ap .row button.primary { background: var(--gold); color: #1a1408; font-weight: 700; border-color: var(--gold); }
+    #ap .ok { color: #6dbf8b; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <span class="kick">Campanha · da semente ao topo</span>
+      <h1>Apoie o Yggdrasil</h1>
+      <p>Uma plataforma viva de universos digitais — arcade, atlas 3D, léxicos
+        cross-linguísticos e RPGs abertos. Já demonstrável; sua semente leva ao topo.</p>
+    </div>
+
+    <div class="stats" id="stats">
+      <div class="stat"><div class="n" id="s-uni">—</div><div class="k">universos no catálogo</div></div>
+      <div class="stat"><div class="n" id="s-jog">—</div><div class="k">jogando agora</div></div>
+      <div class="stat"><div class="n" id="s-ses">—</div><div class="k">sessões 24h</div></div>
+      <div class="stat"><div class="n" id="s-lex">—</div><div class="k">termos no léxico Mbyá</div></div>
+    </div>
+
+    <h2 class="sec">Recompensas</h2>
+    <div class="tiers" id="tiers"></div>
+
+    <p class="foot">
+      As recompensas seguem a metáfora da árvore (sementes são também a moeda interna
+      da plataforma). Detalhes completos: <a href="/static/../docs/REWARDS.md">REWARDS.md</a>.
+      O Yggdrasil já está no ar — explore o <a href="/universos">catálogo</a> e os
+      <a href="/analytics">números ao vivo</a> enquanto a campanha não abre.
+    </p>
+  </div>
+
+  <!-- modal: registra interesse (reusa o canal de feedback; sem pagamento ainda) -->
+  <div id="ap" role="dialog" aria-modal="true">
+    <div class="box">
+      <h3 id="ap-title">Tenho interesse</h3>
+      <p>A campanha ainda não abriu. Deixe contato e avisamos quando este tier estiver disponível — sem compromisso.</p>
+      <input id="ap-nome" type="text" placeholder="nome (opcional)" autocomplete="name">
+      <input id="ap-email" type="email" placeholder="e-mail para avisar (opcional)" autocomplete="email">
+      <div class="ok" id="ap-ok" hidden>✓ Anotado! Avisaremos quando abrir.</div>
+      <div class="row">
+        <button id="ap-cancel">Fechar</button>
+        <button class="primary" id="ap-send">Registrar interesse</button>
+      </div>
+    </div>
+  </div>
+  <script src="/static/campanha.js"></script>
+  <script defer src="/static/nav.js"></script>
+  <script defer src="/static/telemetria.js"></script>
+</body>
+</html>

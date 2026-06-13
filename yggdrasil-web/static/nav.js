@@ -21,6 +21,7 @@
     { href: "/universos", icon: "✦", label: "Universos" },
     { href: "/feedback", icon: "💬", label: "Comunidade" },
     { href: "/analytics", icon: "📈", label: "Ao vivo" },
+    { href: "/campanha", icon: "🌱", label: "Apoie" },
   ];
 
   // Marca como ativo o destino que melhor casa com a URL atual (match por

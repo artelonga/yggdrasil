@@ -31,9 +31,9 @@ Desde a v1.0 (2026-05-20) shipou muito além do plano original:
 ## Aberto — por prioridade
 
 ### Lacunas de produto (north-star)
-- **Superfície de campanha / launch** (Catarse-style) — `docs/REWARDS.md` existe,
-  mas não há página de campanha nem integração de recompensas. *Maior ausência
-  para o objetivo declarado; sem task.*
+- **Superfície de campanha / launch** — **MVP no ar** (YG-143): `/campanha` com
+  os 6 tiers de `REWARDS.md`, stats ao vivo e captura de interesse (via feedback).
+  *Falta a integração de pagamento real (Catarse externo) e a página de créditos.*
 - **Reader de SRD do Shandara** — catálogo anuncia `playable`, nada renderiza o
   SRD. *Sem task.*
 

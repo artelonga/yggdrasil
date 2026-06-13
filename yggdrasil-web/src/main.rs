@@ -619,6 +619,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/feedback", get(serve_feedback))
         // YG-128: analytics ao vivo — agregados anônimos (hub do CO + stats locais)
         .route("/analytics", get(serve_analytics))
+        // YG-143: landing de campanha (tiers de REWARDS.md + stats ao vivo)
+        .route("/campanha", get(serve_campanha))
         // YG-84: visualizador 3D de anatomia (Godot Web export, single-thread →
         // serve de qualquer host estático). Os arquivos do export ficam em
         // static/anatomia/ e são servidos pelo ServeDir abaixo; /anatomia é só
@@ -680,6 +682,11 @@ async fn serve_neuro() -> impl IntoResponse {
 
 /// Mural público de feedback. Busca `GET /api/v1/feedback` (sem e-mail) e
 /// renderiza client-side.
+/// YG-143: landing de campanha (da semente ao topo) — tiers + stats ao vivo.
+async fn serve_campanha() -> impl IntoResponse {
+    Html(include_str!("../static/campanha.html"))
+}
+
 async fn serve_feedback() -> impl IntoResponse {
     Html(include_str!("../static/feedback-mural.html"))
 }
