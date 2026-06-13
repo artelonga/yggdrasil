@@ -94,3 +94,16 @@ test('perfil universal: GET exige auth, catálogo mostra os dois comportamentos 
   expect(await page.locator('.card .cta-origem').count()).toBeGreaterThan(0);
   expect(erros).toEqual([]);
 });
+
+test('laboratório de corpus: endpoints e página (YG-139)', async ({ page, request, baseURL }) => {
+  const cs = await request.get(baseURL + '/api/v1/corpus');
+  expect(cs.ok()).toBeTruthy();
+  expect((await cs.json()).length).toBeGreaterThan(0);
+  const cmp = await request.get(baseURL + '/api/v1/corpus/compare?a=mbya-lexico&b=yoruba-lexico&mode=inner&limit=5');
+  expect(cmp.ok()).toBeTruthy();
+  const erros = guardErrors(page);
+  await page.goto('/universos/corpus-lab');
+  await expect(page.locator('#sel-a')).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(1500);
+  expect(erros).toEqual([]);
+});
