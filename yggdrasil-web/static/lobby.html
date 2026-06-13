@@ -71,6 +71,9 @@
       image-rendering: pixelated;
       border: 1px solid #201f1f;
       cursor: pointer;
+      /* YG-135: o mapa é canvas de tamanho fixo — sem isto estoura no celular */
+      max-width: 100%;
+      height: auto;
     }
     .legenda {
       margin-top: 1.2rem;
