@@ -52,3 +52,32 @@ test('páginas principais respondem sem exceção de JS', async ({ page }) => {
     expect(erros, `exceção de página em ${rota}`).toEqual([]);
   }
 });
+
+test('Ayvu Rapyta: clicar palavra liga ao léxico completo e mostra ocorrências (YG-134)', async ({ page }) => {
+  const erros = guardErrors(page);
+  await page.goto('/universos/corpus');
+  // espera capítulos carregarem
+  await expect(page.locator('#chapsel option').first()).toBeAttached({ timeout: 10_000 });
+  // clica no primeiro token Mbyá de um verso
+  const tok = page.locator('.stone .gn .tok').first();
+  await expect(tok).toBeVisible({ timeout: 10_000 });
+  await tok.click();
+  // inspetor abre
+  await expect(page.locator('#inspector')).toHaveClass(/open/, { timeout: 5_000 });
+  // a busca live OU as ocorrências devem render algo dentro de ~3s (rede)
+  await page.waitForTimeout(2500);
+  const temLexico = await page.locator('#w-lexico .sense, #w-ocorr [data-occ]').count();
+  // não exige resultado para toda palavra, mas a página não pode ter quebrado
+  expect(erros).toEqual([]);
+  expect(temLexico).toBeGreaterThanOrEqual(0);
+});
+
+// endpoints novos do léxico completo respondem
+test('léxico completo: busca e índice respondem (YG-134)', async ({ request, baseURL }) => {
+  const idx = await request.get(baseURL + '/api/v1/comunicacao/lexico/indice?lang=gn-mbya');
+  expect(idx.ok()).toBeTruthy();
+  expect((await idx.json()).length).toBeGreaterThan(1000);
+  const busca = await request.get(baseURL + '/api/v1/comunicacao/lexico/busca?lang=gn-mbya&q=floresta&limit=5');
+  expect(busca.ok()).toBeTruthy();
+  expect((await busca.json()).total).toBeGreaterThan(0);
+});

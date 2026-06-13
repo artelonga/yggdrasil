@@ -11,7 +11,7 @@ const SLUG = 'ayvu-rapyta';
 const state = { work: null, chapters: [], lex: {}, ci: 0, vi: 0, stack: [], tab: 'fav' };
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) => (s || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const norm = (s) => (s || '').toLowerCase().replace(/^[^0-9a-zñ'’]+|[^0-9a-zñ'’]+$/gi, '');
 
 // ── local-first store ───────────────────────────────────────────────────────
@@ -145,6 +145,10 @@ async function boot() {
     return;
   }
   state.work = data.work; state.chapters = data.chapters || []; state.lex = data.lex || {};
+  // YG-134: índice do léxico completo (4.837) + concordância — toda palavra
+  // alcançável fica linkável, e ocorrências permitem pular entre seções.
+  await loadLexIndex();
+  buildConcordance();
   // YG-116: logado → funde o Caderno local no servidor e traz o consolidado
   // (precisa dos capítulos já carregados para reconstruir labels/ci/vi).
   try { await syncCaderno(); } catch { /* local-first segue valendo */ }
@@ -215,7 +219,10 @@ function lensSet() { return new Set(Object.values(db.fav).filter((f) => f.t === 
 function gnTokens(words) {
   const lens = lensSet();
   return words.map((w, i) => {
-    const linked = (w.lemma && state.lex[w.lemma]) || (w.seg || []).some((s) => state.lex[s]);
+    // YG-134: linkável se a forma, o lema ou qualquer partícula resolve no
+    // léxico completo (índice) ou no curado — não só nas 295 baked.
+    const linked = resolvivel(w.w) || resolvivel(w.lemma) ||
+      (w.seg || []).some((s) => resolvivel(s));
     const fav = isFav('word:' + w.n);
     const isLens = (w.seg || []).some((s) => lens.has(s));
     const cls = ['tok', linked ? 'linked' : '', fav ? 'fav' : '', isLens ? 'lens' : ''].filter(Boolean).join(' ');
@@ -294,17 +301,80 @@ function toggleVerseNote(i) {
   };
 }
 
+// ── léxico completo (YG-134): índice + busca live + concordância ─────────────
+//
+// O corpus baked traz só ~295 sentidos curados (Cadogan). O léxico Mbyá tem
+// 4.837 entradas — e em ortografia diferente (moderna vs. Montoya/Cadogan).
+// `slug()` (mesmo fold do servidor) faz a ponte; o índice marca o que é
+// alcançável e a busca live traz os sentidos ao clicar.
+
+// fold de ortografia idêntico ao slugify do servidor (acentos/tom/apóstrofo).
+const FOLD = { à:'a',á:'a',â:'a',ã:'a',ä:'a',å:'a',ā:'a','ç':'c',è:'e',é:'e',ê:'e',ë:'e',ē:'e','ẹ':'e','ɛ':'e','ẽ':'e',ì:'i',í:'i',î:'i',ï:'i',ī:'i','ĩ':'i','ñ':'n','ŋ':'n',ò:'o',ó:'o',ô:'o',õ:'o',ö:'o',ō:'o','ọ':'o','ɔ':'o',ù:'u',ú:'u',û:'u',ü:'u',ū:'u','ũ':'u','ṣ':'s',ý:'y','ÿ':'y','ỹ':'y' };
+function slug(s) {
+  let out = '', dash = true;
+  for (const raw of String(s || '').toLowerCase().normalize('NFC')) {
+    const c = FOLD[raw] ?? raw;
+    if (/[a-z0-9]/.test(c)) { out += c; dash = false; }
+    else if (!dash) { out += '-'; dash = true; }
+  }
+  return out.replace(/-+$/, '');
+}
+
+let lexIndex = new Set();
+async function loadLexIndex() {
+  try {
+    const r = await fetch('/api/v1/comunicacao/lexico/indice?lang=gn-mbya');
+    if (r.ok) lexIndex = new Set(await r.json());
+  } catch (_) { /* sem índice → cai no curado */ }
+}
+// alcançável = curado (lex) OU presente no léxico completo (por slug)
+function resolvivel(token) {
+  if (!token) return false;
+  if (state.lex[token]) return true;
+  return lexIndex.has(slug(token));
+}
+
+const _lexCache = {};
+async function buscaLexico(q) {
+  const key = slug(q);
+  if (!key) return [];
+  if (_lexCache[key]) return _lexCache[key];
+  try {
+    const r = await fetch(`/api/v1/comunicacao/lexico/busca?lang=gn-mbya&q=${encodeURIComponent(q)}&limit=12`);
+    const d = r.ok ? await r.json() : { entries: [] };
+    _lexCache[key] = d.entries || [];
+  } catch (_) { _lexCache[key] = []; }
+  return _lexCache[key];
+}
+
+// Concordância: slug da forma → [{ci, vi, gn, es}] — "pular para outras seções".
+const concord = {};
+function buildConcordance() {
+  state.chapters.forEach((ch, ci) => {
+    (ch.verses || []).forEach((v, vi) => {
+      const vistos = new Set();
+      (v.words || []).forEach((w) => {
+        const s = slug(w.w);
+        if (!s || vistos.has(s)) return;
+        vistos.add(s);
+        (concord[s] = concord[s] || []).push({ ci, vi, v: v.v, roman: ch.roman });
+      });
+    });
+  });
+}
+
 // ── inspector (lexicon drill-down + word actions) ────────────────────────────
 function onTokClick(e) {
   const tok = e.target.closest('.tok'); if (!tok) return;
   const stone = tok.closest('.stone'); if (!stone) return;
   const verse = state.chapters[state.ci].verses[+stone.dataset.i];
-  openWord(verse.words[+tok.dataset.wi], tok);
+  openWord(verse.words[+tok.dataset.wi], tok, verse);
 }
-function openWord(word, tokEl) {
+function openWord(word, tokEl, verse) {
   document.querySelectorAll('.tok.active').forEach((t) => t.classList.remove('active'));
   if (tokEl) tokEl.classList.add('active');
-  state.stack = [{ kind: 'word', word }]; openInspector(); renderInspector();
+  // YG-134: carrega o verso (espanhol + âncora da concordância) no view
+  state.stack = [{ kind: 'word', word, verse }]; openInspector(); renderInspector();
 }
 function openInspector() { closeCaderno(); $('inspector').classList.add('open'); $('scrim').classList.add('show'); }
 function closeInspector() { $('inspector').classList.remove('open'); if (!$('caderno').classList.contains('open')) $('scrim').classList.remove('show'); document.querySelectorAll('.tok.active').forEach((t) => t.classList.remove('active')); state.stack = []; }
@@ -312,7 +382,7 @@ function closeInspector() { $('inspector').classList.remove('open'); if (!$('cad
 function renderInspector() {
   const view = state.stack[state.stack.length - 1]; if (!view) return;
   $('insp-back').style.display = state.stack.length > 1 ? '' : 'none';
-  if (view.kind === 'word') renderWordView(view.word); else renderFormView(view.form);
+  if (view.kind === 'word') renderWordView(view.word, view.verse); else renderFormView(view.form);
 }
 function chip(seg, i, curated) {
   const senses = state.lex[seg];
@@ -320,13 +390,18 @@ function chip(seg, i, curated) {
   const cnt = senses ? `<span class="cnt">${senses.length}</span>` : '';
   return `<span class="${cls}" data-seg="${esc(seg)}" style="animation-delay:${i * 70}ms">${esc(seg)}${cnt}</span>`;
 }
-function renderWordView(word) {
+function renderWordView(word, verse) {
   $('insp-title').textContent = 'palavra'; $('insp-lex').href = '/universos/comunicacao';
   const lemma = (word.lemma && state.lex[word.lemma]) || [];
   const fk = 'word:' + word.n, nk = fk;
+  // YG-134: espanhol (tradução do verso) como contexto da palavra
+  const esBloco = verse && verse.es
+    ? `<div class="seglabel">tradução (espanhol)</div><div class="insp-sub" style="font-style:italic">${esc(verse.es)}</div>`
+    : '';
   $('insp-body').innerHTML =
     `<div class="insp-word">${esc(word.w)}</div>` +
-    (lemma.length ? `<div class="insp-sub">${esc(lemma[0].g || '')}</div>` : '<div class="insp-sub">forma não encontrada como lema — veja as partículas</div>') +
+    (lemma.length ? `<div class="insp-sub">${esc(lemma[0].g || '')}</div>` : '<div class="insp-sub">forma não encontrada como lema — veja as partículas e o léxico</div>') +
+    esBloco +
     `<div class="rowbtns">
        <button class="iconbtn ${isFav(fk) ? 'act' : ''}" id="w-fav">★ favoritar</button>
        <button class="iconbtn" id="w-note">✎ nota</button>
@@ -335,7 +410,18 @@ function renderWordView(word) {
      <div id="w-notebox" style="display:none"></div>` +
     `<div class="seglabel">${word.cur ? 'partículas (Cadogan)' : 'partículas potenciais'}</div>` +
     `<div class="chips">${(word.seg || []).map((s, i) => chip(s, i, !!word.cur)).join('') || '<span class="insp-sub">—</span>'}</div>` +
-    (lemma.length > 1 ? `<div class="seglabel">sentidos do lema</div>` + lemma.map(senseRow).join('') : '');
+    (lemma.length > 1 ? `<div class="seglabel">sentidos do lema</div>` + lemma.map(senseRow).join('') : '') +
+    `<div id="w-lexico"></div>` +
+    `<div id="w-ocorr"></div>`;
+  // léxico Mbyá completo (busca live) — todas as 4.837 alcançáveis
+  buscaLexico(word.w).then((ents) => {
+    const host = $('w-lexico'); if (!host) return;
+    if (!ents.length) return;
+    host.innerHTML = `<div class="seglabel">léxico Mbyá completo (${ents.length})</div>` +
+      ents.map((e) => `<div class="sense"><div class="hw">${esc(e.word)}${e.pron ? ' <span class="src">' + esc(e.pron) + '</span>' : ''}</div><div class="g">${esc(e.gloss || '')}</div></div>`).join('');
+  });
+  // concordância — outras ocorrências (pular para outras seções)
+  renderOcorrencias(word.w, verse);
   $('w-fav').onclick = () => { toggleFav(fk, { t: 'word', id: word.n, label: word.w }); $('w-fav').classList.toggle('act'); refreshTokens(); };
   $('w-note').onclick = () => {
     const box = $('w-notebox'); if (box.style.display === 'block') { box.style.display = 'none'; return; }
@@ -351,11 +437,41 @@ function renderFormView(form) {
   const senses = state.lex[form] || [], fk = 'part:' + form;
   $('insp-body').innerHTML =
     `<div class="insp-word">${esc(form)}</div>` +
-    `<div class="insp-sub">${senses.length} sentido(s) potencial(is) no léxico</div>` +
+    `<div class="insp-sub">${senses.length} sentido(s) curado(s)</div>` +
     `<div class="rowbtns"><button class="iconbtn ${isFav(fk) ? 'act' : ''}" id="p-fav">★ favoritar (lente)</button></div>` +
-    `<div class="seglabel">ocorrências no léxico</div>` +
-    (senses.map(senseRow).join('') || '<div class="insp-sub">sem entrada direta</div>');
+    (senses.length ? `<div class="seglabel">curado (Cadogan)</div>` + senses.map(senseRow).join('') : '') +
+    `<div id="p-lexico"></div>` +
+    `<div id="w-ocorr"></div>`;
   $('p-fav').onclick = () => { toggleFav(fk, { t: 'part', id: form, label: form }); $('p-fav').classList.toggle('act'); refreshTokens(); };
+  // YG-134: partícula também busca no léxico completo + ocorrências no corpus
+  buscaLexico(form).then((ents) => {
+    const host = $('p-lexico'); if (!host) return;
+    host.innerHTML = ents.length
+      ? `<div class="seglabel">léxico Mbyá completo (${ents.length})</div>` +
+        ents.map((e) => `<div class="sense"><div class="hw">${esc(e.word)}</div><div class="g">${esc(e.gloss || '')}</div></div>`).join('')
+      : (senses.length ? '' : '<div class="insp-sub">sem entrada direta no léxico</div>');
+  });
+  renderOcorrencias(form, null);
+}
+
+// Concordância: lista versos (de qualquer capítulo) com a mesma forma; clicar
+// salta para a seção — "ability to link to other sections" (YG-134).
+function renderOcorrencias(formaOuPalavra, verse) {
+  const host = $('w-ocorr'); if (!host) return;
+  const s = slug(formaOuPalavra);
+  const aqui = verse ? `${state.ci}.${verse.v}` : null;
+  const todas = (concord[s] || []).filter((o) => `${o.ci}.${o.v}` !== aqui);
+  if (!todas.length) { host.innerHTML = ''; return; }
+  host.innerHTML = `<div class="seglabel">outras ocorrências (${todas.length})</div>` +
+    todas.slice(0, 40).map((o, i) =>
+      `<a class="sense" data-occ="${i}" style="cursor:pointer;display:block"><div class="hw">Cap. ${esc(o.roman)} · v${esc(o.v)}</div></a>`).join('');
+  host.querySelectorAll('[data-occ]').forEach((a) => {
+    const o = todas[+a.dataset.occ];
+    a.onclick = () => {
+      state.ci = o.ci; $('chapsel').value = String(o.ci);
+      renderChapter(true); setTimeout(() => focusVerse(o.vi), 60); closeInspector();
+    };
+  });
 }
 function senseRow(s, i) {
   const src = s.src === 'cadogan' ? '<span class="src">Cadogan</span>' : '';
