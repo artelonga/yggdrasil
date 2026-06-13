@@ -2,6 +2,16 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.24.0] — 2026-06-13 — YG-141: lounge Mbyá mostra os mais populares (rank + popularidade)
+
+### Fixed/Added
+
+- O **lounge de léxico** (sala pública Mbyá/Iorubá) mostrava só pontos — sem
+  rank nem popularidade legíveis. Agora `Element` carrega `pop` (popularidade do
+  léxico, antes descartada) e um **painel "★ mais populares"** lista o top-30 por
+  popularidade com **rank + palavra + barra relativa + contagem**, clicável
+  (centra o nó no mapa). Sempre visível, independente do zoom da espiral.
+
 ## [2.23.1] — 2026-06-13 — YG-140: escolher sentença no Ayvu + total de ocorrências
 
 ### Changed

@@ -100,6 +100,7 @@ fn build_room(id: &str, title: &str, lang: &str, entries: Vec<LexEntry>) -> Room
         let mut el = Element::new(format!("e{i}"), e.word, lang_code).at(x, y);
         el.gloss = e.gloss;
         el.pronunciation = e.pron;
+        el.pop = Some(e.pop); // popularidade → rank + barra relativa no cliente
         elements.push(el);
     }
     let mut room = Room::empty(id, SYSTEM_OWNER, title, lang);

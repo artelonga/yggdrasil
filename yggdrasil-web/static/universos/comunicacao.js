@@ -6,6 +6,9 @@
 const JWT_KEY = 'yggdrasil-jwt';
 const API = '/api/v1/comunicacao';
 
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
 const state = {
   token: localStorage.getItem(JWT_KEY),
   sub: null,
@@ -329,6 +332,36 @@ function setRoom(room) {
   applyMode();
   cacheRoom();
   handle.update(toGraphData());
+  renderPopulares();
+}
+
+// YG-141: painel "mais populares" — rank + barra de popularidade relativa. O
+// léxico em espiral só mostrava pontos; aqui a popularidade fica legível e
+// clicável (centra o nó). Aparece só em salas de léxico (elementos com `pop`).
+function renderPopulares() {
+  const host = document.getElementById('populares');
+  if (!host) return;
+  const els = (state.room && state.room.elements) || [];
+  const comPop = els.filter((e) => typeof e.pop === 'number');
+  if (comPop.length < 2) { host.innerHTML = ''; host.style.display = 'none'; return; }
+  host.style.display = '';
+  const ranked = comPop.slice().sort((a, b) => b.pop - a.pop).slice(0, 30);
+  const max = ranked[0].pop || 1;
+  host.innerHTML = '<div class="pop-h">★ mais populares</div>' +
+    ranked.map((e, i) => {
+      const w = Math.max(3, Math.round((e.pop / max) * 100));
+      return '<div class="pop-row" data-id="' + esc(e.id) + '" title="' + esc(e.gloss || '') + '">' +
+        '<span class="pop-rank">' + (i + 1) + '</span>' +
+        '<span class="pop-word">' + esc(e.word) + '</span>' +
+        '<span class="pop-bar"><i style="width:' + w + '%"></i></span>' +
+        '<span class="pop-n">' + e.pop + '</span></div>';
+    }).join('');
+  host.querySelectorAll('.pop-row').forEach((r) => {
+    r.addEventListener('click', () => {
+      const el = elementById(r.dataset.id);
+      if (el) { handle.setCamera({ x: el.x, y: el.y, s: 1.6 }, true); select(el.id); }
+    });
+  });
 }
 
 async function loadRoom(id) {
