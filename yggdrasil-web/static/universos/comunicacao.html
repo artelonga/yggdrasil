@@ -79,6 +79,22 @@
     .link-row span { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .link-del { background: none; border: none; color: var(--dim); cursor: pointer; padding: 0 .3rem; font-size: .9rem; }
     .link-del:hover { color: #e06c6c; }
+    /* YG-141: painel mais-populares do lounge de léxico (canto inferior esq.) */
+    #populares { position: fixed; left: 12px; bottom: 12px; z-index: 8; width: 240px;
+      max-height: 46vh; overflow-y: auto; background: #0f1410ee; border: 1px solid var(--line);
+      border-radius: 10px; padding: 8px 10px; font: 13px/1.4 system-ui, sans-serif;
+      backdrop-filter: blur(6px); box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+    #populares .pop-h { color: var(--gold); font-size: 11px; letter-spacing: .12em;
+      text-transform: uppercase; margin-bottom: 6px; }
+    #populares .pop-row { display: flex; align-items: center; gap: 6px; padding: 3px 2px;
+      cursor: pointer; border-radius: 5px; }
+    #populares .pop-row:hover { background: #1c2418; }
+    #populares .pop-rank { width: 18px; text-align: right; color: var(--dim); font-size: 11px; }
+    #populares .pop-word { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #populares .pop-bar { width: 46px; height: 5px; background: #2a2a35; border-radius: 3px; overflow: hidden; }
+    #populares .pop-bar i { display: block; height: 100%; background: var(--gold); }
+    #populares .pop-n { width: 26px; text-align: right; color: var(--dim); font-size: 11px; }
+    @media (max-width: 760px) { #populares { width: 44vw; max-height: 34vh; } }
   </style>
 </head>
 <body>
@@ -99,6 +115,10 @@
   </div>
 
   <div id="app"></div>
+
+  <!-- YG-141: painel "mais populares" (rank + barra de popularidade relativa).
+       Só aparece em salas de léxico (elementos com pop). -->
+  <aside id="populares" style="display:none"></aside>
 
   <aside id="inspector">
     <span class="badge local" id="ins-badge">local</span>

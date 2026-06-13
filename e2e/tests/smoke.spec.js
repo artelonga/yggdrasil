@@ -124,3 +124,16 @@ test('Ayvu: clicar verso realça espanhol; clicar palavra mostra raízes + total
   expect(/ocorr.ncia/i.test(body)).toBeTruthy();
   expect(erros).toEqual([]);
 });
+
+test('lounge Mbyá: painel "mais populares" com rank + barra (YG-141)', async ({ page }) => {
+  const erros = guardErrors(page);
+  await page.goto('/universos/comunicacao');
+  // o lounge cai no 1º léxico público (Mbyá); o painel popula com pop
+  await expect(page.locator('#populares .pop-row').first()).toBeVisible({ timeout: 12000 });
+  const n = await page.locator('#populares .pop-row').count();
+  expect(n).toBeGreaterThan(2);
+  // rank 1 presente + barra
+  await expect(page.locator('#populares .pop-rank').first()).toHaveText('1');
+  await expect(page.locator('#populares .pop-bar i').first()).toBeVisible();
+  expect(erros).toEqual([]);
+});

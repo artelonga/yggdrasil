@@ -142,6 +142,10 @@ pub struct Element {
     /// Situação no léxico compartilhado.
     #[serde(default)]
     pub lexicon: LexiconLink,
+    /// Popularidade (nº de exemplos no corpus) — salas públicas de léxico.
+    /// `None` em salas autoradas. Dá ao cliente rank + popularidade relativa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pop: Option<i64>,
 }
 
 impl Element {
@@ -159,6 +163,7 @@ impl Element {
             icon: None,
             refs: Vec::new(),
             lexicon: LexiconLink::Local,
+            pop: None,
         }
     }
 
