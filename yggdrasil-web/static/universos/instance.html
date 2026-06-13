@@ -97,6 +97,26 @@
     @media (max-width: 760px) { #note-editor .ed-split { flex-direction: column; }
       #note-editor .ed-preview { border-left: 0; border-top: 1px solid #201f1f; } }
 
+    /* ── Mobile (YG-136): canvas rola (pan por toque), editor vira campo de
+       formulário. O aside empilha como seções de formulário abaixo do mapa. ── */
+    @media (max-width: 760px) {
+      header { flex-wrap: wrap; gap: 0.5rem; padding: 0.6rem 0.9rem; }
+      header h1 { font-size: 1.05rem; }
+      .layout { flex-direction: column; }
+      /* canvas mantém o tamanho natural e o palco ROLA (pan) — não encolhe */
+      .stage { flex: none; height: 56vh; align-items: flex-start; justify-content: flex-start;
+        padding: 0.5rem; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+      aside { width: auto; border-left: 0; border-top: 1px solid #201f1f; max-height: none; }
+      /* o composer inline deixa de flutuar na célula: vira um campo de
+         formulário fixo no rodapé, largo e alcançável pelo polegar. */
+      #inline-input { position: fixed !important; left: 8px !important; right: 8px !important;
+        top: auto !important; bottom: 8px !important; width: auto !important; min-width: 0 !important;
+        font-size: 16px; z-index: 30; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+      /* 16px evita o auto-zoom do iOS ao focar campos */
+      #note-editor textarea, #note-search { font-size: 16px; }
+      #note-editor .box { width: 96vw; height: 92vh; }
+    }
+
     #toast {
       position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
       background: #201f1f; border: 1px solid #e9c349; color: #e8a030;

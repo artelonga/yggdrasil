@@ -2,6 +2,18 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.21.2] — 2026-06-13 — YG-136: player no celular — canvas scrollável + editor como formulário
+
+### Changed
+
+- **Player (`/universos/instance`) no celular** (feedback): `.layout` empilha em
+  coluna — o mapa fica em cima com altura fixa e **canvas scrollável** (pan por
+  toque, tamanho natural, `touch-action:pan-x pan-y`), e o aside
+  (árvore/camadas/notas/inspetor) vira seções de formulário abaixo. O **composer
+  inline** deixa de flutuar na célula e vira **campo de formulário fixo no rodapé**
+  (largo, alcançável pelo polegar; font 16px evita auto-zoom do iOS). O editor de
+  nota popup (já fullscreen/form) ajustado a 96vw/92vh.
+
 ## [2.21.1] — 2026-06-13 — YG-135: experiência móbile — fim do scroll horizontal
 
 ### Fixed
