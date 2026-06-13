@@ -10,6 +10,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::lexicon::slugify;
 use super::room::{Element, Room};
 use super::store::RoomStore;
 
@@ -196,6 +197,97 @@ pub fn lexicon_slice(root: &Path, lang: &str, offset: usize, limit: usize) -> Le
     }
 }
 
+/// Busca no léxico completo (YG-134) — bridge de ortografia: o corpus é Montoya/
+/// Cadogan 1959, o léxico é moderno (Dooley/Arandu), então igualdade casa pouco.
+/// Normaliza query e palavra por [`slugify`] (minúsc. + sem diacrítico/tom +
+/// apóstrofo→`-`) e casa por palavra (exato/prefixo/contém) E por glosa, para
+/// que TODA entrada fique alcançável a partir do reader. Ranqueia e devolve top-N.
+pub fn lexicon_search(root: &Path, lang: &str, query: &str, limit: usize) -> LexSlice {
+    let q = slugify(query);
+    let all = match lang_file(lang) {
+        Some(rel) => load_entries(root, rel),
+        None => Vec::new(),
+    };
+    if q.is_empty() {
+        return LexSlice {
+            total: 0,
+            offset: 0,
+            limit,
+            lang: lang.to_string(),
+            entries: Vec::new(),
+        };
+    }
+    // (score desc, pop desc) — pontua a forma da palavra acima da glosa.
+    let mut scored: Vec<(i64, &LexEntry)> = all
+        .iter()
+        .filter_map(|e| {
+            let w = slugify(&e.word);
+            let g = e.gloss.as_deref().map(slugify).unwrap_or_default();
+            let score = if w == q {
+                100
+            } else if w.starts_with(&q) {
+                70
+            } else if w.contains(&q) {
+                50
+            } else if g.contains(&q) {
+                30
+            } else {
+                0
+            };
+            (score > 0).then_some((score + (e.pop.min(20)), e))
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.pop.cmp(&a.1.pop)));
+    let total = scored.len();
+    let entries = scored
+        .into_iter()
+        .take(limit)
+        .enumerate()
+        .map(|(i, (_s, e))| {
+            let (x, y) = node_pos(i);
+            SliceEntry {
+                index: i,
+                word: e.word.clone(),
+                lang: if e.lang.is_empty() {
+                    lang.to_string()
+                } else {
+                    e.lang.clone()
+                },
+                gloss: e.gloss.clone(),
+                pron: e.pron.clone(),
+                pop: e.pop,
+                decomp: e.decomp.clone(),
+                x,
+                y,
+            }
+        })
+        .collect();
+    LexSlice {
+        total,
+        offset: 0,
+        limit,
+        lang: lang.to_string(),
+        entries,
+    }
+}
+
+/// Índice de slugs normalizados do léxico (YG-134) — o reader marca como
+/// `linked` toda palavra do corpus cujo slug exista aqui (não só as 295 baked).
+pub fn lexicon_index(root: &Path, lang: &str) -> Vec<String> {
+    let all = match lang_file(lang) {
+        Some(rel) => load_entries(root, rel),
+        None => Vec::new(),
+    };
+    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for e in &all {
+        let s = slugify(&e.word);
+        if !s.is_empty() {
+            set.insert(s);
+        }
+    }
+    set.into_iter().collect()
+}
+
 /// `true` se o id é uma sala pública (read-only, fork-only).
 pub fn is_public_id(id: &str) -> bool {
     id == PUBLIC_YORUBA || id == PUBLIC_MBYA
@@ -274,6 +366,49 @@ mod tests {
         assert!(only_total.entries.is_empty());
         // língua sem léxico → vazio
         assert_eq!(super::lexicon_slice(dir.path(), "klingon", 0, 50).total, 0);
+    }
+
+    #[test]
+    fn lexicon_search_bridge_ortografia_e_glosa() {
+        let dir = tempdir().unwrap();
+        write_lex(
+            dir.path(),
+            "guarani-mbya/lexicon.mbya.json",
+            r#"[
+              {"word":"nhe'ẽ","gloss":"alma-palavra; fala divina","pop":23},
+              {"word":"ka'aguy","gloss":"mata, floresta","pop":10},
+              {"word":"yvy","gloss":"terra","pop":5}
+            ]"#,
+        );
+        // casa por palavra apesar do apóstrofo/diacrítico (slug: nhe-e)
+        let r = super::lexicon_search(dir.path(), "gn-mbya", "nhe'ẽ", 10);
+        assert_eq!(r.entries[0].word, "nhe'ẽ");
+        // casa por glosa (texto português)
+        let g = super::lexicon_search(dir.path(), "gn-mbya", "floresta", 10);
+        assert_eq!(g.entries[0].word, "ka'aguy");
+        // nada → vazio, sem panicar
+        assert_eq!(
+            super::lexicon_search(dir.path(), "gn-mbya", "zzz", 10).total,
+            0
+        );
+        // query vazia → vazio
+        assert_eq!(
+            super::lexicon_search(dir.path(), "gn-mbya", "", 10).total,
+            0
+        );
+    }
+
+    #[test]
+    fn lexicon_index_devolve_slugs() {
+        let dir = tempdir().unwrap();
+        write_lex(
+            dir.path(),
+            "guarani-mbya/lexicon.mbya.json",
+            r#"[{"word":"nhe'ẽ"},{"word":"yvy"}]"#,
+        );
+        let idx = super::lexicon_index(dir.path(), "gn-mbya");
+        assert!(idx.contains(&"nhe-e".to_string()));
+        assert!(idx.contains(&"yvy".to_string()));
     }
 
     #[test]

@@ -2,6 +2,32 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.21.0] — 2026-06-13 — YG-134: Ayvu Rapyta ligado ao léxico completo (4.837) + concordância + espanhol
+
+### Added
+
+- **Léxico Mbyá completo (4.837) alcançável do corpus**: busca server-side
+  `GET /api/v1/comunicacao/lexico/busca?lang=&q=&limit=` com fold de ortografia
+  (slugify: minúsc. + sem diacrítico/tom + apóstrofo→`-`), casando por palavra
+  (exato/prefixo/contém) E por glosa — fecha o vão entre a ortografia do corpus
+  (Montoya/Cadogan) e a do léxico (moderno). Clicar qualquer palavra/partícula
+  no reader traz os sentidos do léxico completo, não só as 295 baked.
+- **Índice** `GET /api/v1/comunicacao/lexico/indice?lang=` (slugs normalizados):
+  o reader destaca como `linked` toda palavra alcançável no léxico completo.
+- **Concordância (pular para outras seções)**: índice client-side palavra→versos;
+  o inspetor lista "outras ocorrências (N)" com saltos para outros capítulos.
+- **Espanhol no inspetor**: ao abrir uma palavra, a tradução espanhola do verso
+  (Cadogan) aparece como contexto.
+
+### Fixed
+
+- `esc()` do corpus quebrava (`replace is not a function`) ao escapar números
+  (nº do verso) — agora coage para String. Pego pelo novo teste Playwright.
+
+### Added (test)
+
+- Playwright cobre YG-134: clicar token não lança exceção; busca/índice respondem.
+
 ## [2.20.2] — 2026-06-12 — YG-133: corpus na imagem, nav sem cobrir toolbars, suíte Playwright
 
 ### Fixed

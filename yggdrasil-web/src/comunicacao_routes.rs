@@ -756,6 +756,48 @@ pub async fn lexico_lista(
     Json(slice).into_response()
 }
 
+#[derive(Deserialize)]
+pub struct BuscaQuery {
+    pub lang: String,
+    #[serde(default)]
+    pub q: String,
+    #[serde(default = "default_busca_limit")]
+    pub limit: usize,
+}
+fn default_busca_limit() -> usize {
+    30
+}
+
+/// `GET /api/v1/comunicacao/lexico/busca?lang=&q=&limit=` (YG-134) — busca no
+/// léxico completo (4.837) com fold de ortografia. Público (navegação).
+pub async fn lexico_busca(
+    State(state): ApiState,
+    Query(q): Query<BuscaQuery>,
+) -> impl IntoResponse {
+    let slice = yggdrasil_core::comunicacao::public::lexicon_search(
+        state.lexicon.root(),
+        &q.lang,
+        &q.q,
+        q.limit.min(100),
+    );
+    Json(slice).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct IndiceQuery {
+    pub lang: String,
+}
+
+/// `GET /api/v1/comunicacao/lexico/indice?lang=` (YG-134) — slugs normalizados
+/// do léxico, p/ o reader marcar como `linked` toda palavra alcançável. Público.
+pub async fn lexico_indice(
+    State(state): ApiState,
+    Query(q): Query<IndiceQuery>,
+) -> impl IntoResponse {
+    let idx = yggdrasil_core::comunicacao::public::lexicon_index(state.lexicon.root(), &q.lang);
+    Json(idx).into_response()
+}
+
 /// `GET /api/v1/comunicacao/corpus/{slug}` — JSON de corpus baked (sem auth —
 /// navegação pública). Serve a superfície de exploração do Ayvu Rapyta:
 /// capítulos → versos Mbyá ⟷ Español + glosas/partículas + NOTAS de Cadogan.
