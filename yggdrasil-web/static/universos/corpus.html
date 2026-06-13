@@ -52,7 +52,11 @@
     .card-actions .iconbtn.act { color: var(--star); border-color: #5a4f23; }
     .card-actions .iconbtn.note.act { color: var(--accent); border-color: #3c5039; }
     .gn { color: var(--mbya); font-size: 17px; }
-    .es { color: var(--es); margin-top: 7px; font-size: 15px; }
+    /* YG-140: o espanhol fica suave por padrão; ao ESCOLHER a sentença (clique)
+       ele se realça — vira o passo "clicar a sentença → ver a tradução". */
+    .es { color: var(--es); margin-top: 7px; font-size: 15px; opacity: .5; transition: opacity .15s; }
+    .stone.on .es { opacity: 1; }
+    .stone .card { cursor: pointer; }
     .tok { cursor: pointer; border-bottom: 1px dotted #6b7a5f88; transition: background .12s, color .12s; border-radius: 3px; padding: 0 1px; }
     .tok:hover { background: #7fae6f22; color: #fff; }
     .tok.linked { border-bottom-color: var(--accent); }

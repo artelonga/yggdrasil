@@ -267,6 +267,15 @@ function renderChapter(keepVi) {
   });
   $('trail').querySelectorAll('[data-note]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); toggleVerseNote(+b.dataset.note); });
 
+  // YG-140: clicar a SENTENÇA a escolhe (realça + traz o espanhol). Ignora
+  // cliques em palavra (.tok abre o inspetor) e nos botões ★/✎.
+  $('trail').querySelectorAll('.stone').forEach((st) => {
+    st.addEventListener('click', (e) => {
+      if (e.target.closest('.tok, .iconbtn, .vnote')) return;
+      focusVerse(+st.dataset.i);
+    });
+  });
+
   const notes = $('notes');
   if ((ch.notes || []).length) {
     notes.innerHTML = `<h3 id="notes-h">NOTAS de Cadogan (${ch.notes.length}) ▾</h3>` +
@@ -460,9 +469,12 @@ function renderOcorrencias(formaOuPalavra, verse) {
   const host = $('w-ocorr'); if (!host) return;
   const s = slug(formaOuPalavra);
   const aqui = verse ? `${state.ci}.${verse.v}` : null;
+  const total = (concord[s] || []).length;
   const todas = (concord[s] || []).filter((o) => `${o.ci}.${o.v}` !== aqui);
-  if (!todas.length) { host.innerHTML = ''; return; }
-  host.innerHTML = `<div class="seglabel">outras ocorrências (${todas.length})</div>` +
+  // YG-140: total explícito de ocorrências no corpus (inclui a atual)
+  const cab = total ? `<div class="seglabel">${total} ocorrência${total > 1 ? 's' : ''} no corpus</div>` : '';
+  if (!todas.length) { host.innerHTML = cab; return; }
+  host.innerHTML = cab + `<div class="seglabel">outras (${todas.length})</div>` +
     todas.slice(0, 40).map((o, i) =>
       `<a class="sense" data-occ="${i}" style="cursor:pointer;display:block"><div class="hw">Cap. ${esc(o.roman)} · v${esc(o.v)}</div></a>`).join('');
   host.querySelectorAll('[data-occ]').forEach((a) => {

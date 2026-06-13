@@ -107,3 +107,20 @@ test('laboratório de corpus: endpoints e página (YG-139)', async ({ page, requ
   await page.waitForTimeout(1500);
   expect(erros).toEqual([]);
 });
+
+test('Ayvu: clicar verso realça espanhol; clicar palavra mostra raízes + total ocorrências (YG-140)', async ({ page }) => {
+  const erros = guardErrors(page);
+  await page.goto('/universos/corpus');
+  await expect(page.locator('#chapsel option').first()).toBeAttached({ timeout: 10000 });
+  const v = page.locator('.stone').nth(1);
+  await v.locator('.card').click({ position: { x: 5, y: 5 } }); // canto, fora de token
+  await expect(v).toHaveClass(/on/, { timeout: 4000 }); // verso escolhido
+  await expect(v.locator('.es')).toBeVisible();
+  // clicar palabra → inspetor com raízes + ocorrências
+  await page.locator('.stone .gn .tok').first().click();
+  await expect(page.locator('#inspector')).toHaveClass(/open/, { timeout: 5000 });
+  await page.waitForTimeout(1500);
+  const body = await page.locator('#insp-body').innerText();
+  expect(/ocorr.ncia/i.test(body)).toBeTruthy();
+  expect(erros).toEqual([]);
+});

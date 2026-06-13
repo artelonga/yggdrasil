@@ -2,6 +2,17 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.23.1] — 2026-06-13 — YG-140: escolher sentença no Ayvu + total de ocorrências
+
+### Changed
+
+- **Clicar uma sentença a escolhe** no reader do Ayvu Rapyta: o espanhol fica
+  suave por padrão e **realça na sentença selecionada** (clique no card, fora de
+  palavra/botões) — o passo "escolher sentença → ver a tradução" que faltava. A
+  trilha continua visível.
+- **Inspetor de palavra** mostra o **total de ocorrências no corpus** (explícito)
+  além das "outras (N)" com saltos para outras seções.
+
 ## [2.23.0] — 2026-06-13 — YG-139: framework NLP de corpus (DuckDB) — frequência + joins cross-linguísticos
 
 ### Added
