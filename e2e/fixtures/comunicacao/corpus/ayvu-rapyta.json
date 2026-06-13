@@ -1,0 +1,15 @@
+{
+  "work": {"slug":"ayvu-rapyta","title":"Ayvu Rapyta (fixture)","author":"Cadogan","year":"1959"},
+  "lex": {"yvy":[{"hw":"yvy","g":"terra, mundo"}],"tata":[{"hw":"tata","g":"fogo"}]},
+  "chapters": [
+    {"n":1,"roman":"I","title_es":"El Fundamento","pages":"1","notes":["nota de teste"],
+     "verses":[
+       {"v":1,"gn":"yvy tata ara","es":"a terra o fogo o tempo","words":[
+         {"w":"yvy","n":"~yvy","seg":["yvy"]},{"w":"tata","n":"~tata","seg":["ta","ta"]},{"w":"ara","n":"~ara","seg":["a","ra"]}]},
+       {"v":2,"gn":"nhe'ẽ yvy","es":"a alma e a terra","words":[
+         {"w":"nhe'ẽ","n":"~nhee","seg":["nhe","e"]},{"w":"yvy","n":"~yvy","seg":["yvy"]}]},
+       {"v":3,"gn":"ka'aguy ara","es":"a floresta e o tempo","words":[
+         {"w":"ka'aguy","n":"~kaaguy","seg":["ka","aguy"]},{"w":"ara","n":"~ara","seg":["a","ra"]}]}
+     ]}
+  ]
+}
