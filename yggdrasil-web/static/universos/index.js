@@ -53,6 +53,7 @@
     // 1. catálogo servidor-side (embedados + planejados + externos)
     (registry || []).forEach(function (u) {
       items.push({
+        slug: u.slug || u.id,
         nome: u.title || u.name || u.slug,
         desc: u.description || "",
         status: u.status || "embedded",
@@ -104,12 +105,24 @@
     return items;
   }
 
+  // YG-137: dois comportamentos por card — (1) clicar/↗ leva à ORIGEM (página
+  // do universo embedado, ou external_url, ou template de contribuição p/
+  // planejados); (2) "✦ criar perfil aqui" cria o perfil do usuário NESTE
+  // universo (vale até para os que ainda não existem). slug identifica o alvo.
+  function slugFor(it) {
+    if (it.slug) return it.slug;
+    // deriva do url quando não veio do registry (salas/instâncias/corpus)
+    var m = (it.url || "").match(/\/universos\/(?:instance\/)?([^/?#]+)/);
+    return m ? decodeURIComponent(m[1]) : (it.nome || "").toLowerCase().replace(/\s+/g, "-");
+  }
   function cardHTML(it) {
     var st = STATUS[it.status] || { label: it.status, icon: "" };
     var t = targetFor(it);
     var typeCls = (it.type || "").replace(/[^a-z]/gi, "").toLowerCase();
-    return '<a class="card" href="' + esc(t.url) + '"' +
-        (t.ext ? ' target="_blank" rel="noopener"' : "") + '>' +
+    var origem = t.url && t.url !== "#"
+      ? '<a class="cta-origem" href="' + esc(t.url) + '"' + (t.ext ? ' target="_blank" rel="noopener"' : "") + '>↗ origem</a>'
+      : "";
+    return '<div class="card" data-slug="' + esc(slugFor(it)) + '">' +
       '<div class="ct">' +
         '<span class="status ' + esc(it.status) + '">' + st.icon + " " + esc(st.label) + '</span>' +
         (it.type ? '<span class="badge ' + esc(typeCls) + '">' + esc(it.type) + '</span>' : "") +
@@ -118,7 +131,27 @@
       '</div>' +
       '<h3>' + esc(it.nome) + '</h3>' +
       '<div class="desc">' + esc(it.desc) + '</div>' +
-    '</a>';
+      '<div class="acts">' + origem +
+        '<button class="cta-perfil" data-slug="' + esc(slugFor(it)) + '">✦ criar perfil aqui</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // CTA "criar perfil aqui" — logado: PUT /profile/universos/{slug}; senão login.
+  function criarPerfil(slug, btn) {
+    var token = null;
+    try { token = localStorage.getItem("yggdrasil-jwt"); } catch (e) { /* sem LS */ }
+    if (!token) { location.assign("/login?next=" + encodeURIComponent("/universos")); return; }
+    btn.disabled = true;
+    fetch("/api/v1/profile/universos/" + encodeURIComponent(slug), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: "{}",
+    }).then(function (r) {
+      if (r.status === 401) { location.assign("/login?next=" + encodeURIComponent("/universos")); return; }
+      btn.textContent = r.ok ? "✓ perfil criado" : "⚠ falhou";
+      if (!r.ok) btn.disabled = false;
+    }).catch(function () { btn.textContent = "⚠ offline"; btn.disabled = false; });
   }
 
   function uniqueSorted(arr) {
@@ -171,6 +204,9 @@
       elGrid.innerHTML = list.length
         ? list.map(cardHTML).join("")
         : '<div class="empty">Nenhum universo encontrado com esses filtros.</div>';
+      elGrid.querySelectorAll(".cta-perfil").forEach(function (b) {
+        b.addEventListener("click", function () { criarPerfil(b.dataset.slug, b); });
+      });
     }
 
     [fQ, fStatus, fType, fOrigin, fGenre].forEach(function (el) {
