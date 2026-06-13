@@ -137,3 +137,17 @@ test('lounge Mbyá: painel "mais populares" com rank + barra (YG-141)', async ({
   await expect(page.locator('#populares .pop-bar i').first()).toBeVisible();
   expect(erros).toEqual([]);
 });
+
+test('campanha: landing com tiers + stats + CTA de interesse (YG-143)', async ({ page }) => {
+  const erros = guardErrors(page);
+  await page.goto('/campanha');
+  // 6 tiers de REWARDS.md
+  await expect(page.locator('.tier')).toHaveCount(6, { timeout: 10000 });
+  await expect(page.locator('.tier .tname', { hasText: 'Semente' })).toBeVisible();
+  // stats ao vivo carregam (universos > 0)
+  await page.waitForTimeout(1200);
+  // CTA abre o modal de interesse
+  await page.locator('.tier button[data-tier="semente"]').click();
+  await expect(page.locator('#ap')).toHaveClass(/open/);
+  expect(erros).toEqual([]);
+});

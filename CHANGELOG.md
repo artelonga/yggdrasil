@@ -2,6 +2,17 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.25.0] — 2026-06-13 — YG-143: superfície de campanha (/campanha)
+
+### Added
+
+- **`/campanha`** — landing da campanha (da semente ao topo): hero + visão,
+  **stats ao vivo** (universos, jogando agora, sessões 24h, termos do léxico
+  Mbyá), os **6 tiers** de `REWARDS.md` (Semente R$25 → Yggdrasil R$1.500, com
+  recompensas e limites), e **CTA "tenho interesse"** por tier que registra o
+  sinal no canal de feedback (sem pagamento — Catarse é externo). Link "🌱 Apoie"
+  na nav global. Fecha a maior lacuna do north-star (antes só `REWARDS.md`).
+
 ## [2.24.1] — 2026-06-13 — YG-142: lounge consertado (co_graph vendorizado) + CI completo
 
 ### Fixed
