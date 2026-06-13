@@ -2,6 +2,21 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.21.1] — 2026-06-13 — YG-135: experiência móbile — fim do scroll horizontal
+
+### Fixed
+
+- **Scroll horizontal no celular** (viewport 390px) em três páginas: `/lobby`
+  (canvas do mapa de tamanho fixo → `max-width:100%`), `/analytics` (tabelas com
+  paths/glosas longas → `overflow-x:hidden`, `table-layout:fixed`, `word-break`)
+  e `/universos/corpus` (inspetor off-canvas estendia o scrollWidth →
+  `overflow-x:hidden`; toolbar sem `flex-wrap`).
+
+### Added (test)
+
+- Playwright `mobile-audit.spec.js` (390×844): 7 rotas verificadas sem overflow
+  lateral — entra na suíte como guarda permanente.
+
 ## [2.21.0] — 2026-06-13 — YG-134: Ayvu Rapyta ligado ao léxico completo (4.837) + concordância + espanhol
 
 ### Added
