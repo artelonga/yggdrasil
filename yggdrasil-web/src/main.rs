@@ -281,6 +281,23 @@ async fn main() -> anyhow::Result<()> {
         yggdrasil_core::instance::InstanceStore::new(&instances_dir)
             .map_err(|e| anyhow::anyhow!("instance store: {e}"))?,
     );
+
+    // YG-137: perfil universal de usuário — UM por usuário, universos compõem.
+    let profiles_dir =
+        std::env::var("YGGDRASIL_PROFILES_DIR").unwrap_or_else(|_| "data/profiles".to_string());
+    let profile_router = Router::new()
+        .route(
+            "/api/v1/profile",
+            get(api::profile::get_profile).put(api::profile::put_profile),
+        )
+        .route(
+            "/api/v1/profile/universos/{slug}",
+            axum::routing::put(api::profile::join_universe).delete(api::profile::leave_universe),
+        )
+        .with_state(Arc::new(api::profile::ProfileApiState {
+            jwt_secret: auth_state.jwt_secret.clone(),
+            store: Arc::new(yggdrasil_core::profile::ProfileStore::new(&profiles_dir)),
+        }));
     // YG-93/YG-103: producer de eventos p/ a federated bus do CO. O canal
     // `broadcast` é sempre criado (barato); a task de fundo só sobe se
     // `YGG_CO_BRIDGE_URL` + `YGG_CO_BRIDGE_TOKEN` estiverem setados (gate). Sem
@@ -563,6 +580,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(poker_router)
         .merge(universos_router)
         .merge(instances_router)
+        .merge(profile_router)
         .merge(feedback_router)
         .merge(comunicacao_router)
         .merge(stream_router)

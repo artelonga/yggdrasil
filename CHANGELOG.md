@@ -2,6 +2,24 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.22.0] — 2026-06-13 — YG-137: perfil universal de usuário + catálogo com dois comportamentos
+
+### Added
+
+- **Perfil universal de usuário** (`yggdrasil-core/profile.rs`): UM perfil por
+  usuário (base nome/bio/avatar) sobre o qual **cada universo compõe** via um mapa
+  `universes` de props livres — composição sobre herança, como nota↔tarefa.
+- **API** owner-only (JWT): `GET/PUT /api/v1/profile` e
+  `PUT/DELETE /api/v1/profile/universos/{slug}`. "Criar perfil neste universo" é
+  idempotente e vale para slugs **inexistentes** (planejados/externos) — é o
+  perfil que passa a existir, não o universo.
+- **Catálogo `/universos`**: cada card ganha **dois comportamentos** — "↗ origem"
+  (página do universo / external_url / template de contribuição) e
+  "✦ criar perfil aqui" (logado → cria; senão → login).
+- **YG-138** mintada (universo-criado→CO + convites/subscribe): bloqueada pela
+  ausência de API user-facing de criação de universo no CO (`parent_key` só é
+  interno hoje); spec registrada.
+
 ## [2.21.2] — 2026-06-13 — YG-136: player no celular — canvas scrollável + editor como formulário
 
 ### Changed

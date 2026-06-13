@@ -81,3 +81,16 @@ test('léxico completo: busca e índice respondem (YG-134)', async ({ request, b
   expect(busca.ok()).toBeTruthy();
   expect((await busca.json()).total).toBeGreaterThan(0);
 });
+
+test('perfil universal: GET exige auth, catálogo mostra os dois comportamentos (YG-137)', async ({ page, request, baseURL }) => {
+  // perfil é owner-only
+  const r = await request.get(baseURL + '/api/v1/profile');
+  expect(r.status()).toBe(401);
+  // catálogo: cada card tem origem + "criar perfil aqui"
+  const erros = guardErrors(page);
+  await page.goto('/universos');
+  await expect(page.locator('.card .cta-perfil').first()).toBeVisible({ timeout: 10_000 });
+  // ao menos um card com link de origem
+  expect(await page.locator('.card .cta-origem').count()).toBeGreaterThan(0);
+  expect(erros).toEqual([]);
+});

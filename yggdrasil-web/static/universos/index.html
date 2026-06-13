@@ -33,6 +33,16 @@
       transition: border-color .12s, transform .12s;
     }
     .card:hover { border-color: #d4af37; transform: translateY(-2px); }
+    /* YG-137: dois comportamentos por card */
+    .card .acts { display: flex; gap: .5rem; margin-top: .6rem; flex-wrap: wrap; }
+    .card .acts a, .card .acts button {
+      font: inherit; font-size: .72rem; letter-spacing: .04em; cursor: pointer;
+      border: 1px solid #2a2a35; background: #15151c; color: #d4af37;
+      border-radius: 6px; padding: .35rem .6rem; text-decoration: none;
+    }
+    .card .acts a:hover, .card .acts button:hover { border-color: #d4af37; }
+    .card .acts button:disabled { opacity: .6; cursor: default; }
+    .card .acts .cta-perfil { color: #6dbf8b; }
     .card .ct { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
     .card h3 { font-weight: 400; font-size: 1.1rem; letter-spacing: .02em; }
     .card .desc { font-size: .82rem; opacity: .62; line-height: 1.45; }
