@@ -2,6 +2,23 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.24.1] — 2026-06-13 — YG-142: lounge consertado (co_graph vendorizado) + CI completo
+
+### Fixed
+
+- **Lounge Mbyá quebrado em produção**: `/universos/comunicacao` carregava
+  `co_graph.js` de `co.artelonga.com.br/lib/co-graph.js`, que está **fora (URL
+  morta)** — a página travava no script externo. O **co_graph foi vendorizado**
+  em `/static/universos/co-graph.js`; sem mais dependência de host externo.
+
+### Added
+
+- **CI completo**: `cargo fmt --check` + clippy/rustfmt components + **job
+  Playwright** contra o binário real e uma **fixture self-contida** de comunicacao
+  (`e2e/fixtures/`) — corpus, lounge e corpus-lab testados sem dados externos.
+- `docs/ROADMAP.md` reescrito para o estado real (v2.24); status de epics
+  entregues reconciliados (YG-68/110/111 done).
+
 ## [2.24.0] — 2026-06-13 — YG-141: lounge Mbyá mostra os mais populares (rank + popularidade)
 
 ### Fixed/Added

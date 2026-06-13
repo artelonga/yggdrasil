@@ -23,7 +23,7 @@ test('corpus do Ayvu Rapyta carrega capítulos (não "indisponível")', async ({
 
 test('comunicação: toolbar e chips de léxicos visíveis, NÃO cobertos pela nav', async ({ page }) => {
   const erros = guardErrors(page);
-  await page.goto('/universos/comunicacao');
+  await page.goto('/universos/comunicacao', { waitUntil: 'domcontentloaded' });
   const toolbar = page.locator('#toolbar');
   await expect(toolbar).toBeVisible();
 
@@ -76,7 +76,7 @@ test('Ayvu Rapyta: clicar palavra liga ao léxico completo e mostra ocorrências
 test('léxico completo: busca e índice respondem (YG-134)', async ({ request, baseURL }) => {
   const idx = await request.get(baseURL + '/api/v1/comunicacao/lexico/indice?lang=gn-mbya');
   expect(idx.ok()).toBeTruthy();
-  expect((await idx.json()).length).toBeGreaterThan(1000);
+  expect((await idx.json()).length).toBeGreaterThan(2); // estrutura, não escala (CI usa fixture)
   const busca = await request.get(baseURL + '/api/v1/comunicacao/lexico/busca?lang=gn-mbya&q=floresta&limit=5');
   expect(busca.ok()).toBeTruthy();
   expect((await busca.json()).total).toBeGreaterThan(0);
@@ -127,7 +127,7 @@ test('Ayvu: clicar verso realça espanhol; clicar palavra mostra raízes + total
 
 test('lounge Mbyá: painel "mais populares" com rank + barra (YG-141)', async ({ page }) => {
   const erros = guardErrors(page);
-  await page.goto('/universos/comunicacao');
+  await page.goto('/universos/comunicacao', { waitUntil: 'domcontentloaded' });
   // o lounge cai no 1º léxico público (Mbyá); o painel popula com pop
   await expect(page.locator('#populares .pop-row').first()).toBeVisible({ timeout: 12000 });
   const n = await page.locator('#populares .pop-row').count();

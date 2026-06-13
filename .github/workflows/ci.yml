@@ -15,6 +15,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
 
       # game-core (git-pinado, YG-104) tem build.rs que compila protobuf → exige protoc.
       - name: Install protobuf-compiler
@@ -42,6 +43,9 @@ jobs:
       - name: Build universe WASM crates
         run: bash scripts/build-universes.sh
 
+      - name: Format check
+        run: cargo fmt --all -- --check
+
       - name: Build workspace
         run: cargo build --release
 
@@ -53,6 +57,25 @@ jobs:
 
       - name: E2E — editor de universos (servidor real + auth real)
         run: YGGDRASIL_WEB_BIN=target/release/yggdrasil-web bash scripts/e2e-editor.sh
+
+      # YG-142: suíte Playwright contra o binário real + fixture self-contida de
+      # comunicacao (sem dep de host externo — co_graph é vendorizado).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Playwright — instalar
+        run: cd e2e && npm install && npx playwright install --with-deps chromium
+      - name: Playwright — rodar (servidor real + fixture)
+        run: |
+          YGGDRASIL_JWT_SECRET=ci-test \
+          YGGDRASIL_DB=/tmp/ci.db YGGDRASIL_SEMENTES_DB=/tmp/cis.db \
+          YGGDRASIL_INSTANCES_DIR=/tmp/cii YGGDRASIL_PROFILES_DIR=/tmp/cip \
+          YGGDRASIL_COMUNICACAO_DIR=/tmp/cicr \
+          COMUNICACAO_DIR="$PWD/e2e/fixtures/comunicacao" \
+          target/release/yggdrasil-web & SRV=$!
+          for i in $(seq 1 30); do curl -sf http://localhost:3030/health >/dev/null 2>&1 && break; sleep 1; done
+          cd e2e && BASE_URL=http://localhost:3030 npx playwright test
+          R=$?; kill $SRV 2>/dev/null; exit $R
 
   # NÃO-bloqueante (decisão do spike YG-35, docs/adr/YG-35-godot-vs-canvas.md): os
   # jogos 2D Godot (poker/snake/tetris) com erros de parse (GameBase/Card/HandEvaluator)
