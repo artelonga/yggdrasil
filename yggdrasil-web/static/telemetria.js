@@ -138,28 +138,55 @@
   //   var atv = window.yggTelemetria.atividade('snake');
   //   ... atv.partida({ score: 42, resultado: 'fim' });  // opcional
   var PULSO_MS = 45000;
+  // Ping de presença LOCAL (intra-app, para o painel/lobby ao vivo). Separado do
+  // track() acima, que vai ao hub do CO (agregado anônimo). Mesmo vid opaco.
+  function pingPresenca(universo, ev, extra) {
+    try {
+      var body = JSON.stringify(Object.assign(
+        { universo: universo, vid: VID, ev: ev }, extra || {}));
+      if (ev === 'saida' && navigator.sendBeacon) {
+        navigator.sendBeacon('/api/v1/presenca',
+          new Blob([body], { type: 'application/json' }));
+        return;
+      }
+      fetch('/api/v1/presenca', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body,
+        keepalive: true,
+      }).catch(function () {});
+    } catch (_) { /* presença nunca quebra a página */ }
+  }
   function atividade(universo) {
     universo = String(universo || '').slice(0, 64);
     if (!universo) return { partida: function () {}, sair: function () {} };
     var entrou = Date.now();
     var saiu = false;
     track('entrada', { universo: universo });
+    pingPresenca(universo, 'entrada');
     var hb = setInterval(function () {
       // pulso só enquanto a aba está visível — mantém viva a presença de jogos
       // sem fim sem inflar tempo de aba em background.
-      if (document.visibilityState !== 'hidden') track('pulso', { universo: universo });
+      if (document.visibilityState !== 'hidden') {
+        track('pulso', { universo: universo });
+        pingPresenca(universo, 'pulso');
+      }
     }, PULSO_MS);
     function sair() {
       if (saiu) return;
       saiu = true;
       clearInterval(hb);
-      track('saida', { universo: universo, ativo_ms: Date.now() - entrou });
+      var ativo = Date.now() - entrou;
+      track('saida', { universo: universo, ativo_ms: ativo });
+      pingPresenca(universo, 'saida', { ativo_ms: ativo });
       flushBeacon();
     }
     window.addEventListener('pagehide', sair);
     return {
       partida: function (props) {
-        track('partida', Object.assign({ universo: universo }, props || {}));
+        props = props || {};
+        track('partida', Object.assign({ universo: universo }, props));
+        pingPresenca(universo, 'partida', props);
       },
       sair: sair,
     };
