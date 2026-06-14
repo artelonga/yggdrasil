@@ -7,6 +7,59 @@ import { ROOMS, PARENT } from './sample.js';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
+// ── persistência de layout (YG-149) ──────────────────────────────────────────
+// Manipulação direta (drag-drop) deixa de ser efêmera: a posição/reparent de cada
+// objeto persiste por universo. Local (localStorage) sempre; e, quando o Mundo
+// está ligado a uma instância real (`?inst=<id>` + token), faz write-back ao
+// backend (`/layout`) → frontmatter `.md` → CO (federação). Sem instância real,
+// fica só no local — base navegável pro YG-148 plugar a fonte real.
+const QS = (() => { try { return new URLSearchParams(location.search); } catch (_) { return new URLSearchParams(); } })();
+const INST = QS.get('inst');
+const UNIV = INST || 'mundo-proto';
+const TOKEN = (() => { try { return localStorage.getItem('ygg_token'); } catch (_) { return null; } })();
+const LKEY = 'mundo_layout_v1';
+function loadLayouts() { try { return JSON.parse(localStorage.getItem(LKEY) || '{}'); } catch (_) { return {}; } }
+function saveLayouts(o) { try { localStorage.setItem(LKEY, JSON.stringify(o)); } catch (_) {} }
+function layoutFor(u) { return loadLayouts()[u] || {}; }
+// grava 1 movimento (commit por solta — o arraste em si não escreve a cada pixel)
+function recordMove(slug, room, x, y, parent) {
+  if (!slug) return;
+  const all = loadLayouts(); const u = (all[UNIV] = all[UNIV] || {});
+  const prev = u[slug] || {};
+  u[slug] = { room, x, y, parent: parent !== undefined ? parent : prev.parent };
+  saveLayouts(all);
+  mirrorLayout(slug, room, x, y, parent);
+}
+function mirrorLayout(slug, room, x, y, parent) {
+  if (!INST || !TOKEN) return; // sem instância real ligada → só local
+  const move = { slug, pos: { room, x, y } };
+  if (parent !== undefined) move.parent = parent;
+  fetch(`/api/v1/instances/${encodeURIComponent(INST)}/layout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+    body: JSON.stringify({ moves: [move] }),
+  }).catch(() => {});
+}
+// aplica o layout salvo sobre os ROOMS (posição + reparent) — chamado no boot
+function applyLayout() {
+  const L = layoutFor(UNIV);
+  for (const [slug, p] of Object.entries(L)) {
+    let found = null, fromRoom = null;
+    for (const id of Object.keys(ROOMS)) {
+      const n = (ROOMS[id].notes || []).find((x) => x.slug === slug);
+      if (n) { found = n; fromRoom = id; break; }
+    }
+    if (!found) continue;
+    if (typeof p.x === 'number') found.x = p.x;
+    if (typeof p.y === 'number') found.y = p.y;
+    const dest = p.parent || p.room;
+    if (dest && dest !== fromRoom && ROOMS[dest]) {
+      ROOMS[fromRoom].notes = (ROOMS[fromRoom].notes || []).filter((x) => x !== found);
+      (ROOMS[dest].notes = ROOMS[dest].notes || []).push(found);
+    }
+  }
+}
+
 let world, curId = 'raiz';
 let temaAtual = 'medieval-castle'; // versão ativa (amarra telemetria + feedback)
 const navStack = []; // {fromRoom, doorXY} para voltar ao ponto certo
@@ -173,12 +226,15 @@ function onDragDrop(ent, tx, ty, target) {
   if (target && target.type === 'door' && ent.type === 'note') {
     r.notes = (r.notes || []).filter((x) => x !== obj);
     const dest = ROOMS[target.target]; (dest.notes = dest.notes || []).push(obj);
-    renderTrilha(); toast(`"${obj.title}" movida → ${target.label} (árvore atualizou)`); return;
+    recordMove(obj.slug, target.target, obj.x, obj.y, target.target); // reparent persiste
+    renderTrilha(); toast(`"${obj.title}" movida → ${target.label} (persistido)`); return;
   }
   if (world.isWall(tx, ty)) { toast('Não dá pra soltar aí'); return; }
   const occ = world.entityAt(tx, ty);
   if (occ && !(occ.x === obj.x && occ.y === obj.y)) { toast('Tile ocupado'); return; }
-  obj.x = tx; obj.y = ty; renderTrilha(); toast('Reposicionado (state salvo em memória)');
+  obj.x = tx; obj.y = ty;
+  recordMove(obj.slug, curId, tx, ty); // posição persiste (.md/CO quando ligado)
+  renderTrilha(); toast('Reposicionado ✓ (persistido)');
 }
 
 // ── NPC: tutoriais determinísticos (tutorial.md) + LLM local (Ollama) ────────
@@ -334,6 +390,7 @@ function hidePanel() { $('panel').classList.remove('open'); }
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1800); }
 
 // ── boot ─────────────────────────────────────────────────────────────────────
+applyLayout(); // YG-149: reabrir o Mundo mantém o layout persistido
 world = new World($('cv'), { onInteract, onDragDrop, onEdge });
 renderTemas();
 renderFerramentas();
@@ -351,3 +408,32 @@ $('fb-btn').onclick = abrirFeedback;
 $('npc-top').onclick = () => abrirNPC({ name: 'Guia' });
 $('npc-ab').onclick = () => { npcTop = !npcTop; $('npc-ab').textContent = npcTop ? 'NPC: topo (B)' : 'NPC: lateral (A)'; renderFerramentas(); };
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hidePanel(); fecharOverlay(); } });
+
+// hook de teste (YG-149 e2e): dirige o MESMO caminho de drag-drop/persistência
+// que o mouse — sem depender da matemática de pixels do canvas.
+function findNote(slug) {
+  for (const id of Object.keys(ROOMS)) {
+    const n = (ROOMS[id].notes || []).find((x) => x.slug === slug);
+    if (n) return { room: id, n };
+  }
+  return null;
+}
+window.__mundo = {
+  ready: true,
+  cur: () => curId,
+  enter: (id) => enterRoom(id),
+  posOf: (slug) => { const f = findNote(slug); return f ? { room: f.room, x: f.n.x, y: f.n.y } : null; },
+  drag: (slug, tx, ty) => {
+    const f = findNote(slug); if (!f) return false;
+    if (f.room !== curId) enterRoom(f.room);
+    onDragDrop({ type: 'note', _ref: f.n, x: f.n.x, y: f.n.y }, tx, ty, null);
+    return true;
+  },
+  reparent: (slug, destRoom) => {
+    const f = findNote(slug); if (!f || !ROOMS[destRoom]) return false;
+    if (f.room !== curId) enterRoom(f.room);
+    const door = { type: 'door', target: destRoom, label: ROOMS[destRoom].title, x: f.n.x, y: f.n.y };
+    onDragDrop({ type: 'note', _ref: f.n, x: f.n.x, y: f.n.y }, f.n.x, f.n.y, door);
+    return true;
+  },
+};

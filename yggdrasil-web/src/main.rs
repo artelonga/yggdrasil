@@ -384,6 +384,12 @@ async fn main() -> anyhow::Result<()> {
                 .put(api::instances::put_note)
                 .delete(api::instances::delete_note),
         )
+        // YG-149: manipulação direta — commit em lote de posições/reparent do
+        // drag-drop no frontmatter `.md` + write-back ao CO.
+        .route(
+            "/api/v1/instances/{id}/layout",
+            post(api::instances::put_layout),
+        )
         // YG-125: rascunho server-side (branch cross-device do editor popup) —
         // owner-only, fora de notes/, nunca passa pelo producer do bridge.
         .route(
