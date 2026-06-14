@@ -254,6 +254,67 @@ pub async fn get_instance(
     Json(inst).into_response()
 }
 
+/// Resumo leve de um universo alcançável por portal (cross-universe, YG-157).
+/// Só metadados (id/título/dono/publicado) — o **mundo** do destino é carregado
+/// lazy quando o usuário atravessa (`GET /api/v1/instances/{id}` + notas).
+#[derive(serde::Serialize)]
+pub struct PortalSummary {
+    pub id: String,
+    pub title: String,
+    pub owner: String,
+    pub published: bool,
+}
+
+/// `GET /api/v1/instances/{id}/portals` — universos para os quais o usuário pode
+/// **atravessar** a partir de `{id}` (YG-157, "universe-as-node" / CO-400).
+///
+/// Reusa a visibilidade do feed: um destino entra se for **público** ou **do
+/// próprio caller**. Sempre exclui a própria origem `{id}`. Devolve só metadados
+/// (lazy: o mundo do destino só é buscado ao cruzar o portal). A origem precisa
+/// ser visível ao caller — mesmo gate de [`get_instance`].
+pub async fn list_portals(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let src = match state.store.load(&id) {
+        Ok(i) => i,
+        Err(e) => return map_store_err(e),
+    };
+    let caller = extract_bearer(&headers).and_then(|t| verify_jwt(&t, &state.jwt_secret).ok());
+    if !src.published {
+        match &caller {
+            Some(u) if *u == src.owner => {}
+            Some(_) => return err_json(StatusCode::FORBIDDEN, "nao_e_dono"),
+            None => return unauthorized(),
+        }
+    }
+    // candidatos: feed público + (se autenticado) os do próprio caller.
+    let mut all = match state.store.list_published() {
+        Ok(l) => l,
+        Err(e) => return map_store_err(e),
+    };
+    if let Some(u) = &caller {
+        match state.store.list_owner(u) {
+            Ok(owned) => all.extend(owned),
+            Err(e) => return map_store_err(e),
+        }
+    }
+    // dedupe por id, exclui a origem; preserva a ordem (updated_at desc das listas).
+    let mut seen = std::collections::HashSet::new();
+    let portals: Vec<PortalSummary> = all
+        .into_iter()
+        .filter(|i| i.id != id && seen.insert(i.id.clone()))
+        .map(|i| PortalSummary {
+            id: i.id,
+            title: i.title,
+            owner: i.owner,
+            published: i.published,
+        })
+        .collect();
+    Json(serde_json::json!({ "portals": portals })).into_response()
+}
+
 /// `PUT /api/v1/instances/{id}` — salva a instância inteira (owner-only).
 pub async fn put_instance(
     State(state): ApiState,
@@ -814,6 +875,7 @@ mod tests {
                     .patch(patch_instance)
                     .delete(delete_instance),
             )
+            .route("/api/v1/instances/{id}/portals", get(list_portals))
             .route("/api/v1/instances/{id}/notes", get(list_notes))
             .route(
                 "/api/v1/instances/{id}/notes/{slug}",
@@ -954,6 +1016,115 @@ mod tests {
             .unwrap();
         let v = body_json(resp).await;
         v["id"].as_str().unwrap().to_string()
+    }
+
+    /// Publica a instância (PUT do corpo inteiro com `published=true`, owner-only).
+    async fn publish(app: &Router, id: &str, user: &str) {
+        let get = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/instances/{id}"))
+                    .header("authorization", format!("Bearer {}", token(user)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut inst = body_json(get).await;
+        inst["published"] = serde_json::Value::Bool(true);
+        let put = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/instances/{id}"))
+                    .header("authorization", format!("Bearer {}", token(user)))
+                    .header("content-type", "application/json")
+                    .body(Body::from(inst.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(put.status(), StatusCode::OK);
+    }
+
+    async fn portals_of(app: &Router, id: &str, user: Option<&str>) -> serde_json::Value {
+        let mut req = Request::builder().uri(format!("/api/v1/instances/{id}/portals"));
+        if let Some(u) = user {
+            req = req.header("authorization", format!("Bearer {}", token(u)));
+        }
+        let resp = app
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        body_json(resp).await
+    }
+
+    fn portal_ids(v: &serde_json::Value) -> Vec<String> {
+        v["portals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["id"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    // YG-157: a partir de um universo, os portais são os outros universos VISÍVEIS
+    // ao caller (públicos + os dele), excluindo a própria origem.
+    #[tokio::test]
+    async fn portals_respeita_visibilidade() {
+        let (app, _d) = app();
+        let a = create_blank(&app, "alice").await; // origem (de alice)
+        let a_pub = create_blank(&app, "alice").await; // outro de alice, publicado
+        let alice_priv = create_blank(&app, "alice").await; // outro de alice, privado
+        let bob_pub = create_blank(&app, "bob").await; // publicado por bob
+        let bob_priv = create_blank(&app, "bob").await; // privado de bob
+        publish(&app, &a_pub, "alice").await;
+        publish(&app, &bob_pub, "bob").await;
+
+        // alice (dona da origem) vê: o público dela, o privado dela, o público do bob.
+        // NÃO vê o privado do bob, nem a própria origem.
+        let mut ids = portal_ids(&portals_of(&app, &a, Some("alice")).await);
+        ids.sort();
+        let mut esperado = vec![a_pub.clone(), alice_priv.clone(), bob_pub.clone()];
+        esperado.sort();
+        assert_eq!(ids, esperado);
+        assert!(!ids.contains(&a), "exclui a própria origem");
+        assert!(
+            !ids.contains(&bob_priv),
+            "privado de outro dono é invisível"
+        );
+    }
+
+    // Anônimo só atravessa para universos públicos; origem privada é 401.
+    #[tokio::test]
+    async fn portals_anonimo_so_ve_publicos() {
+        let (app, _d) = app();
+        let a_pub = create_blank(&app, "alice").await;
+        let outro_pub = create_blank(&app, "alice").await;
+        let _priv = create_blank(&app, "alice").await;
+        publish(&app, &a_pub, "alice").await;
+        publish(&app, &outro_pub, "alice").await;
+
+        let ids = portal_ids(&portals_of(&app, &a_pub, None).await);
+        assert_eq!(ids, vec![outro_pub], "anônimo só vê o outro público");
+
+        // origem privada sem token → 401.
+        let priv_src = create_blank(&app, "alice").await;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/instances/{priv_src}/portals"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
