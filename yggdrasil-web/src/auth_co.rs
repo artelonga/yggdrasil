@@ -31,6 +31,26 @@ pub fn co_jwks_url() -> String {
     format!("{}/.well-known/jwks.json", co_base_url())
 }
 
+/// Feature-gate do round-trip editável (YG-124). O botão "Editar no CO" só
+/// aparece quando o CO está **bidirecional** — aceita writes nas entradas
+/// federadas e re-emite `entry.updated` de volta ao hub (CO-413). Enquanto o CO
+/// segue read-only (`AppError::ReadOnlyUniverse`) o gate fica `false` e o botão
+/// nem é exposto, evitando prometer um round-trip que ainda não fecha.
+///
+/// Liga via `YGG_CO_EDITOR=1` (também aceita `true`/`yes`/`on`). Default off:
+/// ops liga só depois que CO-413 estiver em prod.
+pub fn co_editor_enabled() -> bool {
+    std::env::var("YGG_CO_EDITOR")
+        .ok()
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// TTL do cache de JWKS. Curto o suficiente para pegar rotação de chave em CO,
 /// longo o suficiente para não martelar `/.well-known/jwks.json` a cada request.
 const JWKS_TTL: Duration = Duration::from_secs(3600);
@@ -284,6 +304,31 @@ mod tests {
             co_jwks_url(),
             "https://co.artelonga.com.br/.well-known/jwks.json"
         );
+    }
+
+    #[test]
+    fn co_editor_gate_off_por_padrao_on_com_flag() {
+        // YG-124: read-only por padrão (botão "Editar no CO" não aparece);
+        // liga só com a flag explícita, em variantes truthy.
+        unsafe {
+            std::env::remove_var("YGG_CO_EDITOR");
+        }
+        assert!(!co_editor_enabled(), "default deve ser off (CO read-only)");
+        for truthy in ["1", "true", "TRUE", " yes ", "on"] {
+            unsafe {
+                std::env::set_var("YGG_CO_EDITOR", truthy);
+            }
+            assert!(co_editor_enabled(), "{truthy:?} deveria ligar o gate");
+        }
+        for falsy in ["0", "false", "", "nope"] {
+            unsafe {
+                std::env::set_var("YGG_CO_EDITOR", falsy);
+            }
+            assert!(!co_editor_enabled(), "{falsy:?} não deveria ligar o gate");
+        }
+        unsafe {
+            std::env::remove_var("YGG_CO_EDITOR");
+        }
     }
 
     #[test]

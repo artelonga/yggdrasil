@@ -132,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
     let co_handover_router = Router::new()
         .route("/auth/co-handover-receive", get(receive_co_handover))
         .route("/auth/co-login", get(redirect_to_co_login))
+        .route("/api/v1/config", get(frontend_config))
         .with_state(co_handover_state);
 
     // YG-29: poker persiste seating + stacks na mesma SQLite controlada por
@@ -917,6 +918,18 @@ async fn version() -> impl IntoResponse {
     axum::Json(serde_json::json!({
         "name": env!("CARGO_PKG_NAME"),
         "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+/// `GET /api/v1/config` — config pública do frontend, resolvida em runtime no
+/// servidor (sem hardcode no JS). Hoje expõe a base do CO (`CO_BASE_URL`, p/ os
+/// deep-links) e o feature-gate do round-trip editável (YG-124): `co_editor_enabled`
+/// só vira `true` quando o CO está bidirecional (CO-413), e só então o botão
+/// "Editar no CO" do inspetor de nota aparece.
+async fn frontend_config() -> impl IntoResponse {
+    axum::Json(serde_json::json!({
+        "co_base_url": auth_co::co_base_url(),
+        "co_editor_enabled": auth_co::co_editor_enabled(),
     }))
 }
 

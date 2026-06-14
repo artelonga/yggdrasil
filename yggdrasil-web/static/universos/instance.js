@@ -39,6 +39,7 @@ const state = {
   // por padrão; 'todas' expande. Pais colapsados escondem a subárvore.
   linkScope: 'irmas',
   collapsed: {},        // id do pai → true (subárvore escondida)
+  config: null,         // YG-124: { coBase, coEditorEnabled } de GET /api/v1/config
 };
 
 const canvas = document.getElementById('canvas');
@@ -67,6 +68,25 @@ function toast(msg) {
 //   /?criar=1&name=<título>&key=<slug sugerido>&source=yggdrasil&instance=<id>
 // Degrada gracioso: sem o handler, o usuário cai no CO logado e clica "+ Novo".
 const CO_BASE = 'https://co.artelonga.com.br';
+// universe_key das notas do Yggdrasil no CO (= co_bridge_producer::UNIVERSE_KEY).
+const CO_UNIVERSE_KEY = 'yggdrasil';
+
+// YG-124: deep-link da nota ao editor do CO (round-trip editável, v3.1). A nota
+// já aterrissa no CO como entrada federada do universo `yggdrasil` no path
+// `instances/<id>/notes/<slug>.md` (CO-383/389, bridge YG-93/97). Abrimos essa
+// entrada no editor do CO (preview, CodeMirror, rascunhos) reusando-o em vez de
+// duplicá-lo. O SSO compartilhado no apex `.artelonga.com.br` (mesmo handover
+// ES256 do login) dispensa segundo login. Editar lá flui de volta pelo bridge
+// (`entry.updated` → apply_inbound → NoteStore), sem eco duplicado.
+//
+// Gated por state.config.coEditorEnabled: enquanto o CO segue read-only o botão
+// nem aparece (ver showNoteInspector).
+function editarNoCO(slug) {
+  const base = state.config?.coBase || CO_BASE;
+  const path = `instances/${state.id}/notes/${slug}.md`;
+  window.location.assign(`${base}/${CO_UNIVERSE_KEY}?path=${encodeURIComponent(path)}`);
+}
+
 function criarNoCO() {
   const inst = state.inst || {};
   const name = inst.title || 'Universo';
@@ -115,6 +135,7 @@ async function load() {
     } catch { /* paleta opcional */ }
   }
 
+  await loadConfig();
   await loadImages();
   await loadNotes();
   sizeCanvas();
@@ -130,6 +151,21 @@ async function load() {
   // instâncias geradas com projection=timeline abrem direto na lente timeline
   if (state.inst.projection === 'timeline') setView('timeline');
   openFromHash();
+}
+
+// YG-124: config pública resolvida no servidor (base do CO + feature-gate do
+// round-trip editável). Opcional: se falhar, state.config fica null e o botão
+// "Editar no CO" simplesmente não aparece.
+async function loadConfig() {
+  try {
+    const r = await fetch(`${API}/config`);
+    if (!r.ok) return;
+    const d = await r.json();
+    state.config = {
+      coBase: d.co_base_url || CO_BASE,
+      coEditorEnabled: !!d.co_editor_enabled,
+    };
+  } catch { /* config opcional */ }
 }
 
 async function loadNotes() {
@@ -1030,6 +1066,19 @@ function showNoteInspector(el, b, slug) {
     edit.style.marginTop = '0.4rem';
     edit.onclick = () => openNoteEditor(slug, note?.title || b.label || slug);
     el.append(edit);
+
+    // YG-124: "Editar no CO" — só quando o CO está bidirecional (feature-gate
+    // por env/capability, GET /api/v1/config). Enquanto o CO é read-only o
+    // botão não aparece, pra não prometer um round-trip que ainda não fecha.
+    if (state.config?.coEditorEnabled) {
+      const editCo = document.createElement('button');
+      editCo.textContent = '✏️ Editar no CO';
+      editCo.title = 'Abrir esta nota no editor do CO (preview, CodeMirror, rascunhos) — já autenticado';
+      editCo.style.marginTop = '0.4rem';
+      editCo.style.marginLeft = '0.4rem';
+      editCo.onclick = () => editarNoCO(slug);
+      el.append(editCo);
+    }
   }
 }
 
