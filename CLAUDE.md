@@ -39,8 +39,8 @@ Tipos: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`. Branches: `feat/YG-<n
 
 SemVer (`feat`=minor, `fix`/`docs`/`refactor`=patch). **NÃO bumpar `Cargo.toml` em PR de feature** — isso colide quando há PRs paralelos e a versão deriva.
 
-1. PR de feature/fix → adiciona ao bloco `## [Unreleased]` do `CHANGELOG.md`. **Não toca** em `Cargo.toml` (`[workspace.package] version`).
-2. **Commit de release** dedicado (`chore(release): X.Y.Z`) é o ÚNICO que toca a versão: renomeia `[Unreleased]` → `[X.Y.Z] — data` e bumpa o `Cargo.toml`.
+1. PR de feature/fix → escreve `CHANGELOG-PENDING/YG-<n>.md` (fragmento por-tarefa). **Não toca** em `Cargo.toml` (`[workspace.package] version`) nem em `CHANGELOG.md` (arquivo-por-tarefa não colide entre PRs paralelos; convenção da YG-94).
+2. **Commit de release** dedicado (`chore(release): X.Y.Z`) é o ÚNICO que toca a versão: funde os `CHANGELOG-PENDING/*.md` em `## [X.Y.Z]`, deleta os fragmentos, bumpa o `Cargo.toml`.
 3. **Deploy só de um commit de release**, e sempre verificar `curl prod/version` == `X.Y.Z` (rota `/version`).
 
 Detalhe completo em `docs/RELEASE.md`.
