@@ -35,9 +35,15 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 Tipos: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`. Branches: `feat/YG-<n>-descricao`.
 
-### Versionamento
+### Versionamento (disciplina CHANGELOG-PENDING — evita deriva com sessões paralelas)
 
-SemVer. `feat` = bump minor. `fix`/`docs`/`refactor` = bump patch. Atualizar `Cargo.toml` (workspace.package.version) e `CHANGELOG.md` no mesmo commit que a mudança.
+SemVer (`feat`=minor, `fix`/`docs`/`refactor`=patch). **NÃO bumpar `Cargo.toml` em PR de feature** — isso colide quando há PRs paralelos e a versão deriva.
+
+1. PR de feature/fix → adiciona ao bloco `## [Unreleased]` do `CHANGELOG.md`. **Não toca** em `Cargo.toml` (`[workspace.package] version`).
+2. **Commit de release** dedicado (`chore(release): X.Y.Z`) é o ÚNICO que toca a versão: renomeia `[Unreleased]` → `[X.Y.Z] — data` e bumpa o `Cargo.toml`.
+3. **Deploy só de um commit de release**, e sempre verificar `curl prod/version` == `X.Y.Z` (rota `/version`).
+
+Detalhe completo em `docs/RELEASE.md`.
 
 ### Regras de git
 

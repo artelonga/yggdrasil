@@ -2,6 +2,13 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+> **Fluxo de release:** features entram em `[Unreleased]` sem bumpar `Cargo.toml`;
+> um commit `chore(release): X.Y.Z` corta a versão. Detalhe em `docs/RELEASE.md`.
+
+## [Unreleased]
+
+_(nada ainda — próximo release corta daqui)_
+
 ## [2.31.0] — 2026-06-14 — Mundo: engine real + drag-drop durável + ÑE'Ẽ (sai do protótipo)
 
 ### Added
