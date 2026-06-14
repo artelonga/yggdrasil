@@ -819,6 +819,25 @@ pub async fn list_templates() -> impl IntoResponse {
     Json(template_summaries())
 }
 
+// ─── LexiconPack (YG-155) ─────────────────────────────────────────────────────
+
+/// `GET /api/v1/comunicacao/packs` — resumos leves dos pacotes-seed (música,
+/// idioma…). Sem auth — navegação pública. **Lazy-load**: só os resumos; as
+/// entradas (e seu áudio) vêm por `GET .../packs/{id}`.
+pub async fn list_packs() -> impl IntoResponse {
+    Json(yggdrasil_core::comunicacao::seed_summaries())
+}
+
+/// `GET /api/v1/comunicacao/packs/{id}` — o pacote completo, sintetizado sob
+/// demanda (memory-light: sem samples; o áudio é só parâmetros de síntese). 404
+/// se o id não existe.
+pub async fn get_pack(Path(id): Path<String>) -> impl IntoResponse {
+    match yggdrasil_core::comunicacao::seed_pack(&id) {
+        Some(pack) => Json(pack).into_response(),
+        None => (StatusCode::NOT_FOUND, "pacote não encontrado").into_response(),
+    }
+}
+
 // ─── Revisão ──────────────────────────────────────────────────────────────────
 
 /// `GET /api/v1/comunicacao/revisao` — fila completa + itens vencidos.
@@ -1194,6 +1213,8 @@ mod tests {
             .route("/api/v1/comunicacao/lexico/lista", get(lexico_lista))
             .route("/api/v1/comunicacao/lexico/promover", post(promover_termo))
             .route("/api/v1/comunicacao/templates", get(list_templates))
+            .route("/api/v1/comunicacao/packs", get(list_packs))
+            .route("/api/v1/comunicacao/packs/{id}", get(get_pack))
             .route("/api/v1/comunicacao/revisao", get(get_revisao))
             .route("/api/v1/comunicacao/revisao/nota", post(nota_revisao))
             .route("/api/v1/comunicacao/caderno", get(get_caderno))
@@ -1257,6 +1278,64 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // ── YG-155: LexiconPacks ──────────────────────────────────────────────
+    #[tokio::test]
+    async fn lista_packs_sem_auth() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/packs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        let arr = v.as_array().unwrap();
+        assert!(arr.iter().any(|p| p["kind"] == "music"));
+        assert!(arr.iter().any(|p| p["kind"] == "language"));
+    }
+
+    #[tokio::test]
+    async fn pack_de_musica_serve_audio_de_sintese() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/packs/musica")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["kind"], "music");
+        let entries = v["entries"].as_array().unwrap();
+        // toda entrada de música soa por síntese (mode synth/sequence, nunca speech).
+        assert!(entries.iter().all(|e| {
+            let m = e["audio"]["mode"].as_str().unwrap_or("");
+            m == "synth" || m == "sequence"
+        }));
+    }
+
+    #[tokio::test]
+    async fn pack_inexistente_404() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/packs/nao-existe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

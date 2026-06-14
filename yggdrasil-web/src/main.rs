@@ -544,6 +544,15 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/comunicacao/templates",
             get(comunicacao_routes::list_templates),
         )
+        // YG-155: LexiconPack — música/idioma como pacotes jogáveis que soam.
+        .route(
+            "/api/v1/comunicacao/packs",
+            get(comunicacao_routes::list_packs),
+        )
+        .route(
+            "/api/v1/comunicacao/packs/{id}",
+            get(comunicacao_routes::get_pack),
+        )
         .route(
             "/api/v1/comunicacao/revisao",
             get(comunicacao_routes::get_revisao),
@@ -596,6 +605,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/universos/poker", get(serve_poker))
         .route("/universos/vim", get(serve_vim))
         .route("/universos/comunicacao", get(serve_comunicacao))
+        .route("/universos/nee", get(serve_nee))
         .route("/universos/corpus", get(serve_corpus))
         .route("/universos/corpus-lab", get(serve_corpus_lab))
         // Fallback: o catálogo (YG-68) lista 41 universos mas só os embedded
@@ -789,6 +799,11 @@ async fn serve_vim() -> impl IntoResponse {
 /// elementos multilíngues). Busca a sala via `/api/v1/comunicacao/salas/{id}`.
 async fn serve_comunicacao() -> impl IntoResponse {
     Html(include_str!("../static/universos/comunicacao.html"))
+}
+
+/// YG-155: ÑE'Ẽ — pacotes de léxico que **soam** (música/idioma via Web Audio).
+async fn serve_nee() -> impl IntoResponse {
+    Html(include_str!("../static/universos/nee.html"))
 }
 
 /// Superfície de exploração do **Ayvu Rapyta** — leitura verso a verso, capítulo
