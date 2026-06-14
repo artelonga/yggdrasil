@@ -2,6 +2,19 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.31.0] — 2026-06-14 — Mundo: engine real + drag-drop durável + ÑE'Ẽ (sai do protótipo)
+
+### Added
+- **YG-148** — Fatia 2: engine real do Mundo no instance view — lê `InstanceStore`/`NoteStore` (read+walk+enter), sai do mock `sample.js`.
+- **YG-154** (+ backend YG-149) — manipulação direta durável: drag-drop grava `pos{room,x,y}`/`parent` no frontmatter `.md` + write-back ao CO (bridge).
+- **YG-156** — loader **LAZY** do vault inteiro (memory-light) fundido com o drag-drop durável num só `MundoView` (fullscreen + navegação do vault completo).
+- **YG-155** — **ÑE'Ẽ**: `LexiconPack` (linguagem = qualquer sistema de símbolos: idioma, música, domínio) + camada de **som** via Web Audio (música áudio-nativa, sintetizada — sem samples pesados).
+
+### Notes
+- O `/mundo` (protótipo, 2.30.0) continua; o **engine real** vive no instance view (`/universos/instance/{id}`) — agora deployável.
+- YG-138 (universo→CO + convidar/subscribe) já consolidado em main por trabalho paralelo; PR duplicado #82 fechado.
+- Segue na v2.32.0: cross-universe (YG-157, em fix), docs do Mundo (YG-150 #79), edit-in-CO (YG-124 #83), poker WS (YG-28 #84).
+
 ## [2.30.0] — 2026-06-14 — YG-146: protótipo do Mundo walkable (`/mundo`) p/ feedback
 
 ### Added
