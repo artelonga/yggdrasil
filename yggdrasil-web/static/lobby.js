@@ -323,14 +323,61 @@ const UNIVERSOS = [
   { slug: 'comunicacao', name: 'Comunicação' },
 ];
 
+// YG-145: presença ao vivo por universo — jogos viram lugares com gente.
+const presenca = {};
+
 function renderUniversos() {
   const root = document.getElementById('universos');
   if (!root) return;
-  root.innerHTML = UNIVERSOS.map((u) => `
-    <a class="universo-chip" href="/universos/${u.slug}" title="Entrar em ${u.name}">
-      ${svgIcon(u.slug, 26)}<span>${u.name}</span>
-    </a>
-  `).join('');
+  // ordena por presença (mais gente primeiro); empate preserva a ordem original.
+  const ordenados = UNIVERSOS
+    .map((u, i) => ({ u, i, n: presenca[u.slug] || 0 }))
+    .sort((a, b) => (b.n - a.n) || (a.i - b.i))
+    .map((x) => x.u);
+  root.innerHTML = ordenados.map((u) => {
+    const n = presenca[u.slug] || 0;
+    const badge = n > 0
+      ? `<span class="pres"><span class="dot"></span>${n}</span>`
+      : '';
+    return `
+    <a class="universo-chip${n > 0 ? ' vivo' : ''}" href="/universos/${u.slug}" title="${n > 0 ? n + ' ativo(s) agora em ' : 'Entrar em '}${u.name}">
+      ${svgIcon(u.slug, 26)}<span>${u.name}</span>${badge}
+    </a>`;
+  }).join('');
+}
+
+async function loadPresenca() {
+  try {
+    const res = await fetch('/api/v1/atividade');
+    if (!res.ok) return;
+    const d = await res.json();
+    Object.assign(presenca, d.por_universo || {});
+    renderUniversos();
+  } catch (_) { /* silent */ }
+}
+
+function ligarPresencaWs() {
+  try {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${proto}//${location.host}/api/v1/analytics/stream`);
+    ws.onmessage = (e) => {
+      let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+      const frames = m && m.ev === 'snapshot' ? (m.eventos || []) : [m];
+      let mudou = false;
+      for (const f of frames) {
+        if (!f) continue;
+        if (f.ev === 'presenca' && f.universo) { presenca[f.universo] = f.ativos | 0; mudou = true; }
+        else if (f.ev === 'stats' && f.presenca) {
+          // frame autoritativo periódico: zera quem não aparece mais.
+          for (const k of Object.keys(presenca)) presenca[k] = 0;
+          Object.assign(presenca, f.presenca);
+          mudou = true;
+        }
+      }
+      if (mudou) renderUniversos();
+    };
+    ws.onclose = () => setTimeout(ligarPresencaWs, 5000);
+  } catch (_) { /* sem WS → fica no snapshot inicial */ }
 }
 
 async function loadScores() {
@@ -413,4 +460,6 @@ renderAuthArea();
 renderUniversos();
 loadScores();
 loadActivity();
+loadPresenca();
+ligarPresencaWs();
 initLobby().then(() => loadPortalIcons(draw)).catch(console.error);

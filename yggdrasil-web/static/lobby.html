@@ -163,6 +163,18 @@
     }
     .universo-chip:hover { border-color: #e9c349; background: #1a1a26; }
     .universo-chip .ico { flex: 0 0 auto; }
+    /* YG-145: badge de presença ao vivo nos chips de universo */
+    .universo-chip .pres {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      margin-left: 0.1rem; padding: 0.05rem 0.45rem;
+      border-radius: 999px; background: #0f2a20; color: #34d399;
+      font-size: 0.78rem; font-weight: 700;
+    }
+    .universo-chip .pres .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #34d399; box-shadow: 0 0 6px #34d399;
+    }
+    .universo-chip.vivo { border-color: #2f6f55; }
     /* Painéis colapsáveis (details/summary nativo) */
     details.panel { padding: 0; }
     details.panel > summary {
