@@ -680,6 +680,10 @@ async fn main() -> anyhow::Result<()> {
         // YG-146: protótipo do Mundo walkable (5 temas, p/ feedback). Atalho ao
         // estático; `?tema=<id>` entra direto numa versão.
         .route("/mundo", get(serve_mundo))
+        // YG-153: navegar/editar um universo do CO dentro do Mundo (federação
+        // inbound, cliente). `?u=<universe_key>`. Lê/escreve a API do CO com o
+        // cookie compartilhado — sem trabalho server-side aqui.
+        .route("/co-mundo", get(serve_co_mundo))
         // CORS aberto no estático: o Neuroglancer (hosted, outra origem) precisa
         // buscar os dados Precomputed em /static/neuro-data/ via fetch cross-origin.
         // `Cache-Control: no-cache` ≠ "não cachear": o browser guarda mas REVALIDA
@@ -787,6 +791,11 @@ async fn serve_anatomia() -> impl IntoResponse {
 // YG-146: serve a página do protótipo direto (preserva `?tema=` na URL /mundo).
 async fn serve_mundo() -> impl IntoResponse {
     Html(include_str!("../static/universos/mundo-proto.html"))
+}
+
+// YG-153: navegar/editar um universo do CO no Mundo (preserva `?u=` em /co-mundo).
+async fn serve_co_mundo() -> impl IntoResponse {
+    Html(include_str!("../static/universos/co-mundo.html"))
 }
 
 async fn serve_snake() -> impl IntoResponse {
