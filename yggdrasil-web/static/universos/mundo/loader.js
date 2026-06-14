@@ -61,8 +61,15 @@ function layoutRoom(id, title, parent, doorItems, noteItems) {
 }
 
 /**
- * Constrói o conjunto de salas a partir da instância real e suas notas.
- * @returns {{ byId: Object, rootId: string }} salas indexadas por id.
+ * Indexa a instância real e expõe as salas com **carregamento preguiçoso**
+ * (YG-151): a hierarquia inteira do vault é conhecida de antemão (barata —
+ * só conexões `parent`), mas a `Room` de cada sala (grade de tiles + layout)
+ * só é construída ao **entrar** nela, e então fica em cache. Assim um vault
+ * grande não trava: nunca se lê/layouta o vault todo de uma vez.
+ *
+ * @returns {{ rootId: string, ids: string[], get: (id:string)=>Object|null }}
+ *   `ids` = toda sala navegável (raiz + cada pasta), sem construir nenhuma;
+ *   `get(id)` = a `Room` (lazy + cache).
  */
 export function buildRooms(inst, notes) {
   const noteBySlug = {};
@@ -100,29 +107,43 @@ export function buildRooms(inst, notes) {
     };
   }
 
-  const byId = {};
-  const built = new Set();
+  // toda sala navegável, derivada da hierarquia SEM construir layout:
+  // a raiz + cada pasta (= bloco com filhos). Recursivo de fato pois cobre
+  // QUALQUER profundidade (o vault inteiro), não um subconjunto.
+  const ids = [ROOT_ID, ...Object.keys(blocks).filter((id) => isFolder(id))];
 
-  function build(roomId, title, parentRoomId, childIds) {
-    if (built.has(roomId)) return; // defesa contra ciclos
-    built.add(roomId);
+  const cache = {};
+  // Constrói UMA sala sob demanda (lazy). A raiz reúne os blocos sem pai;
+  // uma pasta reúne seus filhos diretos. Filhos-pasta viram portas; filhos-folha,
+  // objetos. Só esta sala é layoutada — as filhas só ao serem entradas.
+  function get(id) {
+    if (cache[id]) return cache[id];
+    let title;
+    let parentRoom;
+    let childIds;
+    if (id === ROOT_ID) {
+      title = inst.title || 'Universo';
+      parentRoom = null;
+      childIds = Object.keys(blocks).filter((bid) => !parentOf[bid]);
+    } else {
+      const b = blocks[id];
+      if (!b || !isFolder(id)) return null;
+      title = meta(b).title;
+      parentRoom = parentOf[id] || ROOT_ID; // pai-pasta, ou a raiz no topo
+      childIds = childrenOf[id] || [];
+    }
     const doorItems = [];
     const noteItems = [];
-    for (const id of childIds) {
-      const b = blocks[id];
+    for (const cid of childIds) {
+      const b = blocks[cid];
       if (!b) continue;
       const m = meta(b);
-      if (isFolder(id)) doorItems.push({ id, title: m.title });
+      if (isFolder(cid)) doorItems.push({ id: cid, title: m.title });
       else noteItems.push(m);
     }
-    byId[roomId] = layoutRoom(roomId, title, parentRoomId, doorItems, noteItems);
-    for (const d of doorItems) {
-      build(d.id, meta(blocks[d.id]).title, roomId, childrenOf[d.id] || []);
-    }
+    cache[id] = layoutRoom(id, title, parentRoom, doorItems, noteItems);
+    return cache[id];
   }
 
-  const rootChildren = Object.keys(blocks).filter((id) => !parentOf[id]);
-  build(ROOT_ID, inst.title || 'Universo', null, rootChildren);
-
-  return { byId, rootId: ROOT_ID };
+  return { rootId: ROOT_ID, ids, get };
 }

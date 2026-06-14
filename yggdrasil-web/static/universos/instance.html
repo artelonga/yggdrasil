@@ -129,6 +129,9 @@
       padding: .25rem .55rem; border-radius: 5px; font-size: .8rem; }
     #mundo-crumb .mc-crumb.on { border-color: #e9c349; color: #e9c349; }
     #mundo-crumb .mc-sep { opacity: .4; padding: 0 1px; }
+    #mundo-fs { position: absolute; bottom: 8px; left: 8px; background: rgba(7,7,11,.78);
+      border: 1px solid #2a2a44; padding: .25rem .55rem; border-radius: 5px; font-size: .8rem; }
+    #mundo-fs:hover { border-color: #e9c349; }
     #mundo-tree { position: absolute; top: 8px; right: 8px; width: 220px; max-height: 70%;
       overflow-y: auto; background: rgba(7,7,11,.82); border: 1px solid #2a2a44;
       border-radius: 7px; padding: .6rem .7rem; font-size: .82rem; }
@@ -192,6 +195,7 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
            A engine 2D (mundo/engine.js) desenha no #canvas; este overlay flutua. -->
       <div id="mundo-ui" hidden>
         <div id="mundo-crumb"></div>
+        <button id="mundo-fs" title="Tela cheia (tecla F) — Esc para sair" aria-label="Tela cheia">⛶ Tela cheia</button>
         <div id="mundo-tree"></div>
         <div id="mundo-panel" hidden></div>
       </div>

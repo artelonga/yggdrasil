@@ -8,7 +8,7 @@
  * módulo ES, então a ponte é o objeto global). Pisar/clicar numa nota lê o `.md`
  * real do NoteStore (GET .../notes/{slug}); pisar/clicar numa porta entra na
  * sala-filha. CRUD de edição fica pra Fatia 3 (YG-149). */
-import { World } from './engine.js';
+import { World, isTyping } from './engine.js';
 import { THEMES, THEME_BY_ID } from './themes.js';
 import { buildRooms } from './loader.js';
 
@@ -16,6 +16,7 @@ let world = null;
 let rooms = null;
 let cur = null;
 let active = false;
+let wired = false;
 let ctx = null; // { inst, notes, instanceId, api, token, renderMarkdown }
 const navStack = [];
 
@@ -23,7 +24,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const ICON = { pasta: '📁', indice: '🗂', artigo: '📝' };
 
-function room(id) { return rooms && rooms.byId[id]; }
+function room(id) { return rooms && rooms.get(id); } // lazy: layouta a sala ao entrar
 
 // ─── ciclo de vida (montado/desmontado ao trocar de view) ────────────────────
 export function mount(canvas, opts) {
@@ -32,6 +33,7 @@ export function mount(canvas, opts) {
   if (!world) world = new World(canvas, { onInteract, onEdge });
   world.setTheme(THEME_BY_ID['garden-forest'] || THEMES[0]);
   active = true;
+  wireFullscreen();
   navStack.length = 0;
   enterRoom(rooms.rootId);
   world.start();
@@ -39,8 +41,41 @@ export function mount(canvas, opts) {
 
 export function unmount() {
   active = false;
+  if (isFullscreen()) exitFullscreen();
   if (world) { world.stop(); world.held.clear(); }
   hidePanel();
+}
+
+// ─── tela cheia (YG-151): Fullscreen API no container do palco ───────────────
+// O #canvas é width/height:100% em `body.mundo`, então pôr o palco (.stage, que
+// contém canvas + HUD #mundo-ui) em fullscreen faz o mundo cobrir a tela inteira
+// e mantém a HUD por cima. Botão na HUD + tecla `F`; sai com `Esc` (nativo).
+function fsTarget() { return world && world.canvas ? world.canvas.parentElement : null; }
+function isFullscreen() { return !!document.fullscreenElement; }
+function exitFullscreen() { if (document.exitFullscreen) document.exitFullscreen().catch(() => {}); }
+function toggleFullscreen() {
+  const el = fsTarget();
+  if (!el) return;
+  if (isFullscreen()) exitFullscreen();
+  else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+}
+function onFsChange() {
+  if (world) world._resize(); // re-dimensiona o canvas ao entrar E ao sair
+  const btn = $('mundo-fs');
+  if (btn) btn.textContent = isFullscreen() ? '⛶ Sair (Esc)' : '⛶ Tela cheia';
+}
+function onKey(e) {
+  if (!active || isTyping()) return; // não sequestra digitação (mesma guarda da engine)
+  if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFullscreen(); }
+}
+// Listeners globais ligados uma única vez; gateados por `active`.
+function wireFullscreen() {
+  const btn = $('mundo-fs');
+  if (btn) btn.onclick = toggleFullscreen;
+  if (wired) return;
+  wired = true;
+  window.addEventListener('keydown', onKey);
+  document.addEventListener('fullscreenchange', onFsChange);
 }
 
 // ─── navegação entre salas ───────────────────────────────────────────────────
@@ -150,5 +185,7 @@ window.MundoView = {
   unmount,
   get cur() { return cur; },
   get pos() { return world ? { x: world.ax, y: world.ay } : null; },
-  get rooms() { return rooms ? Object.keys(rooms.byId) : []; },
+  get rooms() { return rooms ? rooms.ids : []; }, // toda sala navegável (lazy)
+  get fullscreen() { return isFullscreen(); },
+  toggleFullscreen,
 };
