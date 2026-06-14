@@ -151,3 +151,19 @@ test('campanha: landing com tiers + stats + CTA de interesse (YG-143)', async ({
   await expect(page.locator('#ap')).toHaveClass(/open/);
   expect(erros).toEqual([]);
 });
+
+test('Shandara SRD: árvore + doc renderizado + deep-link (YG-144)', async ({ page, request, baseURL }) => {
+  // endpoints
+  const tree = await request.get(baseURL + '/api/v1/shandara/srd');
+  expect(tree.ok()).toBeTruthy();
+  expect((await tree.json()).length).toBeGreaterThan(3);
+  const doc = await request.get(baseURL + '/api/v1/shandara/srd/mundo/grande-guerra');
+  expect(doc.ok()).toBeTruthy();
+  expect(await doc.text()).toContain('Grande Guerra');
+  // página
+  const erros = guardErrors(page);
+  await page.goto('/universos/shandara');
+  await expect(page.locator('#toc a').first()).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#doc h1')).toBeVisible({ timeout: 10000 }); // doc renderizado
+  expect(erros).toEqual([]);
+});

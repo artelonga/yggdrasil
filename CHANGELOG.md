@@ -2,6 +2,18 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.26.0] — 2026-06-13 — YG-144: reader de SRD do Shandara (MVP)
+
+### Added
+
+- **`/universos/shandara`** — reader do System Reference Document do Shandara
+  (CC-BY-SA): TOC por seção (Mundo/Povos/Regras/…) + docs renderizados
+  client-side, com deep-link `#path`. Fecha o gap "catálogo anuncia Shandara
+  playable mas nada renderiza".
+- Conteúdo (`universes/universe-shandara/content`) **embutido no binário** via
+  `include_dir` — deploy-safe (sem path em runtime; COPY no builder do Docker).
+  API: `GET /api/v1/shandara/srd` (árvore) + `/srd/{*path}` (markdown, sanitizado).
+
 ## [2.25.0] — 2026-06-13 — YG-143: superfície de campanha (/campanha)
 
 ### Added
