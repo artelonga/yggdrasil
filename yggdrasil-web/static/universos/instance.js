@@ -385,6 +385,7 @@ function screenToCell(mx, my) {
 }
 
 function sizeCanvas() {
+  if (state.view === 'mundo') return; // MundoView dimensiona o canvas (engine 2D)
   const g = gridSpec();
   const c = g.cell_size;
   if (isIso()) {
@@ -422,6 +423,7 @@ function findBlock(id) {
 }
 
 function render() {
+  if (state.view === 'mundo') return; // a engine 2D (MundoView) é dona do canvas
   if (state.view === 'grafo') { renderGraph(); renderTree(); return; }
   const _pais = parentMap();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -797,13 +799,32 @@ function graphNodeAt(mx, my) {
   return null;
 }
 
-// Seletor de views (YG-126): Mapa | Timeline | Grafo — lentes do mesmo universo.
+// Seletor de views (YG-126): Mapa | Timeline | Grafo | Mundo — lentes do mesmo
+// universo. "🌍 Mundo" (YG-148) entrega o #canvas à engine 2D walkable.
 function setView(v) {
   state.view = v;
   state.tlCache = null; // cena derivada renasce com os dados atuais
   state.tl = { off: 0, scale: 1 };
   document.querySelectorAll('#views button').forEach((b) =>
     b.classList.toggle('active', b.dataset.view === v));
+  const mundo = v === 'mundo';
+  document.body.classList.toggle('mundo', mundo);
+  const ui = document.getElementById('mundo-ui');
+  if (ui) ui.hidden = !mundo;
+  if (mundo) {
+    if (window.MundoView) {
+      window.MundoView.mount(canvas, {
+        inst: state.inst,
+        notes: state.notes,
+        instanceId: state.id,
+        api: API,
+        token: state.token,
+        renderMarkdown,
+      });
+    }
+    return;
+  }
+  if (window.MundoView) window.MundoView.unmount();
   sizeCanvas();
   render();
 }
