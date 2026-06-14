@@ -24,6 +24,11 @@ let active = false;
 let wired = false;
 let ctx = null; // { inst, notes, instanceId, api, token, renderMarkdown }
 const navStack = [];
+// YG-157: stack de universos (vaults) já visitados — espelha o `sala_stack` do
+// CO-400 na camada `universe-as-node`. Cada item guarda o universo de onde se veio
+// (ctx + loader lazy + sala/posição + coordMap) p/ voltar restaurando avatar/câmera.
+// NÃO inclui o universo atual.
+const universeStack = [];
 
 // ── manipulação direta (YG-154): drag-drop → coordMap → commit em lote ───────
 // O arraste atualiza o objeto em memória (coordMap, chaveado por slug); ao soltar,
@@ -40,9 +45,8 @@ const ICON = { pasta: '📁', indice: '🗂', artigo: '📝' };
 function room(id) { return rooms && rooms.get(id); } // lazy: layouta a sala ao entrar
 
 // ─── ciclo de vida (montado/desmontado ao trocar de view) ────────────────────
-export function mount(canvas, opts) {
+export async function mount(canvas, opts) {
   ctx = opts;
-  rooms = buildRooms(opts.inst, opts.notes);
   coordMap = {};
   pending.clear();
   if (!world) world = new World(canvas, { onInteract, onEdge, onDragDrop });
@@ -50,6 +54,11 @@ export function mount(canvas, opts) {
   active = true;
   wireFullscreen();
   navStack.length = 0;
+  universeStack.length = 0;
+  // descobre universos vizinhos visíveis (lazy: só metadados, não os mundos).
+  const portals = await discoverPortals(ctx);
+  if (!active) return; // trocou de view enquanto buscava
+  rooms = buildRooms(opts.inst, opts.notes, portals);
   enterRoom(rooms.rootId);
   world.start();
 }
@@ -58,7 +67,89 @@ export function unmount() {
   active = false;
   if (isFullscreen()) exitFullscreen();
   if (world) { world.stop(); world.held.clear(); }
+  universeStack.length = 0;
   hidePanel();
+}
+
+// ─── travessia entre universos (vault→vault, YG-157) ─────────────────────────
+const authHdr = () => (ctx.token ? { headers: { Authorization: `Bearer ${ctx.token}` } } : {});
+
+// Universos a que o usuário tem acesso (dele + públicos), exceto o atual. Só
+// metadados (id/título) — os mundos só se carregam ao atravessar. A visibilidade
+// é a do servidor: `GET /instances/{id}/portals` já filtra (públicos + os do
+// caller, exclui a origem) e devolve só o resumo (lazy: o mundo do destino só
+// é buscado ao cruzar).
+async function discoverPortals(c) {
+  try {
+    const r = await fetch(`${c.api}/instances/${c.instanceId}/portals`, c.token ? { headers: { Authorization: `Bearer ${c.token}` } } : {});
+    if (r.ok) {
+      const j = await r.json();
+      return (j.portals || [])
+        .filter((p) => p && p.id)
+        .map((p) => ({ id: p.id, title: p.title || p.id }));
+    }
+  } catch { /* offline → sem portais (o mundo atual segue navegável) */ }
+  return [];
+}
+
+// Marca como `back` o portal que volta pro universo de onde se veio (topo da
+// pilha) — a engine pinta esse de âmbar (drawPortal) p/ sinalizar o retorno.
+function markBack(portals) {
+  const top = universeStack[universeStack.length - 1];
+  const backId = top && top.ctx && top.ctx.instanceId;
+  return portals.map((p) => ({ ...p, back: p.id === backId }));
+}
+
+// Atravessa para `universeId`: carrega a instância destino (lazy, só ao cruzar),
+// empilha o universo atual (ctx + loader + sala/posição + coordMap) e spawna na
+// sala-raiz do destino. Visibilidade é respeitada pelo servidor — 403/404 aborta
+// a travessia (fica-se onde está). NÃO regride o lazy: o destino é um loader
+// `{rootId,ids,get,roomOf}` novo, navegável por inteiro como o de origem.
+async function crossTo(universeId) {
+  if (!active || !universeId) return;
+  let inst;
+  let notes;
+  try {
+    const ri = await fetch(`${ctx.api}/instances/${universeId}`, authHdr());
+    if (!ri.ok) return;
+    inst = await ri.json();
+    const rn = await fetch(`${ctx.api}/instances/${universeId}/notes`, authHdr());
+    notes = rn.ok ? ((await rn.json()).notes || []) : [];
+  } catch { return; }
+  if (!active) return;
+  // guarda o universo de origem com a sala/posição + o coordMap atuais → ao
+  // voltar, o avatar/câmera e o layout da sessão são preservados.
+  universeStack.push({
+    ctx,
+    rooms,
+    cur,
+    pos: world ? { x: world.ax, y: world.ay } : null,
+    coordMap,
+    title: (ctx.inst && ctx.inst.title) || 'Universo',
+  });
+  ctx = { ...ctx, inst, notes, instanceId: universeId };
+  coordMap = {}; // o drag-drop do destino é seu (commit usa ctx.instanceId)
+  pending.clear();
+  const portals = markBack(await discoverPortals(ctx));
+  if (!active) return;
+  rooms = buildRooms(inst, notes, portals);
+  navStack.length = 0;
+  enterRoom(rooms.rootId);
+}
+
+// Volta na pilha de universos até o índice `idx` (que passa a ser o atual),
+// restaurando o loader, a sala e a posição do avatar de onde se partiu — sem
+// refetch (o loader lazy do origem está em cache na pilha).
+function popToUniverse(idx) {
+  const target = universeStack[idx];
+  if (!target) return;
+  universeStack.length = idx; // descarta `idx` e tudo acima
+  ctx = target.ctx;
+  rooms = target.rooms;
+  coordMap = target.coordMap || {};
+  pending.clear();
+  navStack.length = 0;
+  enterRoom(room(target.cur) ? target.cur : rooms.rootId, target.pos);
 }
 
 // ─── tela cheia (YG-151): Fullscreen API no container do palco ───────────────
@@ -100,13 +191,16 @@ function enterRoom(id, spawn) {
   cur = id;
   world.setRoom(r, spawn || r.spawn);
   hidePanel();
+  renderUniCrumb();
   renderCrumb();
   renderTree();
 }
 
 function onInteract(ent) {
   if (!active || !ent) return; // gate: a engine escuta o teclado globalmente
-  if (ent.type === 'door') {
+  if (ent.type === 'portal') { // YG-157: pisar num portal atravessa pra outro vault
+    crossTo(ent.universe);
+  } else if (ent.type === 'door') {
     navStack.push({ from: cur, at: { x: ent.x, y: ent.y } });
     const tgt = room(ent.target);
     enterRoom(ent.target, tgt && tgt.exit ? { x: tgt.exit.x, y: tgt.exit.y - 1 } : null);
@@ -224,6 +318,23 @@ async function abrirNota(ent) {
 }
 function hidePanel() { const p = $('mundo-panel'); if (p) p.hidden = true; }
 
+// ─── trilha de UNIVERSOS (YG-157) + trilha de salas + árvore da sala atual ────
+// Breadcrumb de universos: os já visitados (stack) + o atual. Clicar num anterior
+// volta pra ele (pop da pilha). Escondido enquanto há um só universo na cena.
+function renderUniCrumb() {
+  const el = $('mundo-uni');
+  if (!el) return;
+  if (!universeStack.length) { el.hidden = true; el.innerHTML = ''; return; }
+  const curTitle = (ctx && ctx.inst && ctx.inst.title) || 'Universo';
+  const chain = universeStack
+    .map((u, i) => `<button class="mu-crumb" data-idx="${i}">🌐 ${esc(u.title)}</button>`)
+    .concat(`<button class="mu-crumb on">🌐 ${esc(curTitle)}</button>`);
+  el.hidden = false;
+  el.innerHTML = chain.join('<span class="mc-sep">›</span>');
+  el.querySelectorAll('.mu-crumb[data-idx]').forEach((b) =>
+    (b.onclick = () => popToUniverse(+b.dataset.idx)));
+}
+
 // ─── trilha (breadcrumb) + árvore da sala atual ──────────────────────────────
 function pathTo(id) {
   const c = [id];
@@ -247,15 +358,20 @@ function renderTree() {
   const doors = r.doors
     .map((d) => `<li class="mt-folder" data-id="${esc(d.target)}">📁 ${esc(d.label)}</li>`)
     .join('');
+  // portais p/ outros universos (YG-157): listados à parte, com glifo 🌐.
+  const portals = (r.portals || [])
+    .map((p) => `<li class="mt-portal" data-uni="${esc(p.universe)}">🌐 ${esc(p.label)}</li>`)
+    .join('');
   const notes = r.notes
     .map((n, i) => `<li class="mt-note" data-i="${i}">${ICON[n.kind] || '📝'} ${esc(n.title)}</li>`)
     .join('');
-  el.innerHTML = `<div class="mt-here">📍 ${esc(r.title)}</div><ul>${doors}${notes}</ul>`;
+  el.innerHTML = `<div class="mt-here">📍 ${esc(r.title)}</div><ul>${doors}${notes}${portals}</ul>`;
   el.querySelectorAll('.mt-folder').forEach((li) => (li.onclick = () => {
     navStack.push({ from: cur, at: null });
     const tgt = room(li.dataset.id);
     enterRoom(li.dataset.id, tgt && tgt.exit ? { x: tgt.exit.x, y: tgt.exit.y - 1 } : null);
   }));
+  el.querySelectorAll('.mt-portal').forEach((li) => (li.onclick = () => crossTo(li.dataset.uni)));
   el.querySelectorAll('.mt-note').forEach((li) => (li.onclick = () => {
     const n = room(cur).notes[+li.dataset.i];
     if (n) abrirNota({ type: 'note', ...n });
@@ -286,6 +402,9 @@ window.MundoView = {
   get cur() { return cur; },
   get pos() { return world ? { x: world.ax, y: world.ay } : null; },
   get rooms() { return rooms ? rooms.ids : []; }, // toda sala navegável (lazy)
+  // YG-157: universo (vault) atual + profundidade da pilha de universos.
+  get universe() { return ctx ? ctx.instanceId : null; },
+  get universeDepth() { return universeStack.length; },
   get fullscreen() { return isFullscreen(); },
   toggleFullscreen,
   enter: (id) => enterRoom(id),

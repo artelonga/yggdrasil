@@ -372,6 +372,13 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/instances/{id}/attachments/{hash}",
             get(api::instances::serve_attachment),
         )
+        // YG-157: universos alcançáveis por portal a partir desta instância
+        // (cross-universe / "universe-as-node"). Só metadados; o mundo do destino
+        // é lazy (buscado ao cruzar).
+        .route(
+            "/api/v1/instances/{id}/portals",
+            get(api::instances::list_portals),
+        )
         .route("/api/v1/instances/{id}/play", get(serve_instance_player))
         // Notas (jardim): Markdown canônico ligado por wikilinks, referenciado
         // pelo grafo da instância via `Block.props.note_slug`.

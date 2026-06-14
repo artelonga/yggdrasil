@@ -43,21 +43,29 @@ function kindOf(body, temFilhos) {
 
 // Auto-layout determinístico: portas e notas numa grade (passo 2 p/ respiro);
 // spawn no centro-baixo; saída reservada no canto-baixo (não colide com notas).
-function layoutRoom(id, title, parent, doorItems, noteItems) {
-  const total = doorItems.length + noteItems.length;
+// `portalItems` (YG-157): portas para OUTROS universos (vaults) — só na raiz;
+// viram entidades `portal` próprias (engine: `room.portals`), com `universe` =
+// id da instância destino.
+function layoutRoom(id, title, parent, doorItems, noteItems, portalItems) {
+  portalItems = portalItems || [];
+  const total = doorItems.length + noteItems.length + portalItems.length;
   const cols = Math.max(3, Math.min(6, Math.ceil(Math.sqrt(total || 1))));
   const rows = Math.ceil(Math.max(1, total) / cols);
   const w = cols * 2 + 3;
   const h = rows * 2 + 5;
-  const room = { id, title, parent, w, h, tiles: emptyTiles(w, h), doors: [], notes: [], npcs: [] };
+  const room = { id, title, parent, w, h, tiles: emptyTiles(w, h), doors: [], notes: [], npcs: [], portals: [] };
   const all = [
     ...doorItems.map((d) => ({ door: d })),
     ...noteItems.map((n) => ({ note: n })),
+    ...portalItems.map((p) => ({ portal: p })),
   ];
   all.forEach((it, i) => {
     const x = 2 + (i % cols) * 2;
     const y = 2 + Math.floor(i / cols) * 2;
     if (it.door) room.doors.push({ x, y, label: it.door.title, target: it.door.id });
+    // portal cross-universe (YG-157): entidade própria (engine: `room.portals`),
+    // distinta de porta-de-pasta; `universe` = id da instância destino.
+    else if (it.portal) room.portals.push({ x, y, label: it.portal.title, universe: it.portal.id, back: !!it.portal.back });
     else room.notes.push({ x, y, ...it.note });
   });
   const cx = Math.floor(w / 2);
@@ -76,13 +84,16 @@ function layoutRoom(id, title, parent, doorItems, noteItems) {
  * nota de sala (reparent) e/ou reposicioná-la — isso é refletido na membership
  * efetiva e no overlay de `x/y`, sem construir nenhuma outra sala.
  *
+ * @param {Array<{id:string,title:string,back?:boolean}>} [portals] portas p/ outros
+ *   universos (YG-157) — colocadas só na sala-raiz (a fronteira do vault), lazy
+ *   como o resto: só materializadas quando a raiz é construída em `get(rootId)`.
  * @returns {{ rootId: string, ids: string[], get: (id:string)=>Object|null,
  *             roomOf: (slug:string)=>string|null }}
  *   `ids` = toda sala navegável (raiz + cada pasta), sem construir nenhuma;
  *   `get(id)` = a `Room` (lazy + cache, com overrides do `.md` aplicados);
  *   `roomOf(slug)` = a sala efetiva da nota (pro `findNote`/`posOf` sem `byId`).
  */
-export function buildRooms(inst, notes) {
+export function buildRooms(inst, notes, portals = []) {
   const noteBySlug = {};
   for (const n of notes || []) noteBySlug[n.slug] = n;
 
@@ -168,10 +179,13 @@ export function buildRooms(inst, notes) {
     let title;
     let parentRoom;
     let folderChildren;
+    // portais p/ outros universos vivem só na fronteira do vault = a sala raiz.
+    let portalItems = [];
     if (id === ROOT_ID) {
       title = inst.title || 'Universo';
       parentRoom = null;
       folderChildren = Object.keys(blocks).filter((bid) => !parentOf[bid] && isFolder(bid));
+      portalItems = portals || [];
     } else {
       const b = blocks[id];
       if (!b || !isFolder(id)) return null;
@@ -181,7 +195,7 @@ export function buildRooms(inst, notes) {
     }
     const doorItems = folderChildren.map((cid) => ({ id: cid, title: meta(blocks[cid]).title }));
     const noteItems = (notesInRoom[id] || []).map((cid) => meta(blocks[cid]));
-    const r = layoutRoom(id, title, parentRoom, doorItems, noteItems);
+    const r = layoutRoom(id, title, parentRoom, doorItems, noteItems, portalItems);
     // overlay do `x/y` persistido (YG-154): reabrir mantém pra onde se arrastou.
     for (const obj of r.notes) {
       const ov = obj.slug ? layoutOverride[obj.slug] : null;
