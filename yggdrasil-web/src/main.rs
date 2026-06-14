@@ -653,6 +653,9 @@ async fn main() -> anyhow::Result<()> {
         // static/anatomia/ e são servidos pelo ServeDir abaixo; /anatomia é só
         // um atalho amigável.
         .route("/anatomia", get(serve_anatomia))
+        // YG-146: protótipo do Mundo walkable (5 temas, p/ feedback). Atalho ao
+        // estático; `?tema=<id>` entra direto numa versão.
+        .route("/mundo", get(serve_mundo))
         // CORS aberto no estático: o Neuroglancer (hosted, outra origem) precisa
         // buscar os dados Precomputed em /static/neuro-data/ via fetch cross-origin.
         // `Cache-Control: no-cache` ≠ "não cachear": o browser guarda mas REVALIDA
@@ -755,6 +758,11 @@ async fn serve_analytics() -> impl IntoResponse {
 
 async fn serve_anatomia() -> impl IntoResponse {
     Redirect::permanent("/static/anatomia/")
+}
+
+// YG-146: serve a página do protótipo direto (preserva `?tema=` na URL /mundo).
+async fn serve_mundo() -> impl IntoResponse {
+    Html(include_str!("../static/universos/mundo-proto.html"))
 }
 
 async fn serve_snake() -> impl IntoResponse {
