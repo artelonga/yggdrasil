@@ -59,17 +59,33 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-// YG-138: promover este universo autorado a um universo no CO. O CO já expõe a
-// API user-facing (POST /api/v1/universes, parent_key/visibility, members,
-// /me/universes, /subscribe — CO-444). A criação no CO é um MODAL no SPA, então
-// fazemos redirect ao CO autenticado (cookie compartilhado .artelonga.com.br /
-// SSO) com prefill via query. Contrato (a alinhar com o handler do CO, em curso):
-//   /?criar=1&name=<título>&key=<slug sugerido>&source=yggdrasil&instance=<id>
-// Degrada gracioso: sem o handler, o usuário cai no CO logado e clica "+ Novo".
+// YG-138: promover este universo autorado a um universo no CO, com convites e
+// modo público/subscribe. O CO já expõe a API user-facing (POST /api/v1/universes
+// com parent_key/visibility, GET /api/v1/me/universes, members, /subscribe —
+// CO-444). Dois lados:
+//
+//  Passo 1 (criar). A criação no CO é um MODAL no SPA, então fazemos redirect ao
+//    CO autenticado (cookie compartilhado .artelonga.com.br / SSO) com prefill via
+//    query. Contrato (a alinhar com o handler do CO, em curso):
+//      /?criar=1&name=<título>&key=<slug sugerido>&source=yggdrasil&instance=<id>
+//    Degrada gracioso: sem o handler, o usuário cai no CO logado e clica "+ Novo".
+//
+//  Passo 2 (pós-criação: convites + visibilidade). Lemos "meus universos" do CO
+//    direto do navegador — `GET {CO}/api/v1/me/universes` com `credentials:
+//    'include'` usa o cookie do apex compartilhado, sem token handover server-side
+//    (o JWT local do Yggdrasil não é aceito pelo CO). Listamos owned/invited/
+//    subscribed e ligamos cada universo à sua página no CO, onde convidar e
+//    alternar visibilidade pública são geridos. Degrada gracioso: sem login no CO
+//    / CORS bloqueado / offline → cai num único link "abrir meus universos no CO".
 const CO_BASE = 'https://co.artelonga.com.br';
+
+function coSuggestedName() {
+  return (state.inst && state.inst.title) || 'Universo';
+}
+
+// Passo 1 — redirect ao CO com o universo pré-preenchido.
 function criarNoCO() {
-  const inst = state.inst || {};
-  const name = inst.title || 'Universo';
+  const name = coSuggestedName();
   const qs = new URLSearchParams({
     criar: '1',
     name,
@@ -78,6 +94,90 @@ function criarNoCO() {
     instance: state.id,
   });
   window.location.assign(`${CO_BASE}/?${qs.toString()}`);
+}
+
+// Abre o painel "Universo no CO" e dispara a carga do passo 2.
+function openCoPanel() {
+  const panel = document.getElementById('co-panel');
+  if (!panel) { criarNoCO(); return; }   // fallback: sem painel, redireciona direto
+  const nm = document.getElementById('co-name');
+  if (nm) nm.textContent = coSuggestedName();
+  panel.classList.add('open');
+  loadMeusUniversosCO();
+}
+
+function closeCoPanel() {
+  const panel = document.getElementById('co-panel');
+  if (panel) panel.classList.remove('open');
+}
+
+function coFallbackLink(msg) {
+  return '<p class="muted">' + escapeHtml(msg) + '</p>' +
+    '<p style="margin-top:.4rem"><a href="' + CO_BASE +
+    '/" target="_blank" rel="noopener">Abrir meus universos no CO ↗</a></p>';
+}
+
+// Passo 2 — lê /api/v1/me/universes do CO no navegador e lista buckets com
+// links para convidar / alternar visibilidade (geridos no CO).
+async function loadMeusUniversosCO() {
+  const host = document.getElementById('co-mine');
+  if (!host) return;
+  host.innerHTML = '<p class="muted">Carregando…</p>';
+  let data;
+  try {
+    const r = await fetch(`${CO_BASE}/api/v1/me/universes`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (r.status === 401 || r.status === 403) {
+      host.innerHTML = coFallbackLink('Entre no CO para ver e gerir seus universos.');
+      return;
+    }
+    if (!r.ok) throw new Error('status ' + r.status);
+    data = await r.json();
+  } catch {
+    host.innerHTML = coFallbackLink('Não deu pra falar com o CO agora (login/rede). Você pode abrir direto:');
+    return;
+  }
+  host.innerHTML = renderMeusUniversosCO(data);
+}
+
+// Renderiza os buckets do /me/universes. Tolerante ao formato exato do CO:
+// aceita { owned, subscribed, invited } como arrays de universos.
+function renderMeusUniversosCO(data) {
+  data = data || {};
+  const buckets = [
+    { key: 'owned', label: 'Sou dono', items: data.owned },
+    { key: 'invited', label: 'Convidado', items: data.invited },
+    { key: 'subscribed', label: 'Subscrito', items: data.subscribed },
+  ];
+  let any = false;
+  let html = '';
+  buckets.forEach(function (b) {
+    const items = Array.isArray(b.items) ? b.items : [];
+    if (!items.length) return;
+    any = true;
+    html += '<h3 style="margin-top:.6rem">' + escapeHtml(b.label) + '</h3>';
+    items.forEach(function (u) {
+      const key = u.key || u.slug || u.id || '';
+      const name = u.title || u.name || key || 'universo';
+      const vis = u.visibility || (u.public ? 'public' : null);
+      const visTxt = vis === 'public' ? '🌐 público' : (vis ? '🔒 ' + escapeHtml(vis) : '');
+      const manage = b.key === 'owned'
+        ? '<a href="' + CO_BASE + '/' + encodeURIComponent(key) +
+          '" target="_blank" rel="noopener" title="Convidar pessoas ou alternar visibilidade no CO">✉️ convites · visibilidade ↗</a>'
+        : '<a href="' + CO_BASE + '/' + encodeURIComponent(key) +
+          '" target="_blank" rel="noopener">abrir ↗</a>';
+      html += '<div class="uni"><span class="nm">' + escapeHtml(name) +
+        '</span><span class="vis">' + visTxt + '</span>' + manage + '</div>';
+    });
+  });
+  if (!any) {
+    return coFallbackLink('Você ainda não tem universos no CO. Crie um no passo 1 acima.');
+  }
+  return html +
+    '<p class="muted" style="margin-top:.6rem">Convites e o modo público (pra subscribe) ' +
+    'são geridos na página do universo no CO.</p>';
 }
 
 // ─── Carregamento ────────────────────────────────────────────────────────────
@@ -101,11 +201,20 @@ async function load() {
     // ✏️ some; clique cria, arrasto move, arrastar-sobre liga.
     toggleEditMode(true);
     // YG-138: dono pode promover este universo autorado a um universo no CO
-    // (vira dele lá; pode convidar ou deixar público pra subscribe).
+    // (vira dele lá; pode convidar ou deixar público pra subscribe). O botão
+    // abre o painel (criar + gerir convites/visibilidade pós-criação).
     const coBtn = document.getElementById('co-create');
     if (coBtn) {
       coBtn.hidden = false;
-      coBtn.addEventListener('click', criarNoCO);
+      coBtn.addEventListener('click', openCoPanel);
+    }
+    const coDo = document.getElementById('co-do-create');
+    if (coDo) coDo.addEventListener('click', criarNoCO);
+    const coClose = document.getElementById('co-close');
+    if (coClose) coClose.addEventListener('click', closeCoPanel);
+    const coPanel = document.getElementById('co-panel');
+    if (coPanel) {
+      coPanel.addEventListener('click', (e) => { if (e.target === coPanel) closeCoPanel(); });
     }
   }
   if (state.inst.template) {

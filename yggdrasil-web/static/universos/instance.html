@@ -156,6 +156,31 @@
     }
     #toast.show { opacity: 1; }
     a { color: #e9c349; }
+
+    /* ── YG-138: painel "Universo no CO" — criar + (pós-criação) convites e
+         visibilidade lendo /api/v1/me/universes do CO no próprio navegador
+         (cookie compartilhado .artelonga.com.br). ── */
+    #co-panel { position: fixed; inset: 0; z-index: 99997; display: none;
+      background: rgba(7,7,11,.72); backdrop-filter: blur(4px); }
+    #co-panel.open { display: flex; align-items: center; justify-content: center; }
+    #co-panel .box { width: min(560px, 94vw); max-height: 88vh; overflow-y: auto;
+      background: #14141b; border: 1px solid #2a2a44; border-radius: 10px;
+      box-shadow: 0 30px 80px rgba(0,0,0,.5); padding: 1.2rem 1.3rem; }
+    #co-panel .box h2 { font-size: 1.1rem; font-weight: 400; margin-bottom: .3rem; }
+    #co-panel .box .sub { opacity: .55; font-size: .82rem; margin-bottom: 1rem; line-height: 1.45; }
+    #co-panel .step { border-top: 1px solid #201f1f; padding: .9rem 0; }
+    #co-panel .step:first-of-type { border-top: 0; }
+    #co-panel .step h3 { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em;
+      opacity: .6; margin-bottom: .5rem; }
+    #co-panel .uni { display: flex; align-items: center; gap: .5rem; padding: .45rem .6rem;
+      border: 1px solid #2a2a44; border-radius: 6px; margin-bottom: .4rem; font-size: .85rem; }
+    #co-panel .uni .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #co-panel .uni .vis { font-size: .72rem; opacity: .6; }
+    #co-panel .uni a { font-size: .78rem; white-space: nowrap; }
+    #co-panel .foot { border-top: 1px solid #201f1f; padding-top: .8rem; margin-top: .4rem;
+      display: flex; gap: .6rem; align-items: center; }
+    #co-panel .foot .grow { flex: 1; }
+    #co-panel .muted { opacity: .55; font-size: .8rem; line-height: 1.45; }
   </style>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/ui/relic.css">
@@ -256,6 +281,30 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
       <div class="ed-foot">
         <span class="status" id="ed-status">rascunho local automático · nada publica até salvar</span>
         <button id="ed-save">💾 Salvar (commit)</button>
+      </div>
+    </div>
+  </div>
+  <!-- YG-138: painel "Universo no CO". Passo 1 cria (redirect ao CO). Passo 2
+       (pós-criação) lista "meus universos no CO" via /api/v1/me/universes —
+       convidar e visibilidade pública são geridos no CO; aqui só ligamos. -->
+  <div id="co-panel" role="dialog" aria-modal="true" aria-label="Universo no CO">
+    <div class="box">
+      <h2>🌐 Universo no CO</h2>
+      <p class="sub">Promova este universo autorado a um universo seu no CO. Lá você
+        pode <strong>convidar</strong> quem quiser ou <strong>deixá-lo público</strong> pra subscribe.</p>
+      <div class="step">
+        <h3>1 · Criar no CO</h3>
+        <button id="co-do-create">Criar “<span id="co-name">este universo</span>” no CO →</button>
+        <p class="muted" style="margin-top:.5rem">Abre o CO autenticado já com o nome preenchido.
+          Depois de criar, volte aqui para gerir convites e visibilidade.</p>
+      </div>
+      <div class="step">
+        <h3>2 · Meus universos no CO — convites e visibilidade</h3>
+        <div id="co-mine"><p class="muted">Carregando…</p></div>
+      </div>
+      <div class="foot">
+        <span class="grow"></span>
+        <button id="co-close">Fechar</button>
       </div>
     </div>
   </div>
