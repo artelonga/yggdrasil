@@ -17,6 +17,7 @@ mod lobby;
 mod mail;
 pub mod openapi;
 mod scores_store;
+pub mod shandara;
 pub mod telemetria;
 pub mod universos_routes;
 pub mod wasm_runtime;
@@ -621,6 +622,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/analytics", get(serve_analytics))
         // YG-143: landing de campanha (tiers de REWARDS.md + stats ao vivo)
         .route("/campanha", get(serve_campanha))
+        // YG-144: reader do SRD de Shandara (estático vence o fallback {slug})
+        .route("/universos/shandara", get(serve_shandara))
+        .route("/api/v1/shandara/srd", get(serve_shandara_tree))
+        .route("/api/v1/shandara/srd/{*path}", get(serve_shandara_doc))
         // YG-84: visualizador 3D de anatomia (Godot Web export, single-thread →
         // serve de qualquer host estático). Os arquivos do export ficam em
         // static/anatomia/ e são servidos pelo ServeDir abaixo; /anatomia é só
@@ -685,6 +690,35 @@ async fn serve_neuro() -> impl IntoResponse {
 /// YG-143: landing de campanha (da semente ao topo) — tiers + stats ao vivo.
 async fn serve_campanha() -> impl IntoResponse {
     Html(include_str!("../static/campanha.html"))
+}
+
+// ─── YG-144: reader do SRD de Shandara (conteúdo embutido) ───────────────────
+
+/// Página do reader.
+async fn serve_shandara() -> impl IntoResponse {
+    Html(include_str!("../static/universos/shandara.html"))
+}
+
+/// `GET /api/v1/shandara/srd` — árvore de docs (seções → docs).
+async fn serve_shandara_tree() -> impl IntoResponse {
+    axum::Json(shandara::tree())
+}
+
+/// `GET /api/v1/shandara/srd/{*path}` — Markdown cru de um doc.
+async fn serve_shandara_doc(
+    axum::extract::Path(path): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    match shandara::doc(&path) {
+        Some(md) => (
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/markdown; charset=utf-8",
+            )],
+            md,
+        )
+            .into_response(),
+        None => (axum::http::StatusCode::NOT_FOUND, "doc não encontrado").into_response(),
+    }
 }
 
 async fn serve_feedback() -> impl IntoResponse {

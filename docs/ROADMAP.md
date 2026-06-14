@@ -34,8 +34,10 @@ Desde a v1.0 (2026-05-20) shipou muito além do plano original:
 - **Superfície de campanha / launch** — **MVP no ar** (YG-143): `/campanha` com
   os 6 tiers de `REWARDS.md`, stats ao vivo e captura de interesse (via feedback).
   *Falta a integração de pagamento real (Catarse externo) e a página de créditos.*
-- **Reader de SRD do Shandara** — catálogo anuncia `playable`, nada renderiza o
-  SRD. *Sem task.*
+- **Reader de SRD do Shandara** — **MVP no ar** (YG-144): `/universos/shandara`
+  com árvore de seções + docs do SRD (CC-BY-SA) renderizados, conteúdo embutido
+  no binário (include_dir). *Falta conteúdo dos stubs (bestiário/aventuras) e
+  mecânica jogável (ABI v2, futuro).*
 
 ### Round-trip com o CO (bloqueado lá)
 - **YG-124** — editar nota no editor do CO (deep-link + round-trip).

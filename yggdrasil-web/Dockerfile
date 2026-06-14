@@ -50,6 +50,9 @@ COPY yggdrasil/yggdrasil-web/build.rs yggdrasil-web/build.rs
 COPY yggdrasil/universes/universe-vim/src universes/universe-vim/src
 # YG-68: catálogo — REGISTRY.yaml é include_str! em catalog.rs; sem ele o build quebra
 COPY yggdrasil/universes/REGISTRY.yaml universes/REGISTRY.yaml
+# YG-144: SRD do Shandara é include_dir! em shandara.rs — embutido em compile-time;
+# sem esta COPY o cargo build quebra no builder.
+COPY yggdrasil/universes/universe-shandara/content universes/universe-shandara/content
 # YG-55/61: artefatos WASM reais (scripts/build-universes.sh). Sem esta COPY o
 # build.rs gera stubs de 8 bytes e os universos WASM não funcionam em prod.
 COPY yggdrasil/yggdrasil-web/embedded yggdrasil-web/embedded
