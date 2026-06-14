@@ -15,6 +15,7 @@
 
 pub mod caderno;
 pub mod lexicon;
+pub mod pack;
 pub mod public;
 pub mod review;
 pub mod room;
@@ -24,6 +25,10 @@ pub mod writeback;
 
 pub use caderno::{Caderno, CadernoNote, CadernoStore};
 pub use lexicon::{Contribution, LexiconError, LexiconScope, LexiconStore, Promotion};
+pub use pack::{
+    Adsr, EntropyStats, EntryAudio, LexiconPack, PackEntry, PackKind, PackSummary, Relation,
+    Waveform, note_freq, seed_pack, seed_packs, seed_summaries,
+};
 pub use public::{PUBLIC_MBYA, PUBLIC_YORUBA, SYSTEM_OWNER, ensure_public_rooms, is_public_id};
 pub use review::{ReviewItem, ReviewQueue};
 pub use room::{EditError, Element, LexiconLink, Link, Reference, Room, RoomEdit, Viewport};

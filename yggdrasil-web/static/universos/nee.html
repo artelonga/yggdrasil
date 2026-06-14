@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ÑE'Ẽ — The Lexicon Worlds (música que soa)</title>
+  <style>
+    :root {
+      --bg: #0b0d14; --ink: #e8e3d3; --dim: #9a937f; --gold: #d4af37;
+      --panel: #151723; --line: #2a2c3a; --note: #5b8def; --chord: #c77dff;
+      --motif: #4caf72; --word: #f0a35e;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(120% 80% at 50% 0%, #14182a, var(--bg));
+      color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    header { padding: 24px 20px 8px; }
+    h1 { margin: 0; font-size: 1.5rem; letter-spacing: .5px; }
+    h1 small { color: var(--gold); font-weight: 400; }
+    .sub { color: var(--dim); margin: 6px 0 0; max-width: 56ch; font-size: .9rem; }
+    main { padding: 8px 20px 60px; }
+    section { margin-top: 22px; }
+    h2 { font-size: 1rem; color: var(--gold); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    button.entry {
+      background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+      border-radius: 10px; padding: 12px 14px; cursor: pointer; min-width: 92px;
+      text-align: left; transition: transform .06s ease, border-color .15s ease;
+    }
+    button.entry:hover { border-color: var(--gold); transform: translateY(-2px); }
+    button.entry:active { transform: translateY(0) scale(.97); }
+    button.entry .term { font-weight: 600; font-size: 1.05rem; }
+    button.entry .gloss { display: block; color: var(--dim); font-size: .75rem; margin-top: 4px; max-width: 22ch; }
+    .note .term { color: var(--note); } .chord .term { color: var(--chord); }
+    .motif .term { color: var(--motif); } .word .term { color: var(--word); }
+    .meta { color: var(--dim); font-size: .78rem; margin-top: 6px; }
+    #log { margin-top: 18px; font-size: .78rem; color: var(--dim); white-space: pre-wrap;
+      font-family: ui-monospace, monospace; }
+    a.back { color: var(--gold); text-decoration: none; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="back" href="/universos">← universos</a>
+    <h1>ÑE'Ẽ <small>— qualquer linguagem é um pacote que <em>soa</em></small></h1>
+    <p class="sub">Uma <strong>linguagem</strong> = qualquer sistema de símbolos com léxico:
+      idioma, <strong>música</strong> ou domínio. A música é a 1ª linguagem áudio-nativa —
+      a "palavra" <em>é</em> o som (sintetizado ao vivo, sem arquivos). Clique numa entrada para ouvir.</p>
+  </header>
+  <main>
+    <section id="music">
+      <h2>🎵 Música <span class="meta" id="music-meta"></span></h2>
+      <div class="grid" id="music-grid"></div>
+    </section>
+    <section id="language">
+      <h2>🗣️ Idioma <span class="meta" id="language-meta"></span></h2>
+      <div class="grid" id="language-grid"></div>
+    </section>
+    <div id="log"></div>
+  </main>
+  <script type="module" src="/static/universos/nee.js"></script>
+  <script defer src="/static/nav.js"></script>
+</body>
+</html>
