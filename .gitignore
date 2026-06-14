@@ -13,6 +13,11 @@ dist/
 # co-auto runtime state
 /.co/index.bin
 
+# Playwright: gravações temporárias do gerador de GIFs do Mundo (YG-150).
+# Os GIFs finais (docs/mundo/*.gif) são versionados; os .webm intermediários não.
+/e2e/.videos/
+/e2e/test-results/
+
 # Build artifacts
 /yggdrasil-web/static/dist/
 

@@ -2,9 +2,12 @@
   "name": "yggdrasil-e2e",
   "private": true,
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "gifs": "node mundo-gifs.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0"
+    "@playwright/test": "^1.49.0",
+    "gifenc": "^1.0.3",
+    "pngjs": "^7.0.0"
   }
 }
