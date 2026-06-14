@@ -74,7 +74,8 @@ jobs:
           COMUNICACAO_DIR="$PWD/e2e/fixtures/comunicacao" \
           target/release/yggdrasil-web & SRV=$!
           for i in $(seq 1 30); do curl -sf http://localhost:3030/health >/dev/null 2>&1 && break; sleep 1; done
-          cd e2e && BASE_URL=http://localhost:3030 npx playwright test
+          # YG-148: o spec do Mundo assina um JWT com o mesmo segredo do servidor
+          cd e2e && BASE_URL=http://localhost:3030 YGGDRASIL_JWT_SECRET=ci-test npx playwright test
           R=$?; kill $SRV 2>/dev/null; exit $R
 
   # NÃO-bloqueante (decisão do spike YG-35, docs/adr/YG-35-godot-vs-canvas.md): os

@@ -117,6 +117,37 @@
       #note-editor .box { width: 96vw; height: 92vh; }
     }
 
+    /* ── View "🌍 Mundo" (YG-148): a engine 2D toma o canvas; aside some ── */
+    body.mundo .stage { padding: 0; align-items: stretch; justify-content: stretch; }
+    body.mundo #canvas { width: 100%; height: 100%; border: 0; }
+    body.mundo aside { display: none; }
+    #mundo-ui { position: absolute; inset: 0; pointer-events: none; }
+    #mundo-ui > * { pointer-events: auto; }
+    #mundo-crumb { position: absolute; top: 8px; left: 8px; display: flex; align-items: center;
+      gap: 2px; flex-wrap: wrap; max-width: calc(100% - 16px); }
+    #mundo-crumb .mc-crumb { background: rgba(7,7,11,.78); border: 1px solid #2a2a44;
+      padding: .25rem .55rem; border-radius: 5px; font-size: .8rem; }
+    #mundo-crumb .mc-crumb.on { border-color: #e9c349; color: #e9c349; }
+    #mundo-crumb .mc-sep { opacity: .4; padding: 0 1px; }
+    #mundo-tree { position: absolute; top: 8px; right: 8px; width: 220px; max-height: 70%;
+      overflow-y: auto; background: rgba(7,7,11,.82); border: 1px solid #2a2a44;
+      border-radius: 7px; padding: .6rem .7rem; font-size: .82rem; }
+    #mundo-tree .mt-here { font-weight: 600; margin-bottom: .35rem; opacity: .85; }
+    #mundo-tree ul { list-style: none; margin: 0; padding: 0; }
+    #mundo-tree li { padding: .25rem .35rem; border-radius: 4px; cursor: pointer; }
+    #mundo-tree li:hover { background: #1a1a26; }
+    #mundo-tree .mt-folder { color: #e9c349; }
+    #mundo-panel { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+      width: min(560px, calc(100% - 24px)); max-height: 46%; overflow-y: auto;
+      background: #14141b; border: 1px solid #2a2a44; border-radius: 10px;
+      box-shadow: 0 18px 50px rgba(0,0,0,.5); }
+    #mundo-panel .mp-head { display: flex; align-items: center; gap: .8rem;
+      padding: .6rem .9rem; border-bottom: 1px solid #201f1f; }
+    #mundo-panel .mp-head span { flex: 1; font-weight: 500; }
+    #mundo-panel .mp-head .mp-x { background: none; border: 0; font-size: 1rem; }
+    #mundo-panel .mp-body { padding: .7rem .9rem; line-height: 1.5; }
+    #mundo-panel .mp-body a.wikilink { color: #b48ead; }
+
     #toast {
       position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
       background: #201f1f; border: 1px solid #e9c349; color: #e8a030;
@@ -142,6 +173,7 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
       <button id="view-mapa" class="active" data-view="mapa">🗺️ Mapa</button>
       <button id="view-timeline" data-view="timeline">🕐 Timeline</button>
       <button id="view-grafo" data-view="grafo">🕸️ Grafo</button>
+      <button id="view-mundo" data-view="mundo">🌍 Mundo</button>
     </span>
     <button id="modeBtn" hidden>✏️ Editar</button>
     <button id="co-create" hidden title="Criar este universo no CO — convidar / deixar público pra subscribe">🌐 Criar no CO</button>
@@ -156,6 +188,13 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
       <textarea id="inline-input" hidden autocomplete="off" rows="1"
         placeholder="digite…  ·  nome/ = pasta  ·  Enter cria  ·  ⇧Enter corpo"
         style="position:absolute;z-index:20;background:#07070b;color:#e5e2e1;border:1px solid #e9c349;border-radius:4px;padding:.3rem .55rem;font:0.85rem/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;min-width:17rem;resize:none;overflow:hidden"></textarea>
+      <!-- YG-148: HUD da view "🌍 Mundo" (trilha + árvore da sala + nota aberta).
+           A engine 2D (mundo/engine.js) desenha no #canvas; este overlay flutua. -->
+      <div id="mundo-ui" hidden>
+        <div id="mundo-crumb"></div>
+        <div id="mundo-tree"></div>
+        <div id="mundo-panel" hidden></div>
+      </div>
     </div>
     <aside>
       <section>
@@ -222,6 +261,8 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/static/universos/instance.js"></script>
+  <!-- YG-148: módulo ES da view "🌍 Mundo" — expõe window.MundoView pro instance.js -->
+  <script type="module" src="/static/universos/mundo/instance-view.js"></script>
   <script defer src="/static/nav.js"></script>
   <script defer src="/static/feedback.js"></script>
   <script defer src="/static/telemetria.js"></script>
