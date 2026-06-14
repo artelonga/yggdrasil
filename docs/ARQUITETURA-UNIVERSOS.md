@@ -266,3 +266,12 @@ Caso contrário, novo root + caminho `/api/v1/games/<novo-slug>/...`.
 | tetris | `games/tetris.rs` | `tetris_routes.rs` | `tetris.{html,js}` | ✅ jogável |
 | invaders | `games/invaders.rs` | `invaders_routes.rs` | `invaders.{html,js}` | ✅ jogável |
 | poker | `games/poker.rs` (single-player) + `games/poker_lobby.rs` (multi) | `poker_routes.rs` | `poker.{html,js}` | 🚧 seating only — gameplay em YG-25 |
+| **mundo** | `instance/*` (instance model) | `main.rs::serve_mundo` | `universos/mundo/*` | 🚧 protótipo caminhável — ver **[Mundo (`/mundo`)](mundo.md)** |
+
+## Mundo — universo caminhável
+
+Além dos universos-jogo acima, o **[Mundo (`/mundo`)](mundo.md)** é o protótipo
+do universo **caminhável**: o universo de notas vira um espaço 2D onde **pasta =
+sala** e **nota = objeto**. A documentação tem **controles**, os **5 temas**, o
+**NPC**, o **modelo de dados (instance model)** e **animações** das jornadas
+(andar · entrar numa sala · abrir/editar nota · arrastar e soltar).
