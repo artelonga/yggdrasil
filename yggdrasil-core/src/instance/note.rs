@@ -51,9 +51,45 @@ pub struct Note {
     /// Status de tarefa (composição: nota + status = tarefa).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// Posição persistida no Mundo (YG-149): `pos{room,x,y}` no frontmatter.
+    /// `None` = sem layout (auto-posicionada pelo player). Manipulação direta
+    /// (drag-drop) grava aqui; reabrir o Mundo mantém o estado.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pos: Option<NotePos>,
+    /// Pasta-mãe na árvore (reparent, YG-149). `None` = raiz. Espelha o
+    /// `pos.room` quando a nota mora dentro de uma sala/pasta.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
     /// Wikilinks de saída, na ordem do corpo (alvo já resolvido a slug).
     #[serde(default)]
     pub links: Vec<NoteLink>,
+}
+
+/// Posição persistida de uma nota num Mundo (YG-149).
+///
+/// Contrato alinhado com o lado CO do mapeamento **pasta=sala ↔ folder-sub-sala**:
+/// `room` é o caminho de pasta (sala); `x`/`y` a célula na grade daquela sala.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotePos {
+    /// Caminho da sala = pasta. Vazio = sala raiz do universo.
+    #[serde(default)]
+    pub room: String,
+    pub x: u32,
+    pub y: u32,
+}
+
+/// Um movimento de layout do drag-drop (commit em lote, YG-149).
+///
+/// Semântica de `parent`: ausente/`null` mantém a pasta atual; `""` move a nota
+/// para a raiz; qualquer outro valor reparenta (arrastar pra outra pasta).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LayoutMove {
+    pub slug: String,
+    /// Nova posição; `None` mantém a atual.
+    #[serde(default)]
+    pub pos: Option<NotePos>,
+    #[serde(default)]
+    pub parent: Option<String>,
 }
 
 /// Um wikilink de saída.
@@ -93,15 +129,18 @@ impl NoteStore {
     }
 
     /// Cria/atualiza uma nota. `slug` é sempre normalizado por [`note_slug`] (defesa
-    /// contra path traversal). Preserva `created` — e o `status` (tarefa) — se a
-    /// nota já existir: editar o corpo nunca "destarefa".
+    /// contra path traversal). Preserva `created` — o `status` (tarefa) e o layout
+    /// (`pos`/`parent`, YG-149) — se a nota já existir: editar o corpo nunca
+    /// "destarefa" nem move o objeto no Mundo.
     pub fn save(&self, slug: &str, title: &str, body: &str) -> Result<Note, NoteError> {
-        let status = self.load(slug).ok().and_then(|n| n.status);
+        let prev = self.load(slug).ok();
+        let status = prev.as_ref().and_then(|n| n.status.clone());
         self.save_with_status(slug, title, body, status.as_deref())
     }
 
     /// [`save`] com o status de tarefa explícito (`None` = nota pura).
     /// Composição: o status é só um campo de frontmatter — mesmo arquivo.
+    /// Preserva o layout (`pos`/`parent`) da nota existente.
     pub fn save_with_status(
         &self,
         slug: &str,
@@ -109,12 +148,31 @@ impl NoteStore {
         body: &str,
         status: Option<&str>,
     ) -> Result<Note, NoteError> {
+        let prev = self.load(slug).ok();
+        let pos = prev.as_ref().and_then(|n| n.pos.clone());
+        let parent = prev.as_ref().and_then(|n| n.parent.clone());
+        self.persist(slug, title, body, status, pos.as_ref(), parent.as_deref())
+    }
+
+    /// Escrita atômica (temp + rename) de uma nota com todos os campos do
+    /// frontmatter. Preserva `created` se a nota já existir; `updated = now`.
+    #[allow(clippy::too_many_arguments)]
+    fn persist(
+        &self,
+        slug: &str,
+        title: &str,
+        body: &str,
+        status: Option<&str>,
+        pos: Option<&NotePos>,
+        parent: Option<&str>,
+    ) -> Result<Note, NoteError> {
         let slug = note_slug(slug).ok_or(NoteError::InvalidSlug)?;
         std::fs::create_dir_all(&self.dir)?;
         let now = Utc::now();
         let created = self.load(&slug).map(|n| n.created).unwrap_or(now);
         let status = status.map(str::trim).filter(|s| !s.is_empty());
-        let md = render_note_markdown(&slug, title, body, created, now, status);
+        let parent = parent.map(str::trim).filter(|s| !s.is_empty());
+        let md = render_note_markdown(&slug, title, body, created, now, status, pos, parent);
         let path = self.note_path(&slug);
         let tmp = self.dir.join(format!("{slug}.md.tmp"));
         std::fs::write(&tmp, md)?;
@@ -126,14 +184,67 @@ impl NoteStore {
             created,
             updated: now,
             status: status.map(str::to_string),
+            pos: pos.cloned(),
+            parent: parent.map(str::to_string),
             links: links_from_body(body),
         })
     }
 
-    /// Define/limpa só o status (tarefa ⇄ nota), preservando título e corpo.
+    /// Define/limpa só o status (tarefa ⇄ nota), preservando título, corpo e layout.
     pub fn set_status(&self, slug: &str, status: Option<&str>) -> Result<Note, NoteError> {
         let n = self.load(slug)?;
         self.save_with_status(slug, &n.title, &n.body, status)
+    }
+
+    /// Define/limpa a posição no Mundo (YG-149), preservando o resto da nota.
+    pub fn set_pos(&self, slug: &str, pos: Option<NotePos>) -> Result<Note, NoteError> {
+        let n = self.load(slug)?;
+        self.persist(
+            &n.slug,
+            &n.title,
+            &n.body,
+            n.status.as_deref(),
+            pos.as_ref(),
+            n.parent.as_deref(),
+        )
+    }
+
+    /// Reparenta a nota (move na árvore, YG-149), preservando o resto. `None` = raiz.
+    pub fn set_parent(&self, slug: &str, parent: Option<&str>) -> Result<Note, NoteError> {
+        let n = self.load(slug)?;
+        self.persist(
+            &n.slug,
+            &n.title,
+            &n.body,
+            n.status.as_deref(),
+            n.pos.as_ref(),
+            parent,
+        )
+    }
+
+    /// Aplica um lote de movimentos de layout (commit em lote do drag-drop, YG-149).
+    /// Cada nota é reescrita **uma única vez** (não por-pixel). Devolve as notas
+    /// atualizadas, na ordem dos movimentos. Slug inexistente aborta o lote.
+    pub fn apply_layout(&self, moves: &[LayoutMove]) -> Result<Vec<Note>, NoteError> {
+        let mut out = Vec::with_capacity(moves.len());
+        for m in moves {
+            let n = self.load(&m.slug)?;
+            let pos = m.pos.clone().or(n.pos.clone());
+            let parent = match m.parent.as_deref() {
+                None => n.parent.clone(),               // ausente = mantém pasta
+                Some(p) if p.trim().is_empty() => None, // "" = raiz
+                Some(p) => Some(p.to_string()),         // reparent
+            };
+            out.push(self.persist(
+                &n.slug,
+                &n.title,
+                &n.body,
+                n.status.as_deref(),
+                pos.as_ref(),
+                parent.as_deref(),
+            )?);
+        }
+        Ok(out)
     }
 
     /// Lê uma nota pelo slug.
@@ -370,6 +481,7 @@ pub fn graph(notes: &[Note]) -> BTreeMap<String, Vec<String>> {
 /// Renderiza o arquivo Markdown canônico (frontmatter + corpo verbatim). Mantém o
 /// corpo intacto (sem injetar `# título`) para um round-trip limpo; o título mora
 /// no frontmatter, como nas Entries do `co`.
+#[allow(clippy::too_many_arguments)]
 fn render_note_markdown(
     slug: &str,
     title: &str,
@@ -377,6 +489,8 @@ fn render_note_markdown(
     created: DateTime<Utc>,
     updated: DateTime<Utc>,
     status: Option<&str>,
+    pos: Option<&NotePos>,
+    parent: Option<&str>,
 ) -> String {
     let mut s = String::from("---\n");
     s.push_str("type: nota\n");
@@ -385,6 +499,17 @@ fn render_note_markdown(
     // tarefa = nota + status (YG-130): um campo, não um tipo
     if let Some(st) = status {
         s.push_str(&format!("status: {}\n", yaml_scalar(st)));
+    }
+    // layout do Mundo (YG-149): pasta-mãe + posição na grade. Manipulação
+    // direta (drag-drop) persiste aqui; o CO recebe o patch via o frontmatter.
+    if let Some(p) = parent {
+        s.push_str(&format!("parent: {}\n", yaml_scalar(p)));
+    }
+    if let Some(pos) = pos {
+        s.push_str("pos:\n");
+        s.push_str(&format!("  room: {}\n", yaml_scalar(&pos.room)));
+        s.push_str(&format!("  x: {}\n", pos.x));
+        s.push_str(&format!("  y: {}\n", pos.y));
     }
     s.push_str(&format!(
         "created: {}\n",
@@ -427,6 +552,8 @@ fn parse_note(slug: &str, raw: &str) -> Note {
         .and_then(|s| parse_dt(&s))
         .unwrap_or(created);
     let status = fm_get(&fm, "status").filter(|s| !s.trim().is_empty());
+    let parent = fm_get(&fm, "parent").filter(|s| !s.trim().is_empty());
+    let pos = parse_pos(&fm);
     Note {
         slug: slug.to_string(),
         title,
@@ -435,6 +562,37 @@ fn parse_note(slug: &str, raw: &str) -> Note {
         created,
         updated,
         status,
+        pos,
+        parent,
+    }
+}
+
+/// Lê o bloco `pos:` (room/x/y indentados) do frontmatter (YG-149). Tolerante:
+/// devolve `None` se o bloco não existir ou estiver incompleto.
+fn parse_pos(fm: &str) -> Option<NotePos> {
+    let mut in_pos = false;
+    let (mut room, mut x, mut y) = (None, None, None);
+    for line in fm.lines() {
+        if line.trim_end() == "pos:" {
+            in_pos = true;
+            continue;
+        }
+        if !in_pos {
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("  room:") {
+            room = Some(unquote_yaml(v.trim()));
+        } else if let Some(v) = line.strip_prefix("  x:") {
+            x = v.trim().parse().ok();
+        } else if let Some(v) = line.strip_prefix("  y:") {
+            y = v.trim().parse().ok();
+        } else if !line.starts_with("  ") {
+            break; // saiu do bloco indentado
+        }
+    }
+    match (room, x, y) {
+        (Some(room), Some(x), Some(y)) => Some(NotePos { room, x, y }),
+        _ => None,
     }
 }
 
@@ -673,6 +831,149 @@ mod tests {
         let g = graph(&notes);
         assert_eq!(g.get("a").unwrap(), &vec!["b".to_string()]);
         assert_eq!(g.get("b").unwrap().len(), 0);
+    }
+
+    // ── Layout do Mundo: pos + reparent (YG-149) ──────────────────────────
+
+    #[test]
+    fn pos_round_trip_no_frontmatter() {
+        let (s, _d) = store();
+        s.save("nota", "Nota", "corpo").unwrap();
+        let n = s
+            .set_pos(
+                "nota",
+                Some(NotePos {
+                    room: "jardim".into(),
+                    x: 3,
+                    y: 5,
+                }),
+            )
+            .unwrap();
+        assert_eq!(n.pos.as_ref().unwrap().room, "jardim");
+        // round-trip do markdown preserva room/x/y
+        let loaded = s.load("nota").unwrap();
+        assert_eq!(
+            loaded.pos,
+            Some(NotePos {
+                room: "jardim".into(),
+                x: 3,
+                y: 5,
+            })
+        );
+        // limpar volta a None
+        let n = s.set_pos("nota", None).unwrap();
+        assert_eq!(n.pos, None);
+        assert_eq!(s.load("nota").unwrap().pos, None);
+    }
+
+    #[test]
+    fn editar_corpo_preserva_pos_e_parent() {
+        let (s, _d) = store();
+        s.save("nota", "Nota", "v1").unwrap();
+        s.set_pos(
+            "nota",
+            Some(NotePos {
+                room: "raiz".into(),
+                x: 2,
+                y: 2,
+            }),
+        )
+        .unwrap();
+        s.set_parent("nota", Some("raiz")).unwrap();
+        // editar o corpo (CRUD ao pisar) NÃO move o objeto no Mundo
+        let n = s.save("nota", "Nota", "v2").unwrap();
+        assert_eq!(n.body, "v2");
+        assert_eq!(n.parent.as_deref(), Some("raiz"));
+        assert_eq!(
+            n.pos,
+            Some(NotePos {
+                room: "raiz".into(),
+                x: 2,
+                y: 2,
+            })
+        );
+        // e o disco confirma
+        assert!(s.load("nota").unwrap().pos.is_some());
+    }
+
+    #[test]
+    fn set_status_preserva_layout() {
+        let (s, _d) = store();
+        s.save("t", "T", "x").unwrap();
+        s.set_pos(
+            "t",
+            Some(NotePos {
+                room: "p".into(),
+                x: 1,
+                y: 1,
+            }),
+        )
+        .unwrap();
+        // virar tarefa não apaga o layout
+        let n = s.set_status("t", Some("todo")).unwrap();
+        assert_eq!(n.status.as_deref(), Some("todo"));
+        assert!(n.pos.is_some());
+    }
+
+    #[test]
+    fn apply_layout_em_lote_grava_pos_e_reparent() {
+        let (s, _d) = store();
+        s.save("a", "A", "ca").unwrap();
+        s.save("b", "B", "cb").unwrap();
+        let moves = vec![
+            LayoutMove {
+                slug: "a".into(),
+                pos: Some(NotePos {
+                    room: "jardim".into(),
+                    x: 4,
+                    y: 6,
+                }),
+                parent: Some("jardim".into()),
+            },
+            LayoutMove {
+                slug: "b".into(),
+                pos: Some(NotePos {
+                    room: "raiz".into(),
+                    x: 1,
+                    y: 1,
+                }),
+                parent: None, // mantém (raiz por ausência)
+            },
+        ];
+        let out = s.apply_layout(&moves).unwrap();
+        assert_eq!(out.len(), 2);
+        let a = s.load("a").unwrap();
+        assert_eq!(a.parent.as_deref(), Some("jardim"));
+        assert_eq!(a.pos.unwrap().x, 4);
+        let b = s.load("b").unwrap();
+        assert_eq!(b.pos.unwrap().room, "raiz");
+        assert_eq!(b.parent, None);
+    }
+
+    #[test]
+    fn apply_layout_parent_vazio_move_pra_raiz() {
+        let (s, _d) = store();
+        s.save("n", "N", "c").unwrap();
+        s.set_parent("n", Some("jardim")).unwrap();
+        assert_eq!(s.load("n").unwrap().parent.as_deref(), Some("jardim"));
+        s.apply_layout(&[LayoutMove {
+            slug: "n".into(),
+            pos: None,
+            parent: Some(String::new()), // "" = raiz
+        }])
+        .unwrap();
+        assert_eq!(s.load("n").unwrap().parent, None);
+    }
+
+    #[test]
+    fn apply_layout_slug_inexistente_erro() {
+        let (s, _d) = store();
+        let r = s.apply_layout(&[LayoutMove {
+            slug: "fantasma".into(),
+            pos: None,
+            parent: None,
+        }]);
+        assert!(matches!(r, Err(NoteError::NotFound(_))));
     }
 
     #[test]

@@ -469,6 +469,30 @@ fn note_store(state: &InstancesState, id: &str) -> NoteStore {
     NoteStore::for_instance(state.store.root(), id)
 }
 
+/// Frontmatter JSON federado de uma nota (YG-149): status (tarefa) + layout do
+/// Mundo (`parent`, `pos{room,x,y}`). É o patch que o CO recebe no write-back.
+/// `None` quando a nota não tem nenhum desses campos (nota pura sem layout).
+fn note_frontmatter(n: &note::Note) -> Option<serde_json::Value> {
+    let mut map = serde_json::Map::new();
+    if let Some(st) = &n.status {
+        map.insert("status".into(), serde_json::Value::String(st.clone()));
+    }
+    if let Some(p) = &n.parent {
+        map.insert("parent".into(), serde_json::Value::String(p.clone()));
+    }
+    if let Some(pos) = &n.pos {
+        map.insert(
+            "pos".into(),
+            serde_json::json!({ "room": pos.room, "x": pos.x, "y": pos.y }),
+        );
+    }
+    if map.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(map))
+    }
+}
+
 // ─── Rascunhos (YG-125): branch cross-device do editor; NUNCA federam ────────
 
 fn draft_store(state: &InstancesState, id: &str, user: &str) -> DraftStore {
@@ -622,11 +646,8 @@ pub async fn put_note(
                 title: n.title.clone(),
                 body: n.body.clone(),
                 updated_at: Some(n.updated.to_rfc3339()),
-                // tarefa federa como nota + frontmatter de status (composição)
-                frontmatter: n
-                    .status
-                    .as_ref()
-                    .map(|st| serde_json::json!({ "status": st })),
+                // federa o frontmatter: status (tarefa) + layout do Mundo (YG-149)
+                frontmatter: note_frontmatter(&n),
                 actor: None,
                 visibility: crate::co_bridge_producer::Visibility::Public,
             });
@@ -708,6 +729,54 @@ pub async fn delete_note(
     }
 }
 
+// ─── Layout do Mundo (YG-149): commit em lote de drag-drop ────────────────────
+
+#[derive(Deserialize)]
+pub struct LayoutBody {
+    /// Movimentos do arraste, aplicados em lote (não por-pixel).
+    #[serde(default)]
+    pub moves: Vec<note::LayoutMove>,
+}
+
+/// `POST /api/v1/instances/{id}/layout` — persiste posições/reparent do drag-drop
+/// no frontmatter `.md` (via `NoteStore`) em **lote** e federa cada patch ao CO
+/// (write-back CO-413). Owner-only.
+pub async fn put_layout(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<LayoutBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(r) = load_owned(&state, &id, &user) {
+        return r;
+    }
+    let updated = match note_store(&state, &id).apply_layout(&body.moves) {
+        Ok(v) => v,
+        Err(e) => return map_note_err(e),
+    };
+    // write-back ao CO: um patch (NoteWritten::Updated) por nota movida, com o
+    // frontmatter de layout (pos/parent) no payload.
+    for n in &updated {
+        state.emit_note(NoteWritten {
+            instance: id.clone(),
+            slug: n.slug.clone(),
+            kind: NoteKind::Updated,
+            source: crate::co_bridge_producer::FederatedSource::Notes,
+            title: n.title.clone(),
+            body: n.body.clone(),
+            updated_at: Some(n.updated.to_rfc3339()),
+            frontmatter: note_frontmatter(n),
+            actor: Some(user.clone()),
+            visibility: crate::co_bridge_producer::Visibility::Public,
+        });
+    }
+    Json(serde_json::json!({ "updated": updated })).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -750,6 +819,7 @@ mod tests {
                 "/api/v1/instances/{id}/notes/{slug}",
                 get(get_note).put(put_note).delete(delete_note),
             )
+            .route("/api/v1/instances/{id}/layout", post(put_layout))
             .route(
                 "/api/v1/instances/{id}/notes/{slug}/draft",
                 get(get_draft).put(put_draft).delete(delete_draft),
@@ -782,6 +852,7 @@ mod tests {
                 "/api/v1/instances/{id}/notes/{slug}",
                 get(get_note).put(put_note).delete(delete_note),
             )
+            .route("/api/v1/instances/{id}/layout", post(put_layout))
             .route(
                 "/api/v1/instances/{id}/notes/{slug}/draft",
                 get(get_draft).put(put_draft).delete(delete_draft),
@@ -1293,6 +1364,156 @@ mod tests {
         .await;
         let v = body_json(resp).await;
         assert!(v.get("status").is_none() || v["status"].is_null());
+    }
+
+    // ─── Layout do Mundo: drag-drop persiste + write-back CO (YG-149) ─────────
+
+    async fn layout_req(
+        app: &Router,
+        id: &str,
+        user: &str,
+        body: serde_json::Value,
+    ) -> axum::response::Response {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/instances/{id}/layout"))
+                    .header("authorization", format!("Bearer {}", token(user)))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn layout_persiste_pos_e_reparent_e_round_trip() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        put_note_req(
+            &app,
+            &id,
+            "alice",
+            "bem-vindo",
+            serde_json::json!({ "title": "Bem-vindo", "markdown": "oi" }),
+        )
+        .await;
+
+        // commit em lote: reposiciona + reparent numa só requisição
+        let resp = layout_req(
+            &app,
+            &id,
+            "alice",
+            serde_json::json!({ "moves": [
+                { "slug": "bem-vindo", "pos": { "room": "jardim", "x": 4, "y": 6 }, "parent": "jardim" }
+            ] }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // posição = estado persistido no .md (reabrir mantém o layout)
+        let get = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/instances/{id}/notes/bem-vindo"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v = body_json(get).await;
+        assert_eq!(v["pos"]["room"], "jardim");
+        assert_eq!(v["pos"]["x"], 4);
+        assert_eq!(v["pos"]["y"], 6);
+        assert_eq!(v["parent"], "jardim");
+    }
+
+    /// CRUD ao pisar: editar o corpo grava no .md e NÃO move o objeto no Mundo.
+    #[tokio::test]
+    async fn editar_nota_preserva_layout() {
+        let (app, _d) = app();
+        let id = create_blank(&app, "alice").await;
+        put_note_req(
+            &app,
+            &id,
+            "alice",
+            "n",
+            serde_json::json!({ "title": "N", "markdown": "v1" }),
+        )
+        .await;
+        layout_req(
+            &app,
+            &id,
+            "alice",
+            serde_json::json!({ "moves": [
+                { "slug": "n", "pos": { "room": "raiz", "x": 2, "y": 3 } }
+            ] }),
+        )
+        .await;
+        // editar o corpo
+        put_note_req(
+            &app,
+            &id,
+            "alice",
+            "n",
+            serde_json::json!({ "title": "N", "markdown": "v2" }),
+        )
+        .await;
+        let get = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/instances/{id}/notes/n"))
+                    .header("authorization", format!("Bearer {}", token("alice")))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v = body_json(get).await;
+        assert_eq!(v["body"], "v2\n");
+        assert_eq!(v["pos"]["x"], 2, "editar corpo não move o objeto");
+    }
+
+    /// Write-back ao CO (CO-413): cada nota movida emite 1 NoteWritten::Updated
+    /// com o frontmatter de layout (pos/parent) — é o patch que o CO recebe.
+    #[tokio::test]
+    async fn layout_federa_patch_de_pos_ao_co() {
+        let (app, _d, mut rx) = app_with_events();
+        let id = create_blank(&app, "alice").await;
+        put_note_req(
+            &app,
+            &id,
+            "alice",
+            "obj",
+            serde_json::json!({ "title": "Obj", "markdown": "x" }),
+        )
+        .await;
+        let _ = rx.try_recv(); // descarta o evento do create
+
+        let resp = layout_req(
+            &app,
+            &id,
+            "alice",
+            serde_json::json!({ "moves": [
+                { "slug": "obj", "pos": { "room": "jardim", "x": 7, "y": 2 }, "parent": "jardim" }
+            ] }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let ev = rx.try_recv().expect("1 patch de layout ao CO");
+        assert_eq!(ev.kind, NoteKind::Updated);
+        assert_eq!(ev.slug, "obj");
+        let fm = ev.frontmatter.expect("frontmatter com layout");
+        assert_eq!(fm["parent"], "jardim");
+        assert_eq!(fm["pos"]["room"], "jardim");
+        assert_eq!(fm["pos"]["x"], 7);
+        assert!(rx.try_recv().is_err(), "1 evento por nota movida");
     }
 
     // ─── Rascunhos (YG-125) ──────────────────────────────────────────────────

@@ -19,7 +19,9 @@ pub mod store;
 pub mod template;
 
 pub use edit::{EditError, EditOp};
-pub use note::{Backlink, Draft, DraftStore, Note, NoteError, NoteLink, NoteStore};
+pub use note::{
+    Backlink, Draft, DraftStore, LayoutMove, Note, NoteError, NoteLink, NotePos, NoteStore,
+};
 pub use schema::{
     AttachmentKind, Block, Cell, Connection, ContentRef, GridSpec, Layer, LayerKind, Projection,
     SCHEMA_VERSION, UniverseInstance,

@@ -124,5 +124,41 @@ export function buildRooms(inst, notes) {
   const rootChildren = Object.keys(blocks).filter((id) => !parentOf[id]);
   build(ROOT_ID, inst.title || 'Universo', null, rootChildren);
 
+  // YG-154: sobrepõe o auto-layout com o estado persistido no `.md`
+  // (`pos{room,x,y}`/`parent` no frontmatter). Reabrir o Mundo mantém para onde
+  // o player arrastou cada objeto — manipulação direta durável, não efêmera.
+  applyLayout(byId, notes);
+
   return { byId, rootId: ROOT_ID };
+}
+
+/**
+ * Aplica as posições/reparent persistidos (frontmatter da nota) sobre as salas já
+ * montadas — espelha o `apply_layout` do backend (YG-149) no front. `pos.room`/
+ * `parent` são ids de sala (id do bloco-pasta ou `__root__`), iguais aos que o
+ * drag-drop grava. Move a nota de sala (reparent) e/ou reposiciona na grade.
+ */
+function applyLayout(byId, notes) {
+  for (const n of notes || []) {
+    const pos = n.pos || null;
+    const parent = n.parent || null;
+    if (!pos && !parent) continue;
+    // localiza o objeto e a sala onde o auto-layout o pôs.
+    let found = null;
+    let fromRoom = null;
+    for (const id of Object.keys(byId)) {
+      const obj = (byId[id].notes || []).find((x) => x.slug === n.slug);
+      if (obj) { found = obj; fromRoom = id; break; }
+    }
+    if (!found) continue;
+    const destId = parent || (pos && pos.room) || fromRoom;
+    if (destId && destId !== fromRoom && byId[destId]) {
+      byId[fromRoom].notes = byId[fromRoom].notes.filter((x) => x !== found);
+      (byId[destId].notes = byId[destId].notes || []).push(found);
+    }
+    if (pos) {
+      if (typeof pos.x === 'number') found.x = pos.x;
+      if (typeof pos.y === 'number') found.y = pos.y;
+    }
+  }
 }

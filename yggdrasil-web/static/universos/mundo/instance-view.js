@@ -19,6 +19,14 @@ let active = false;
 let ctx = null; // { inst, notes, instanceId, api, token, renderMarkdown }
 const navStack = [];
 
+// ── manipulação direta (YG-154): drag-drop → coordMap → commit em lote ───────
+// O arraste atualiza o objeto em memória (coordMap, chaveado por slug); ao soltar,
+// faz-se o commit em LOTE ao backend (`POST /layout`) → grava `pos`/`parent` no
+// frontmatter `.md` → write-back ao CO (federação). Não há localStorage: o surface
+// real é a instância, e a fonte da verdade é o `.md`/CO — não o navegador.
+let coordMap = {}; // slug -> { room, x, y, parent }
+const pending = new Set(); // slugs movidos aguardando commit
+
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const ICON = { pasta: '📁', indice: '🗂', artigo: '📝' };
@@ -29,7 +37,9 @@ function room(id) { return rooms && rooms.byId[id]; }
 export function mount(canvas, opts) {
   ctx = opts;
   rooms = buildRooms(opts.inst, opts.notes);
-  if (!world) world = new World(canvas, { onInteract, onEdge });
+  coordMap = {};
+  pending.clear();
+  if (!world) world = new World(canvas, { onInteract, onEdge, onDragDrop });
   world.setTheme(THEME_BY_ID['garden-forest'] || THEMES[0]);
   active = true;
   navStack.length = 0;
@@ -74,6 +84,72 @@ function onEdge(dir) {
   const r = room(cur);
   if (dir === 'down' && r && r.exit) {
     onInteract({ type: 'exit', target: r.exit.target, x: r.exit.x, y: r.exit.y });
+  }
+}
+
+// ─── drag-drop: reposicionar / reparent + persistir (YG-154) ─────────────────
+// Soltar uma nota numa porta (pasta) reparenta-a (move na árvore); soltar numa
+// célula livre reposiciona-a na sala atual. Cada solta vira um movimento no
+// coordMap e dispara o commit em lote ao backend.
+function onDragDrop(ent, tx, ty, target) {
+  if (!active || !ent || ent.type !== 'note') return;
+  const r = room(cur);
+  if (!r) return;
+  const obj = ent._ref || r.notes.find((n) => n.slug === ent.slug);
+  if (!obj) return;
+
+  // soltar numa porta = reparent: a nota muda de sala (pasta-mãe) na árvore.
+  if (target && target.type === 'door') {
+    const dest = room(target.target);
+    if (!dest) return;
+    r.notes = r.notes.filter((n) => n !== obj);
+    (dest.notes = dest.notes || []).push(obj);
+    recordMove(obj.slug, target.target, obj.x, obj.y, target.target);
+    renderTree();
+    return;
+  }
+
+  // reposicionar na sala atual: respeita parede e tile ocupado.
+  if (world.isWall(tx, ty)) return;
+  const occ = world.entityAt(tx, ty);
+  if (occ && occ._ref !== obj) return;
+  obj.x = tx;
+  obj.y = ty;
+  recordMove(obj.slug, cur, tx, ty);
+  renderTree();
+}
+
+// Registra um movimento no coordMap (memória) e agenda o commit em lote.
+function recordMove(slug, room, x, y, parent) {
+  if (!slug) return;
+  const prev = coordMap[slug] || {};
+  coordMap[slug] = { room, x, y, parent: parent !== undefined ? parent : prev.parent };
+  pending.add(slug);
+  commitLayout();
+}
+
+// Commit em LOTE: envia todos os movimentos pendentes numa só requisição ao
+// backend, que grava o `.md` e federa o patch (pos/parent) ao CO.
+async function commitLayout() {
+  if (!ctx || !ctx.instanceId || !pending.size) return;
+  const moves = [...pending].map((slug) => {
+    const c = coordMap[slug];
+    const m = { slug, pos: { room: c.room, x: c.x, y: c.y } };
+    if (c.parent !== undefined) m.parent = c.parent;
+    return m;
+  });
+  pending.clear();
+  try {
+    await fetch(`${ctx.api}/instances/${encodeURIComponent(ctx.instanceId)}/layout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(ctx.token ? { Authorization: `Bearer ${ctx.token}` } : {}),
+      },
+      body: JSON.stringify({ moves }),
+    });
+  } catch {
+    /* offline → o coordMap em memória mantém o estado da sessão */
   }
 }
 
@@ -144,11 +220,40 @@ function renderTree() {
   }));
 }
 
+// localiza um objeto (nota) pelo slug em qualquer sala montada.
+function findNote(slug) {
+  if (!rooms) return null;
+  for (const id of Object.keys(rooms.byId)) {
+    const n = (rooms.byId[id].notes || []).find((x) => x.slug === slug);
+    if (n) return { room: id, n };
+  }
+  return null;
+}
+
 // Ponte com o instance view (script clássico) + hooks determinísticos p/ e2e.
+// Os hooks de drag/reparent dirigem o MESMO caminho de persistência que o mouse,
+// sem depender da matemática de pixels do canvas (YG-154 e2e no instance view).
 window.MundoView = {
   mount,
   unmount,
   get cur() { return cur; },
   get pos() { return world ? { x: world.ax, y: world.ay } : null; },
   get rooms() { return rooms ? Object.keys(rooms.byId) : []; },
+  enter: (id) => enterRoom(id),
+  posOf: (slug) => { const f = findNote(slug); return f ? { room: f.room, x: f.n.x, y: f.n.y } : null; },
+  drag: (slug, tx, ty) => {
+    const f = findNote(slug);
+    if (!f) return false;
+    if (f.room !== cur) enterRoom(f.room);
+    onDragDrop({ type: 'note', _ref: f.n, x: f.n.x, y: f.n.y, slug }, tx, ty, null);
+    return true;
+  },
+  reparent: (slug, destRoom) => {
+    const f = findNote(slug);
+    if (!f || !room(destRoom)) return false;
+    if (f.room !== cur) enterRoom(f.room);
+    const door = { type: 'door', target: destRoom, label: room(destRoom).title, x: f.n.x, y: f.n.y };
+    onDragDrop({ type: 'note', _ref: f.n, x: f.n.x, y: f.n.y, slug }, f.n.x, f.n.y, door);
+    return true;
+  },
 };
