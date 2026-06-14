@@ -8,21 +8,27 @@
 
 ## Regra: CHANGELOG-PENDING + commit de release
 
-**Features e fixes NÃO bumpam a versão.** Elas só entram no CHANGELOG sob
-`## [Unreleased]`. A versão é cortada por um commit dedicado, na hora do deploy.
+**Features e fixes NÃO bumpam a versão.** Cada tarefa escreve um **fragmento**
+`CHANGELOG-PENDING/YG-<n>.md` (convenção já adotada na YG-94, espelha o `co`). Um
+commit dedicado consolida e corta a versão, na hora do deploy.
+
+> Por que fragmento por-arquivo (e não uma seção `[Unreleased]` compartilhada):
+> uma seção única no `CHANGELOG.md` **ainda colide** quando vários PRs paralelos a
+> editam. Um arquivo por tarefa em `CHANGELOG-PENDING/` nunca conflita. Ver
+> `CHANGELOG-PENDING/README.md`.
 
 ### 1. Em todo PR de feature/fix
-- Adicione a mudança em `CHANGELOG.md`, sob `## [Unreleased]` (crie a seção se não
-  existir, no topo).
-- **NÃO** altere `Cargo.toml` (`[workspace.package] version`).
-- Resultado: PRs paralelos nunca colidem na linha de versão.
+- Crie `CHANGELOG-PENDING/YG-<n>.md` (`## YG-<n> — título` + o que mudou, user-facing).
+- **NÃO** altere `Cargo.toml` (`[workspace.package] version`) nem `CHANGELOG.md`.
+- Resultado: PRs paralelos nunca colidem na versão nem no changelog.
 
 ### 2. Cortar um release (quando for deployar)
 Um único commit `chore(release): X.Y.Z`:
-1. Renomeia `## [Unreleased]` → `## [X.Y.Z] — AAAA-MM-DD — <resumo>`.
-2. Adiciona um novo `## [Unreleased]` vazio no topo.
-3. Bumpa `Cargo.toml` → `version = "X.Y.Z"` (escolha o bump pelo maior tipo no
-   Unreleased: qualquer `feat` → minor; só `fix`/`docs` → patch).
+1. Funde **todos** os `CHANGELOG-PENDING/*.md` numa nova seção `## [X.Y.Z] —
+   AAAA-MM-DD — <resumo>` no topo do `CHANGELOG.md` (agrupe por Added/Changed/Fixed).
+2. **Deleta** os fragmentos consumidos (mantém só `CHANGELOG-PENDING/README.md`).
+3. Bumpa `Cargo.toml` → `version = "X.Y.Z"` (bump pelo maior tipo: qualquer `feat`
+   → minor; só `fix`/`docs` → patch).
 4. Esse é o **único** commit que toca a versão.
 
 ### 3. Deploy
@@ -34,7 +40,7 @@ Um único commit `chore(release): X.Y.Z`:
 
 ## Por quê isto funciona
 - `/version` volta a ser **fonte de verdade** (sempre = último release deployado).
-- PRs paralelos só anexam linhas ao `[Unreleased]` — sem conflito de versão.
+- PRs paralelos só adicionam um arquivo em `CHANGELOG-PENDING/` — sem conflito.
 - O release é um ato **único e auditável** (um commit `chore(release)`).
 - Uma feature mergeada sem deploy é normal: fica em `[Unreleased]` até o próximo
   release cortá-la.

@@ -2,12 +2,33 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
-> **Fluxo de release:** features entram em `[Unreleased]` sem bumpar `Cargo.toml`;
-> um commit `chore(release): X.Y.Z` corta a versão. Detalhe em `docs/RELEASE.md`.
+> **Fluxo de release:** cada tarefa escreve `CHANGELOG-PENDING/YG-<n>.md` (sem bumpar
+> `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
+> versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
-## [Unreleased]
+## [2.32.0] — 2026-06-14 — Mundo: portais cross-universe + docs/GIFs; editar-no-CO; pôquer WS
 
-_(nada ainda — próximo release corta daqui)_
+### Added
+- **YG-157** — **portais cross-universe** no Mundo: na sala-raiz de cada universo
+  aparecem portais para os outros universos visíveis ao usuário; pisar atravessa
+  (lazy) e uma **pilha de universos** (breadcrumb) volta preservando sala/posição.
+  Backend `GET /api/v1/instances/{id}/portals` (visibilidade: públicos + do caller).
+  Construído sobre o MundoView unificado — loader lazy + drag-drop durável intactos.
+- **YG-124** — botão **"✏️ Editar no CO"** no inspetor de nota (owner-only,
+  feature-gate `YGG_CO_EDITOR`, só aparece com o CO bidirecional/CO-413): deep-link
+  à entrada federada no editor do CO via SSO ES256; a edição volta pelo bridge.
+  Novo `GET /api/v1/config` (expõe `co_base_url` + `co_editor_enabled` em runtime).
+- **YG-150** — documentação escrita do `/mundo` (`docs/mundo.md`) + **GIFs
+  Playwright** das jornadas (andar/entrar/editar/drag) no DoD (`e2e/mundo-gifs.mjs`).
+
+### Changed
+- **YG-28** — pôquer via **WebSocket** (`GET /api/v1/poker/lobbies/{id}/stream`)
+  substitui o polling de 2s: updates <100ms, reconnect com backoff, fallback a polling.
+
+### Fixed
+- **YG-157** — `MundoView.mount` constrói as salas **síncrono** (portais em
+  background): elimina a corrida onde `#mundo-ui` aparecia antes de `rooms` existir
+  (quebrava os e2e YG-154/156).
 
 ## [2.31.0] — 2026-06-14 — Mundo: engine real + drag-drop durável + ÑE'Ẽ (sai do protótipo)
 
