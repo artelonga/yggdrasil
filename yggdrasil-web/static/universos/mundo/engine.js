@@ -57,6 +57,8 @@ export class World {
   entityAt(x, y) {
     const r = this.room; if (!r) return null;
     if (r.exit && r.exit.x === x && r.exit.y === y) return { type: 'exit', _ref: r.exit, ...r.exit };
+    // portais (cross-universe, YG-152): pisáveis como portas; cruzar troca de vault.
+    for (const p of r.portals || []) if (p.x === x && p.y === y) return { type: 'portal', _ref: p, ...p };
     for (const d of r.doors || []) if (d.x === x && d.y === y) return { type: 'door', _ref: d, ...d };
     for (const n of r.notes || []) if (n.x === x && n.y === y) return { type: 'note', _ref: n, ...n };
     for (const p of r.npcs || []) if (p.x === x && p.y === y) return { type: 'npc', _ref: p, ...p };
@@ -229,6 +231,11 @@ export class World {
     // exit, portas, notas, npcs, avatar
     const hov = (e) => this.hover && this.hover.x === e.x && this.hover.y === e.y;
     if (room.exit) theme.exit(ctx, room.exit.x * tsz, room.exit.y * tsz, tsz, hov(room.exit), time);
+    // portais (YG-152): tema desenha se souber, senão fallback comum (data-agnóstico).
+    for (const p of room.portals || []) {
+      if (theme.portal) theme.portal(ctx, p.x * tsz, p.y * tsz, tsz, p, hov(p), time);
+      else drawPortal(ctx, p.x * tsz, p.y * tsz, tsz, p, hov(p), time);
+    }
     for (const d of room.doors || []) theme.door(ctx, d.x * tsz, d.y * tsz, tsz, d, hov(d), time);
     for (const n of room.notes || []) theme.note(ctx, n.x * tsz, n.y * tsz, tsz, n, hov(n), time);
     for (const p of room.npcs || []) theme.npc(ctx, p.x * tsz, p.y * tsz, tsz, p, hov(p), time);
@@ -328,6 +335,26 @@ export class World {
 export function isTyping() {
   const a = document.activeElement;
   return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+}
+
+// Portal cross-universe (YG-152): um arco-portal pulsante, distinto de porta/saída.
+// `back` (voltar pro universo anterior) tinge de âmbar; ida tinge de violeta.
+export function drawPortal(ctx, x, y, tsz, p, hover, time) {
+  const cx = x + tsz / 2, cy = y + tsz / 2;
+  const pulse = 0.5 + 0.5 * Math.sin((time || 0) * 2.4 + (x + y) * 0.3);
+  const r = tsz * (0.30 + 0.05 * pulse);
+  const hue = p && p.back ? '#e9c349' : '#b48ead';
+  ctx.save();
+  const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, r);
+  g.addColorStop(0, p && p.back ? 'rgba(233,195,73,.95)' : 'rgba(180,138,173,.95)');
+  g.addColorStop(1, 'rgba(10,8,18,.15)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 1.25, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = hover ? 3 : 2;
+  ctx.strokeStyle = hue;
+  ctx.globalAlpha = 0.6 + 0.4 * pulse;
+  ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 1.25, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
 }
 
 export function roundRect(ctx, x, y, w, h, r) {

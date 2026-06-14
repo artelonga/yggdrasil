@@ -123,8 +123,17 @@
     body.mundo aside { display: none; }
     #mundo-ui { position: absolute; inset: 0; pointer-events: none; }
     #mundo-ui > * { pointer-events: auto; }
+    /* YG-152: trilha de UNIVERSOS (vaults) — fica acima da trilha de salas */
+    #mundo-uni { position: absolute; top: 8px; left: 8px; display: flex; align-items: center;
+      gap: 2px; flex-wrap: wrap; max-width: calc(100% - 16px); }
+    #mundo-uni .mu-crumb { background: rgba(7,7,11,.78); border: 1px solid #3a3a5e;
+      color: #b48ead; padding: .25rem .55rem; border-radius: 5px; font-size: .8rem; }
+    #mundo-uni .mu-crumb.on { border-color: #b48ead; color: #d9b8e8; }
+    #mundo-uni .mc-sep { opacity: .4; padding: 0 1px; }
     #mundo-crumb { position: absolute; top: 8px; left: 8px; display: flex; align-items: center;
       gap: 2px; flex-wrap: wrap; max-width: calc(100% - 16px); }
+    /* quando há trilha de universos visível, empurra a de salas pra baixo */
+    #mundo-uni:not([hidden]) ~ #mundo-crumb { top: 42px; }
     #mundo-crumb .mc-crumb { background: rgba(7,7,11,.78); border: 1px solid #2a2a44;
       padding: .25rem .55rem; border-radius: 5px; font-size: .8rem; }
     #mundo-crumb .mc-crumb.on { border-color: #e9c349; color: #e9c349; }
@@ -137,6 +146,7 @@
     #mundo-tree li { padding: .25rem .35rem; border-radius: 4px; cursor: pointer; }
     #mundo-tree li:hover { background: #1a1a26; }
     #mundo-tree .mt-folder { color: #e9c349; }
+    #mundo-tree .mt-portal { color: #b48ead; } /* YG-152: porta p/ outro universo */
     #mundo-panel { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
       width: min(560px, calc(100% - 24px)); max-height: 46%; overflow-y: auto;
       background: #14141b; border: 1px solid #2a2a44; border-radius: 10px;
@@ -191,6 +201,7 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
       <!-- YG-148: HUD da view "🌍 Mundo" (trilha + árvore da sala + nota aberta).
            A engine 2D (mundo/engine.js) desenha no #canvas; este overlay flutua. -->
       <div id="mundo-ui" hidden>
+        <div id="mundo-uni" hidden></div>
         <div id="mundo-crumb"></div>
         <div id="mundo-tree"></div>
         <div id="mundo-panel" hidden></div>

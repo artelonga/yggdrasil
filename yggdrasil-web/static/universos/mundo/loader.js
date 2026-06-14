@@ -36,21 +36,29 @@ function kindOf(body, temFilhos) {
 
 // Auto-layout determinístico: portas e notas numa grade (passo 2 p/ respiro);
 // spawn no centro-baixo; saída reservada no canto-baixo (não colide com notas).
-function layoutRoom(id, title, parent, doorItems, noteItems) {
-  const total = doorItems.length + noteItems.length;
+// `portalItems` (YG-152): portas para OUTROS universos (vaults) — só na raiz;
+// viram entidades `portal` próprias (engine: `room.portals`), com `universe` =
+// id da instância destino.
+function layoutRoom(id, title, parent, doorItems, noteItems, portalItems) {
+  portalItems = portalItems || [];
+  const total = doorItems.length + noteItems.length + portalItems.length;
   const cols = Math.max(3, Math.min(6, Math.ceil(Math.sqrt(total || 1))));
   const rows = Math.ceil(Math.max(1, total) / cols);
   const w = cols * 2 + 3;
   const h = rows * 2 + 5;
-  const room = { id, title, parent, w, h, tiles: emptyTiles(w, h), doors: [], notes: [], npcs: [] };
+  const room = { id, title, parent, w, h, tiles: emptyTiles(w, h), doors: [], notes: [], npcs: [], portals: [] };
   const all = [
     ...doorItems.map((d) => ({ door: d })),
     ...noteItems.map((n) => ({ note: n })),
+    ...portalItems.map((p) => ({ portal: p })),
   ];
   all.forEach((it, i) => {
     const x = 2 + (i % cols) * 2;
     const y = 2 + Math.floor(i / cols) * 2;
     if (it.door) room.doors.push({ x, y, label: it.door.title, target: it.door.id });
+    // portal cross-universe (YG-152): entidade própria (engine: `room.portals`),
+    // distinta de porta-de-pasta; `universe` = id da instância destino.
+    else if (it.portal) room.portals.push({ x, y, label: it.portal.title, universe: it.portal.id, back: !!it.portal.back });
     else room.notes.push({ x, y, ...it.note });
   });
   const cx = Math.floor(w / 2);
@@ -62,9 +70,11 @@ function layoutRoom(id, title, parent, doorItems, noteItems) {
 
 /**
  * Constrói o conjunto de salas a partir da instância real e suas notas.
+ * @param {Array<{id:string,title:string}>} [portals] portas p/ outros universos
+ *   (YG-152) — colocadas só na sala raiz (a fronteira do vault).
  * @returns {{ byId: Object, rootId: string }} salas indexadas por id.
  */
-export function buildRooms(inst, notes) {
+export function buildRooms(inst, notes, portals = []) {
   const noteBySlug = {};
   for (const n of notes || []) noteBySlug[n.slug] = n;
 
@@ -103,7 +113,7 @@ export function buildRooms(inst, notes) {
   const byId = {};
   const built = new Set();
 
-  function build(roomId, title, parentRoomId, childIds) {
+  function build(roomId, title, parentRoomId, childIds, portalItems) {
     if (built.has(roomId)) return; // defesa contra ciclos
     built.add(roomId);
     const doorItems = [];
@@ -115,14 +125,15 @@ export function buildRooms(inst, notes) {
       if (isFolder(id)) doorItems.push({ id, title: m.title });
       else noteItems.push(m);
     }
-    byId[roomId] = layoutRoom(roomId, title, parentRoomId, doorItems, noteItems);
+    byId[roomId] = layoutRoom(roomId, title, parentRoomId, doorItems, noteItems, portalItems);
     for (const d of doorItems) {
-      build(d.id, meta(blocks[d.id]).title, roomId, childrenOf[d.id] || []);
+      build(d.id, meta(blocks[d.id]).title, roomId, childrenOf[d.id] || [], []);
     }
   }
 
   const rootChildren = Object.keys(blocks).filter((id) => !parentOf[id]);
-  build(ROOT_ID, inst.title || 'Universo', null, rootChildren);
+  // portais p/ outros universos vivem na fronteira do vault = a sala raiz.
+  build(ROOT_ID, inst.title || 'Universo', null, rootChildren, portals || []);
 
   return { byId, rootId: ROOT_ID };
 }
