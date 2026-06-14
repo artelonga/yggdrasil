@@ -9,7 +9,14 @@
  *   pasta (nó com filhos) → sala  ·  porta = pasta-filha
  *   nota (nó-folha)       → objeto pisável na grade (abre o `.md` real)
  * A sala raiz é a própria instância (blocos sem pai). Posições são auto-layout
- * (a engine é data-agnóstica; só consome a `Room`). */
+ * (a engine é data-agnóstica; só consome a `Room`).
+ *
+ * YG-156: o loader é **lazy** (YG-151) — toda a hierarquia é conhecida de antemão
+ * (barato), mas cada `Room` só é construída ao entrar nela (com cache) → o vault
+ * INTEIRO é navegável sem estourar memória. O **layout persistido** do drag-drop
+ * (YG-154: `pos{room,x,y}`/`parent` no frontmatter `.md`) é **folado** no lazy:
+ * pré-computado numa passada barata e aplicado sala-a-sala em `get(id)`, sem
+ * jamais materializar `byId` do vault inteiro. */
 import { TileKind } from './engine.js';
 
 export const ROOT_ID = '__root__';
@@ -61,8 +68,19 @@ function layoutRoom(id, title, parent, doorItems, noteItems) {
 }
 
 /**
- * Constrói o conjunto de salas a partir da instância real e suas notas.
- * @returns {{ byId: Object, rootId: string }} salas indexadas por id.
+ * Indexa a instância real e expõe as salas com **carregamento preguiçoso**
+ * (YG-151) + o **layout persistido folado** (YG-154/156). A hierarquia inteira
+ * do vault é conhecida de antemão (barata — só conexões `parent` + uma passada
+ * pelos frontmatters), mas a `Room` de cada sala (grade + layout) só é construída
+ * ao **entrar** nela, e então fica em cache. O `.md` de cada nota pode mover a
+ * nota de sala (reparent) e/ou reposicioná-la — isso é refletido na membership
+ * efetiva e no overlay de `x/y`, sem construir nenhuma outra sala.
+ *
+ * @returns {{ rootId: string, ids: string[], get: (id:string)=>Object|null,
+ *             roomOf: (slug:string)=>string|null }}
+ *   `ids` = toda sala navegável (raiz + cada pasta), sem construir nenhuma;
+ *   `get(id)` = a `Room` (lazy + cache, com overrides do `.md` aplicados);
+ *   `roomOf(slug)` = a sala efetiva da nota (pro `findNote`/`posOf` sem `byId`).
  */
 export function buildRooms(inst, notes) {
   const noteBySlug = {};
@@ -100,65 +118,83 @@ export function buildRooms(inst, notes) {
     };
   }
 
-  const byId = {};
-  const built = new Set();
+  // toda sala navegável, derivada da hierarquia SEM construir layout:
+  // a raiz + cada pasta (= bloco com filhos). Recursivo de fato pois cobre
+  // QUALQUER profundidade (o vault inteiro), não um subconjunto.
+  const ids = [ROOT_ID, ...Object.keys(blocks).filter((id) => isFolder(id))];
+  const validRoom = new Set(ids);
 
-  function build(roomId, title, parentRoomId, childIds) {
-    if (built.has(roomId)) return; // defesa contra ciclos
-    built.add(roomId);
-    const doorItems = [];
-    const noteItems = [];
-    for (const id of childIds) {
-      const b = blocks[id];
-      if (!b) continue;
-      const m = meta(b);
-      if (isFolder(id)) doorItems.push({ id, title: m.title });
-      else noteItems.push(m);
-    }
-    byId[roomId] = layoutRoom(roomId, title, parentRoomId, doorItems, noteItems);
-    for (const d of doorItems) {
-      build(d.id, meta(blocks[d.id]).title, roomId, childrenOf[d.id] || []);
-    }
-  }
-
-  const rootChildren = Object.keys(blocks).filter((id) => !parentOf[id]);
-  build(ROOT_ID, inst.title || 'Universo', null, rootChildren);
-
-  // YG-154: sobrepõe o auto-layout com o estado persistido no `.md`
-  // (`pos{room,x,y}`/`parent` no frontmatter). Reabrir o Mundo mantém para onde
-  // o player arrastou cada objeto — manipulação direta durável, não efêmera.
-  applyLayout(byId, notes);
-
-  return { byId, rootId: ROOT_ID };
-}
-
-/**
- * Aplica as posições/reparent persistidos (frontmatter da nota) sobre as salas já
- * montadas — espelha o `apply_layout` do backend (YG-149) no front. `pos.room`/
- * `parent` são ids de sala (id do bloco-pasta ou `__root__`), iguais aos que o
- * drag-drop grava. Move a nota de sala (reparent) e/ou reposiciona na grade.
- */
-function applyLayout(byId, notes) {
+  // YG-156: pré-computa os overrides do `.md` numa passada barata (sem layout).
+  // `pos.room`/`parent` são ids de sala (id do bloco-pasta ou `__root__`),
+  // iguais aos que o drag-drop grava (YG-154/149). `parent` ganha de `pos.room`.
+  const layoutOverride = {}; // slug -> { room?, x?, y? }
   for (const n of notes || []) {
+    if (!n || !n.slug) continue;
     const pos = n.pos || null;
-    const parent = n.parent || null;
-    if (!pos && !parent) continue;
-    // localiza o objeto e a sala onde o auto-layout o pôs.
-    let found = null;
-    let fromRoom = null;
-    for (const id of Object.keys(byId)) {
-      const obj = (byId[id].notes || []).find((x) => x.slug === n.slug);
-      if (obj) { found = obj; fromRoom = id; break; }
-    }
-    if (!found) continue;
-    const destId = parent || (pos && pos.room) || fromRoom;
-    if (destId && destId !== fromRoom && byId[destId]) {
-      byId[fromRoom].notes = byId[fromRoom].notes.filter((x) => x !== found);
-      (byId[destId].notes = byId[destId].notes || []).push(found);
-    }
-    if (pos) {
-      if (typeof pos.x === 'number') found.x = pos.x;
-      if (typeof pos.y === 'number') found.y = pos.y;
-    }
+    const room = n.parent || (pos && pos.room) || undefined;
+    const x = pos && typeof pos.x === 'number' ? pos.x : undefined;
+    const y = pos && typeof pos.y === 'number' ? pos.y : undefined;
+    if (room === undefined && x === undefined && y === undefined) continue;
+    layoutOverride[n.slug] = { room, x, y };
   }
+
+  // YG-156: membership EFETIVA das notas (folhas) por sala, já com reparent.
+  // Para cada folha, a sala estrutural é `parentOf[block] || ROOT_ID`; o override
+  // a substitui se apontar pra uma sala válida. Assim `get(id)` inclui as notas
+  // reparenteadas PRA `id` e exclui as movidas pra FORA — sem construir as outras
+  // salas. `roomOf(slug)` é o índice reverso desse mesmo cálculo.
+  const notesInRoom = {}; // roomId -> [blockId]
+  const roomBySlug = {}; // slug -> roomId efetivo
+  for (const id of Object.keys(blocks)) {
+    if (isFolder(id)) continue; // pastas viram salas/portas, não objetos
+    const b = blocks[id];
+    const slug = (b.props && b.props.note_slug) || null;
+    const ov = slug ? layoutOverride[slug] : null;
+    const structural = parentOf[id] || ROOT_ID;
+    let r = ov && ov.room ? ov.room : structural;
+    if (!validRoom.has(r)) r = structural; // override órfão → cai pro estrutural
+    (notesInRoom[r] = notesInRoom[r] || []).push(id);
+    if (slug) roomBySlug[slug] = r;
+  }
+
+  const cache = {};
+  // Constrói UMA sala sob demanda (lazy). A raiz reúne os blocos sem pai;
+  // uma pasta reúne seus filhos diretos. Filhos-pasta viram portas; as notas
+  // (folhas) vêm da membership EFETIVA (`notesInRoom`, já reparenteada). Só esta
+  // sala é layoutada — as filhas só ao serem entradas. Após o layout, o `x/y`
+  // persistido é sobreposto em cada objeto.
+  function get(id) {
+    if (cache[id]) return cache[id];
+    let title;
+    let parentRoom;
+    let folderChildren;
+    if (id === ROOT_ID) {
+      title = inst.title || 'Universo';
+      parentRoom = null;
+      folderChildren = Object.keys(blocks).filter((bid) => !parentOf[bid] && isFolder(bid));
+    } else {
+      const b = blocks[id];
+      if (!b || !isFolder(id)) return null;
+      title = meta(b).title;
+      parentRoom = parentOf[id] || ROOT_ID; // pai-pasta, ou a raiz no topo
+      folderChildren = (childrenOf[id] || []).filter((cid) => isFolder(cid));
+    }
+    const doorItems = folderChildren.map((cid) => ({ id: cid, title: meta(blocks[cid]).title }));
+    const noteItems = (notesInRoom[id] || []).map((cid) => meta(blocks[cid]));
+    const r = layoutRoom(id, title, parentRoom, doorItems, noteItems);
+    // overlay do `x/y` persistido (YG-154): reabrir mantém pra onde se arrastou.
+    for (const obj of r.notes) {
+      const ov = obj.slug ? layoutOverride[obj.slug] : null;
+      if (!ov) continue;
+      if (typeof ov.x === 'number') obj.x = ov.x;
+      if (typeof ov.y === 'number') obj.y = ov.y;
+    }
+    cache[id] = r;
+    return r;
+  }
+
+  // sala efetiva de uma nota (lookup direto — não constrói nenhuma sala).
+  function roomOf(slug) { return roomBySlug[slug] || null; }
+
+  return { rootId: ROOT_ID, ids, get, roomOf };
 }
