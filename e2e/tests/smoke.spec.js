@@ -167,3 +167,41 @@ test('Shandara SRD: árvore + doc renderizado + deep-link (YG-144)', async ({ pa
   await expect(page.locator('#doc h1')).toBeVisible({ timeout: 10000 }); // doc renderizado
   expect(erros).toEqual([]);
 });
+
+test('presença: ingest + leitura por universo e por lobby (YG-145)', async ({ request, baseURL }) => {
+  const vid = 'e2e-' + Date.now();
+  // entrar e registrar uma partida
+  let r = await request.post(baseURL + '/api/v1/presenca', {
+    data: { universo: 'snake', vid, ev: 'entrada' },
+  });
+  expect(r.status()).toBe(204);
+  r = await request.post(baseURL + '/api/v1/presenca', {
+    data: { universo: 'snake', vid, ev: 'partida', score: 7, resultado: 'fim' },
+  });
+  expect(r.status()).toBe(204);
+
+  // painel do universo: ativo agora + feed (mais novo primeiro = a partida)
+  const at = await (await request.get(baseURL + '/api/v1/universos/snake/atividade')).json();
+  expect(at.ativos_agora).toBeGreaterThanOrEqual(1);
+  expect(at.ultimas.length).toBeGreaterThan(0);
+  expect(at.ultimas[0].ev).toBe('partida');
+  expect(at.ultimas[0].score).toBe(7);
+
+  // lobby: contagem por universo
+  const lob = await (await request.get(baseURL + '/api/v1/atividade')).json();
+  expect(lob.por_universo.snake).toBeGreaterThanOrEqual(1);
+  expect(lob.total).toBeGreaterThanOrEqual(1);
+
+  // saída remove a presença daquele vid
+  r = await request.post(baseURL + '/api/v1/presenca', {
+    data: { universo: 'snake', vid, ev: 'saida', ativo_ms: 1000 },
+  });
+  expect(r.status()).toBe(204);
+});
+
+test('painel de atividade aparece na página do jogo (YG-145)', async ({ page }) => {
+  await page.goto('/universos/snake', { waitUntil: 'domcontentloaded' });
+  // widget flutuante montado por atividade.js
+  await expect(page.locator('#ygg-atividade')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#ygg-atividade .tt')).toContainText('ativos agora');
+});
