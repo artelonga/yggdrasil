@@ -55,12 +55,21 @@ export async function mount(canvas, opts) {
   wireFullscreen();
   navStack.length = 0;
   universeStack.length = 0;
-  // descobre universos vizinhos visíveis (lazy: só metadados, não os mundos).
-  const portals = await discoverPortals(ctx);
-  if (!active) return; // trocou de view enquanto buscava
-  rooms = buildRooms(opts.inst, opts.notes, portals);
+  // Constrói o mundo SÍNCRONO (sem portais) → MundoView usável de imediato.
+  // Sem isto, `await discoverPortals` deixava uma janela onde `#mundo-ui` está
+  // visível mas `rooms` ainda é null → `findNote`/`drag` estouravam (regressão
+  // dos e2e YG-154/156). Os portais (cross-universe, YG-157) são descobertos em
+  // BACKGROUND e injetados depois — só se a sessão ainda não foi mexida, pra não
+  // descartar um drag/reparent em curso.
+  rooms = buildRooms(opts.inst, opts.notes, []);
   enterRoom(rooms.rootId);
   world.start();
+  discoverPortals(ctx).then((portals) => {
+    if (!active || !portals.length) return;
+    if (pending.size || Object.keys(coordMap).length) return; // sessão mexida → próximo load mostra
+    rooms = buildRooms(opts.inst, opts.notes, portals);
+    enterRoom(cur || rooms.rootId);
+  });
 }
 
 export function unmount() {
