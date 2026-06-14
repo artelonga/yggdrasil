@@ -755,3 +755,9 @@ async function boot() {
   refreshReviewCount();
 }
 boot();
+
+// YG-145: presença no lobby vivo — comunicação é um universo sem fim (só entrada/saída).
+// telemetria.js é `defer`; entra no DOMContentLoaded.
+window.addEventListener('DOMContentLoaded', function () {
+  if (window.yggTelemetria) window.yggTelemetria.atividade('comunicacao');
+});

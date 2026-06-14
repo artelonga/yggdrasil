@@ -2,6 +2,14 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.28.0] — 2026-06-14 — YG-145: presença em comunicação/neuro
+
+### Added
+
+- **Presença no lobby vivo para `comunicacao` e `neuro`** — ambas emitem
+  `atividade(universo)` (entrada/pulso/saída), fechando a inconsistência: já
+  apareciam no lobby mas nunca mostravam "ativos". Universos sem fim, só presença.
+
 ## [2.27.0] — 2026-06-14 — YG-145: presença/atividade — jogos como lugares vivos
 
 Reorganização da telemetria e da experiência em torno de **presença/atividade**
