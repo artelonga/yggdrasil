@@ -111,3 +111,86 @@ test('Mundo: instância real → andar → entrar numa pasta → abrir uma nota 
 
   expect(erros, 'sem exceção de página').toEqual([]);
 });
+
+test('Mundo: drag-drop persiste no .md → reload mantém posição; reparent move de pasta (YG-154)', async ({ page, request, baseURL }) => {
+  test.skip(!isLocal(baseURL), 'cria dados via API — só roda contra servidor local/CI');
+
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(String(e)));
+
+  const sub = 'e2e-mundo-dd-' + Date.now();
+  const token = signJwt(sub, 'mundodd@e2e.test');
+  const auth = { Authorization: `Bearer ${token}` };
+
+  // ── monta uma instância real: raiz com 1 nota (bem-vindo) e 1 pasta (jardim) ──
+  const create = await request.post('/api/v1/instances', { headers: auth });
+  expect(create.ok(), 'criar instância').toBeTruthy();
+  const inst = await create.json();
+  const id = inst.id;
+  const layer = inst.layers[0].id;
+
+  async function place(block) {
+    const r = await request.patch(`/api/v1/instances/${id}`, {
+      headers: { ...auth, 'Content-Type': 'application/json' },
+      data: { op: 'place_block', layer, block },
+    });
+    expect(r.ok(), `place_block ${block.id}`).toBeTruthy();
+  }
+  async function putNote(slug, title, markdown) {
+    const r = await request.put(`/api/v1/instances/${id}/notes/${slug}`, {
+      headers: { ...auth, 'Content-Type': 'application/json' },
+      data: { title, markdown },
+    });
+    expect(r.ok(), `put nota ${slug}`).toBeTruthy();
+  }
+
+  await place({ id: 'bemvindo', block_type: 'note', pos: { x: 2, y: 2 }, label: 'Bem-vindo', props: { note_slug: 'bem-vindo' } });
+  await place({ id: 'jardim', block_type: 'pasta', pos: { x: 5, y: 2 }, label: 'Jardim', props: { note_slug: 'jardim' } });
+  await place({ id: 'plantas', block_type: 'note', pos: { x: 8, y: 2 }, label: 'Plantas', props: { note_slug: 'plantas' } });
+  await putNote('bem-vindo', 'Bem-vindo', 'Ao seu universo real.');
+  await putNote('jardim', 'Jardim', '');
+  await putNote('plantas', 'Plantas', 'Catálogo de plantas.');
+  const conn = await request.patch(`/api/v1/instances/${id}`, {
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    data: { op: 'add_connection', connection: { id: 'p-j', from: 'plantas', to: 'jardim', props: { kind: 'parent' } } },
+  });
+  expect(conn.ok(), 'add_connection parent').toBeTruthy();
+
+  // ── abre o instance view como dono e entra na view Mundo ──
+  await page.addInitScript(([k, t]) => localStorage.setItem(k, t), [JWT_KEY, token]);
+  await page.goto(`/universos/instance/${id}`, { waitUntil: 'domcontentloaded' });
+  await page.locator('#view-mundo').click();
+  await expect(page.locator('#mundo-ui')).toBeVisible();
+  await expect(page.locator('#mundo-tree')).toContainText('Bem-vindo');
+
+  // ── ARRASTAR (reposicionar) bem-vindo para uma célula livre → commit ao .md ──
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes(`/instances/${id}/layout`) && r.request().method() === 'POST'),
+    page.evaluate(() => window.MundoView.drag('bem-vindo', 3, 4)),
+  ]);
+  const moved = await page.evaluate(() => window.MundoView.posOf('bem-vindo'));
+  expect(moved).toMatchObject({ x: 3, y: 4 });
+
+  // ── RELOAD → posição persistida no `.md` é mantida (não voltou ao auto-layout) ──
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#view-mundo').click();
+  await expect(page.locator('#mundo-ui')).toBeVisible();
+  const afterReload = await page.evaluate(() => window.MundoView.posOf('bem-vindo'));
+  expect(afterReload, 'posição mantida após reload').toMatchObject({ x: 3, y: 4 });
+
+  // ── REPARENT: arrastar bem-vindo para a pasta Jardim → nota muda de sala ──
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes(`/instances/${id}/layout`) && r.request().method() === 'POST'),
+    page.evaluate(() => window.MundoView.reparent('bem-vindo', 'jardim')),
+  ]);
+  expect(await page.evaluate(() => window.MundoView.posOf('bem-vindo')).then((p) => p.room)).toBe('jardim');
+
+  // ── RELOAD → a nota nasce dentro da nova pasta (parent persistido no `.md`) ──
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#view-mundo').click();
+  await expect(page.locator('#mundo-ui')).toBeVisible();
+  const reparented = await page.evaluate(() => window.MundoView.posOf('bem-vindo'));
+  expect(reparented.room, 'nota na nova pasta após reload').toBe('jardim');
+
+  expect(erros, 'sem exceção de página').toEqual([]);
+});

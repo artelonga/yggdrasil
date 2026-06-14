@@ -242,6 +242,10 @@ pub struct NotePayload {
     pub updated_at: Option<String>,
     /// SHA-256 hex do `body`.
     pub body_hash: String,
+    /// Frontmatter da nota como JSON (YG-149): `status`, `parent`, `pos{room,x,y}`.
+    /// É o patch de layout que o CO recebe no write-back (federação YG↔CO).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frontmatter: Option<serde_json::Value>,
 }
 
 /// Payload de um evento de **atividade de sala** (`yggdrasil.sala.*`).
@@ -275,6 +279,7 @@ fn build_note_payload(note: &NoteWritten) -> serde_json::Value {
             body: note.body.clone(),
             updated_at: note.updated_at.clone(),
             body_hash,
+            frontmatter: note.frontmatter.clone(),
         })
         .expect("NotePayload serialize"),
     }
@@ -1671,6 +1676,36 @@ mod tests {
         let hash = payload["body_hash"].as_str().unwrap();
         assert_eq!(hash.len(), 64);
         assert_eq!(hash, body_sha256("corpo da nota"));
+    }
+
+    /// YG-149: o write-back de layout leva `pos{room,x,y}`+`parent` ao CO no
+    /// `NotePayload.frontmatter` — é o patch que fecha a federação YG→CO.
+    #[test]
+    fn nota_payload_carrega_frontmatter_de_layout() {
+        let mut log = EventLog::new();
+        log.append(NoteWritten {
+            instance: "inst-x".into(),
+            slug: "obj".into(),
+            kind: NoteKind::Updated,
+            source: FederatedSource::Notes,
+            title: "Obj".into(),
+            body: "corpo".into(),
+            updated_at: Some("2026-06-14T00:00:00+00:00".into()),
+            frontmatter: Some(serde_json::json!({
+                "parent": "jardim",
+                "pos": { "room": "jardim", "x": 4, "y": 6 }
+            })),
+            actor: None,
+            visibility: Visibility::Public,
+        });
+        let msg = BridgeMessage::from_log_entry(&log.pending()[0], "n");
+        let BridgeMessage::Event { federated } = msg else {
+            panic!()
+        };
+        let payload = &federated.event.payload;
+        assert_eq!(payload["frontmatter"]["parent"], "jardim");
+        assert_eq!(payload["frontmatter"]["pos"]["room"], "jardim");
+        assert_eq!(payload["frontmatter"]["pos"]["x"], 4);
     }
 
     #[test]
