@@ -15,6 +15,7 @@ pub mod hint_engine;
 mod lobby;
 mod mail;
 pub mod openapi;
+pub mod presenca;
 mod scores_store;
 pub mod shandara;
 pub mod telemetria;
@@ -216,6 +217,9 @@ async fn main() -> anyhow::Result<()> {
     // YG-128: pulso ao vivo — ring + broadcast p/ o WS /api/v1/analytics/stream.
     // Frames anônimos: stats a cada 10s + nota.escrita (sem slug/título/path).
     let pulso = analytics_stream::Pulso::new();
+    // YG-145: presença/atividade ao vivo por universo (registro in-memory efêmero,
+    // alimentado pelo ping client-side de telemetria.js).
+    let presenca = presenca::Presenca::new();
     let universos_state = universos_routes::UniversosState::new(
         Arc::new(
             SqliteScoresStore::open(&db_path)
@@ -228,16 +232,21 @@ async fn main() -> anyhow::Result<()> {
     {
         let p = pulso.clone();
         let us = universos_state.clone();
+        let pres = presenca.clone();
         tokio::spawn(async move {
             loop {
                 let agora = us.jogando_agora();
-                let desde = chrono::Utc::now().timestamp_millis() - 24 * 60 * 60 * 1000;
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let desde = now_ms - 24 * 60 * 60 * 1000;
                 let s24 = us.telemetria.sessions_since(desde);
+                // YG-145: presença por universo no mesmo frame (GC dos expirados).
+                let por_universo = pres.ativos_por_universo(now_ms);
                 p.push(serde_json::json!({
                     "ev": "stats",
                     "jogando_agora": agora,
                     "sessoes_24h": s24,
-                    "ts": chrono::Utc::now().timestamp_millis(),
+                    "presenca": por_universo,
+                    "ts": now_ms,
                 }));
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
             }
@@ -246,6 +255,18 @@ async fn main() -> anyhow::Result<()> {
     let stream_router = axum::Router::new()
         .route("/api/v1/analytics/stream", get(analytics_stream::ws_stream))
         .with_state(pulso.clone());
+    // YG-145: ingest de presença + leitura por universo / lobby.
+    let atividade_router = Router::new()
+        .route("/api/v1/presenca", post(presenca::ingest))
+        .route("/api/v1/atividade", get(presenca::por_universo))
+        .route(
+            "/api/v1/universos/{id}/atividade",
+            get(presenca::do_universo),
+        )
+        .with_state(presenca::AtividadeState {
+            presenca: presenca.clone(),
+            pulso: pulso.clone(),
+        });
     let universos_router = Router::new()
         .route("/api/v1/universos", get(universos_routes::list_universos))
         .route("/api/v1/stats", get(universos_routes::get_stats))
@@ -607,6 +628,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(feedback_router)
         .merge(comunicacao_router)
         .merge(stream_router)
+        .merge(atividade_router)
         .merge(corpus_router)
         // Criar universo autorado (template picker + meus universos). O segmento
         // estático "new" vence a captura {id} da rota do player abaixo.
