@@ -13,6 +13,7 @@ const state = {
   lastRound: null,
   ws: null,
   wsActive: false,
+  atv: null,  // YG-145: presença/atividade do universo
 };
 
 const el = {
@@ -444,6 +445,9 @@ async function stand() {
       showError(body.erro || `Erro ${res.status}`);
       return;
     }
+    // YG-145: levantar da mesa é o "fim de partida" do poker — sem fim de jogo,
+    // só o momento de sair com o saldo. Presença segue até fechar a aba.
+    if (state.atv) state.atv.partida({ resultado: 'levantou' });
     refreshSaldo();
     refreshLobby();
   } catch (e) {
@@ -489,6 +493,11 @@ function disconnectWs() {
 el.voltar.addEventListener('click', leaveLobby);
 
 function init() {
+  // YG-145: poker é colaborativo e sem fim — presença vale mesmo deslogado/observando.
+  // telemetria.js é `defer`, então só está pronto no DOMContentLoaded (init() roda antes).
+  window.addEventListener('DOMContentLoaded', function () {
+    if (window.yggTelemetria) state.atv = window.yggTelemetria.atividade('poker');
+  });
   if (!state.token) { showLoginCta(); return; }
   const claims = decodeJwt(state.token);
   if (!claims || !claims.sub) {

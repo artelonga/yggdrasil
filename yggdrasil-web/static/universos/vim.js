@@ -315,6 +315,8 @@ async function initVim() {
   app.sessionId = data.session_id;
   applyState(data.state);
 
+  // YG-145: vim é um universo de aprendizado sem "fim" — só presença (entrada/saída).
+  if (window.yggTelemetria) window.yggTelemetria.atividade('vim');
   window.addEventListener('keydown', handleKeydown);
   app.canvas.focus();
   setStatus('');

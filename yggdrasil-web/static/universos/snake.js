@@ -21,6 +21,7 @@ const state = {
   height: 0,
   score:  0,
   over:   false,
+  atv:    null,  // YG-145: presença/atividade do universo
 };
 
 function setStatus(msg) {
@@ -107,6 +108,7 @@ async function tick() {
 
     if (data.action === 'quit') {
       state.over = true;
+      if (state.atv) state.atv.partida({ score: state.score, resultado: 'fim' });
       drawGameOver();
       setStatus('Redirecionando para o lobby...');
       // GameAction::Quit received — redirect to lobby
@@ -149,6 +151,7 @@ async function initSnake() {
   state.ctx    = canvas.getContext('2d');
 
   draw();
+  if (window.yggTelemetria) state.atv = window.yggTelemetria.atividade('snake');
   window.addEventListener('keydown', handleKey);
   setInterval(tick, 120);
   setStatus('');

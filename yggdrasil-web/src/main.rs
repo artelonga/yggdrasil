@@ -7,7 +7,6 @@ mod auth_co;
 pub mod catalog;
 pub mod co_bridge_inbound;
 pub mod co_bridge_producer;
-pub mod co_rollups;
 pub mod comunicacao_routes;
 pub mod corpus_nlp;
 pub mod feedback;
@@ -191,8 +190,9 @@ async fn main() -> anyhow::Result<()> {
         telemetria::TelemetriaDb::open(&db_path)
             .map_err(|e| anyhow::anyhow!("telemetria db: {e}"))?,
     );
-    // YG-127: rollups diários de jogo → hub de analytics do CO (gate por env)
-    co_rollups::spawn(telemetria.clone());
+    // YG-145: telemetria → CO segue o modelo da ArteLonga — eventos anônimos
+    // nomeados via tracker client-side (static/telemetria.js → POST co/.../events).
+    // Não há mais push server-side de rollups (removido o gate de token).
 
     // YG-128: retenção 90d agendada (espelha o CO) — 1×/dia, best-effort.
     {

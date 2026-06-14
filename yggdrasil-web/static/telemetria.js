@@ -30,7 +30,12 @@
     return false;
   }
   if (optedOut()) {
-    window.yggTelemetria = { track: function () {}, optedOut: true };
+    var noop = function () {};
+    window.yggTelemetria = {
+      track: noop,
+      atividade: function () { return { partida: noop, sair: noop }; },
+      optedOut: true,
+    };
     return;
   }
 
@@ -125,6 +130,41 @@
     } catch (_) { /* telemetria nunca quebra a página */ }
   }
 
+  // ── atividade/presença (YG-145) ─────────────────────────────────────────────
+  // O primitivo é PRESENÇA (entrar/sair), não partida/fim. Jogos sem fim (RPG,
+  // poker colaborativo) só têm entrada/pulso/saída; jogos finitos emitem `partida`
+  // por cima quando há um resultado (morte no snake, levantar da mesa). Mesma
+  // taxonomia para todos, no contrato anônimo da ArteLonga. Uso na página do jogo:
+  //   var atv = window.yggTelemetria.atividade('snake');
+  //   ... atv.partida({ score: 42, resultado: 'fim' });  // opcional
+  var PULSO_MS = 45000;
+  function atividade(universo) {
+    universo = String(universo || '').slice(0, 64);
+    if (!universo) return { partida: function () {}, sair: function () {} };
+    var entrou = Date.now();
+    var saiu = false;
+    track('entrada', { universo: universo });
+    var hb = setInterval(function () {
+      // pulso só enquanto a aba está visível — mantém viva a presença de jogos
+      // sem fim sem inflar tempo de aba em background.
+      if (document.visibilityState !== 'hidden') track('pulso', { universo: universo });
+    }, PULSO_MS);
+    function sair() {
+      if (saiu) return;
+      saiu = true;
+      clearInterval(hb);
+      track('saida', { universo: universo, ativo_ms: Date.now() - entrou });
+      flushBeacon();
+    }
+    window.addEventListener('pagehide', sair);
+    return {
+      partida: function (props) {
+        track('partida', Object.assign({ universo: universo }, props || {}));
+      },
+      sair: sair,
+    };
+  }
+
   // ── eventos automáticos ────────────────────────────────────────────────────
   var t0 = Date.now();
   track('page_view', { title: (document.title || '').slice(0, 128) });
@@ -144,5 +184,5 @@
     });
   });
 
-  window.yggTelemetria = { track: track, optedOut: false };
+  window.yggTelemetria = { track: track, atividade: atividade, optedOut: false };
 })();
