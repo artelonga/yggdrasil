@@ -59,6 +59,27 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+// YG-138: promover este universo autorado a um universo no CO. O CO já expõe a
+// API user-facing (POST /api/v1/universes, parent_key/visibility, members,
+// /me/universes, /subscribe — CO-444). A criação no CO é um MODAL no SPA, então
+// fazemos redirect ao CO autenticado (cookie compartilhado .artelonga.com.br /
+// SSO) com prefill via query. Contrato (a alinhar com o handler do CO, em curso):
+//   /?criar=1&name=<título>&key=<slug sugerido>&source=yggdrasil&instance=<id>
+// Degrada gracioso: sem o handler, o usuário cai no CO logado e clica "+ Novo".
+const CO_BASE = 'https://co.artelonga.com.br';
+function criarNoCO() {
+  const inst = state.inst || {};
+  const name = inst.title || 'Universo';
+  const qs = new URLSearchParams({
+    criar: '1',
+    name,
+    key: (slugifyJs(name) || 'universo').slice(0, 40),
+    source: 'yggdrasil',
+    instance: state.id,
+  });
+  window.location.assign(`${CO_BASE}/?${qs.toString()}`);
+}
+
 // ─── Carregamento ────────────────────────────────────────────────────────────
 
 async function load() {
@@ -79,6 +100,13 @@ async function load() {
     // YG-129: manipulação direta — dono edita SEMPRE (sem toggle). O botão
     // ✏️ some; clique cria, arrasto move, arrastar-sobre liga.
     toggleEditMode(true);
+    // YG-138: dono pode promover este universo autorado a um universo no CO
+    // (vira dele lá; pode convidar ou deixar público pra subscribe).
+    const coBtn = document.getElementById('co-create');
+    if (coBtn) {
+      coBtn.hidden = false;
+      coBtn.addEventListener('click', criarNoCO);
+    }
   }
   if (state.inst.template) {
     try {

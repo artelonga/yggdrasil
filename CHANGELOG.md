@@ -2,6 +2,18 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.29.0] — 2026-06-14 — YG-138: criar universo autorado no CO (lado Yggdrasil)
+
+### Added
+
+- **Botão "🌐 Criar no CO"** na página de universo autorado (`/universos/instance/{id}`,
+  owner-only) — promove o universo a um universo no CO (vira do usuário; pode
+  convidar ou deixar público pra subscribe). Redireciona ao CO autenticado
+  (cookie compartilhado `.artelonga.com.br`) com prefill via query:
+  `/?criar=1&name=&key=&source=yggdrasil&instance=`. **Degrada gracioso**: sem o
+  handler `?criar` do CO (em curso por agente do CO), o usuário cai no CO logado
+  e clica "+ Novo universo". A API user-facing do CO já existe (CO-444).
+
 ## [2.28.0] — 2026-06-14 — YG-145: presença em comunicação/neuro
 
 ### Added
