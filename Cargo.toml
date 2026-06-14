@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "2.26.0"
+version = "2.27.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/artelonga/yggdrasil"

@@ -2,6 +2,35 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.27.0] — 2026-06-14 — YG-145: presença/atividade — jogos como lugares vivos
+
+Reorganização da telemetria e da experiência em torno de **presença/atividade**
+(entrar/sair) como primitivo, não partida/fim. Jogos sem fim (RPG, poker
+colaborativo) passam a ter o mesmo tratamento que os finitos.
+
+### Changed
+
+- **Telemetria → CO no modelo da ArteLonga.** Removido o push server-side de
+  rollups (`co_rollups.rs`) e a dependência dos tokens `CO_ROLLUP_TOKEN` /
+  `YGG_CO_ROLLUP_TOKEN`. O agregado anônimo do CO passa a vir só do tracker
+  client-side (`static/telemetria.js` → `POST co/api/v1/telemetry/events`),
+  exatamente como o `assets/analytics.js` da ArteLonga. Sem segredo de prod,
+  sem mismatch de contrato, sem cutover.
+
+### Added
+
+- **Taxonomia de atividade** (`static/telemetria.js`): `window.yggTelemetria
+  .atividade(universo)` emite `entrada`, `pulso` (heartbeat ~45s enquanto
+  visível) e `saida` (com `ativo_ms`); `partida` é opcional, só onde há
+  resultado. Cobertura uniforme dos jogos: snake/tetris/invaders emitem
+  `partida` no fim; poker no "levantar da mesa"; vim e shandara só presença.
+- **Presença ao vivo intra-app** (server): registro in-memory por universo
+  alimentado por `POST /api/v1/presenca`, exposto em `GET /api/v1/atividade`
+  (lobby) e `GET /api/v1/universos/{id}/atividade` (painel do universo:
+  ativos agora + últimas atividades), e transmitido pelo pulso WS.
+- **Painel de atividade** em cada universo e **lobby vivo** (contadores de
+  presença + ordenação por atividade) — jogos viram lugares com gente.
+
 ## [2.26.0] — 2026-06-13 — YG-144: reader de SRD do Shandara (MVP)
 
 ### Added

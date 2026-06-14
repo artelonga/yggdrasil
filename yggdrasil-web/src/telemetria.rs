@@ -171,8 +171,9 @@ impl TelemetriaDb {
     }
 
     /// Retenção (YG-128, espelha os 90 dias do CO): apaga eventos/sessões mais
-    /// antigos que `cutoff_ms`. Devolve (eventos, sessões) removidos. Os
-    /// agregados históricos sobrevivem nos rollups diários enviados ao CO.
+    /// antigos que `cutoff_ms`. Devolve (eventos, sessões) removidos. Esta é a
+    /// fonte autoritativa intra-app (funil/atividade); o agregado anônimo de
+    /// longo prazo vive no hub do CO, alimentado pelo tracker client-side.
     pub fn cleanup_older_than(&self, cutoff_ms: i64) -> (usize, usize) {
         let conn = self.db.lock().unwrap();
         let ev = conn

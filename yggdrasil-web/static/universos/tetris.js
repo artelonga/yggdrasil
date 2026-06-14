@@ -27,6 +27,7 @@ const state = {
   ctx:       null,
   dropTimer: null,
   busy:      false,
+  atv:       null,  // YG-145: presença/atividade do universo
 };
 
 function setStatus(msg) {
@@ -155,6 +156,7 @@ async function sendInput(direction) {
 
     if (data.action === 'quit') {
       state.over = true;
+      if (state.atv) state.atv.partida({ score: state.score, resultado: 'fim' });
       clearInterval(state.dropTimer);
       draw();
       setStatus('Redirecionando para o lobby...');
@@ -219,6 +221,7 @@ async function initTetris() {
   state.ctx    = canvas.getContext('2d');
 
   draw();
+  if (window.yggTelemetria) state.atv = window.yggTelemetria.atividade('tetris');
   window.addEventListener('keydown', handleKey);
   startDropTimer();
   setStatus('');

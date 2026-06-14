@@ -19,6 +19,8 @@ const state = {
     ctx: null,
     animFrame: null,
     busy: false,
+    atv: null,            // YG-145: presença/atividade do universo
+    partidaFeita: false,  // garante um único evento de partida ao terminar
 };
 
 let playerVx = 0;
@@ -102,6 +104,11 @@ async function sendInput(direction) {
         state.lives    = s.lives;
         state.gameOver = s.game_over;
         state.won      = s.won;
+
+        if ((state.gameOver || state.won) && !state.partidaFeita) {
+            state.partidaFeita = true;
+            if (state.atv) state.atv.partida({ score: state.score, resultado: state.won ? 'vitoria' : 'fim' });
+        }
 
         setScore(data.score);
         setLives(s.lives);
@@ -194,6 +201,7 @@ async function initInvaders() {
     state.ctx      = canvas.getContext('2d');
 
     draw();
+    if (window.yggTelemetria) state.atv = window.yggTelemetria.atividade('invaders');
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     state.animFrame = requestAnimationFrame(gameLoop);

@@ -43,6 +43,12 @@
     return html;
   }
 
+  // YG-145: Shandara é um universo de conteúdo (SRD) sem "fim" — só presença.
+  // telemetria.js é `defer`; entra no DOMContentLoaded.
+  window.addEventListener('DOMContentLoaded', function () {
+    if (window.yggTelemetria) window.yggTelemetria.atividade('shandara');
+  });
+
   var docs = [];
   function abrir(path) {
     docs.forEach(function (d) { /* destaque */ });
