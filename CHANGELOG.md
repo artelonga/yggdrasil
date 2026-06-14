@@ -2,6 +2,21 @@
 
 Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
+## [2.30.0] — 2026-06-14 — YG-146: protótipo do Mundo walkable (`/mundo`) p/ feedback
+
+### Added
+
+- **`/mundo`** — protótipo navegável do Mundo 2D (Tibia+Gather): caminhar
+  (WASD/setas/clique, diagonais, aceleração), **pasta=sala** (entrar/sair),
+  **nota=objeto** (abrir/editar/excluir), **arrastar** p/ reposicionar/reparent,
+  **navegação por parede** (↑ entra · ↓ início · ←→ pasta irmã), **NPC** (Guia,
+  tutoriais determinísticos via `tutorial.md` + Ollama quando disponível),
+  **Kanban centralizado** + **Timeline**, **4 ícones** do lobby, **A/B** de
+  posição do NPC. **5 temas** (2 medieval, 2 jardim, 1 moderno) trocáveis ao vivo.
+- **Feedback por versão**: `?tema=<id>` entra direto numa variante; o botão de
+  feedback marca a versão ativa (`kind: "tema:<id>"` → mural do CO) e a troca de
+  tema é rastreada (`mundo_tema`). Protótipo p/ avaliação — não é o produto final.
+
 ## [2.29.0] — 2026-06-14 — YG-138: criar universo autorado no CO (lado Yggdrasil)
 
 ### Added
