@@ -1,7 +1,9 @@
 'use strict';
 
 const STORAGE_KEY = 'yggdrasil-jwt';
-const POLL_MS = 2000;
+const POLL_MS = 2000;            // YG-28: só usado como fallback se o WS cair 3x.
+const WS_BACKOFF_MS = [1000, 2000, 5000, 10000];  // reconnect backoff (YG-28).
+const WS_MAX_FAILURES = 3;       // após 3 falhas seguidas, liga o polling de fallback.
 
 const state = {
   token: localStorage.getItem(STORAGE_KEY),
@@ -13,6 +15,10 @@ const state = {
   lastRound: null,
   ws: null,
   wsActive: false,
+  wsLobby: null,         // lobby alvo do WS — null = desconectado de propósito.
+  wsFailures: 0,         // falhas consecutivas desde a última conexão bem-sucedida.
+  wsBackoffIdx: 0,       // índice no WS_BACKOFF_MS para o próximo reconnect.
+  wsReconnectTimer: null,
   atv: null,  // YG-145: presença/atividade do universo
 };
 
@@ -464,29 +470,71 @@ function stopPolling() {
   if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
 }
 
+// YG-28: o construtor WebSocket do browser não aceita headers, então o JWT vai
+// como query param `?token=`.
+function streamUrl(lobbyId) {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const token = encodeURIComponent(state.token || '');
+  return `${proto}//${location.host}/api/v1/poker/lobbies/${lobbyId}/stream?token=${token}`;
+}
+
 function connectWs(lobbyId) {
   disconnectWs();
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${proto}//${location.host}/api/v1/poker/lobbies/${lobbyId}/ws`;
+  state.wsLobby = lobbyId;
+  openWs();
+}
+
+function openWs() {
+  const lobbyId = state.wsLobby;
+  if (!lobbyId) return;
+  let ws;
   try {
-    const ws = new WebSocket(url);
-    ws.onopen = () => { state.wsActive = true; stopPolling(); };
-    ws.onmessage = () => refreshLobby();
-    ws.onerror = () => { state.wsActive = false; startPolling(); };
-    ws.onclose = () => { if (state.wsActive) { state.wsActive = false; startPolling(); } };
-    state.ws = ws;
+    ws = new WebSocket(streamUrl(lobbyId));
   } catch (_) {
+    handleWsFailure();
+    return;
+  }
+  state.ws = ws;
+  ws.onopen = () => {
+    state.wsActive = true;
+    state.wsFailures = 0;     // conexão OK → zera backoff e desliga o fallback.
+    state.wsBackoffIdx = 0;
+    stopPolling();
+  };
+  ws.onmessage = () => refreshLobby();
+  ws.onerror = () => { /* onclose cuida da reconexão */ };
+  ws.onclose = () => {
+    state.wsActive = false;
+    state.ws = null;
+    if (state.wsLobby) handleWsFailure();  // null = desconexão intencional, não reconecta.
+  };
+}
+
+// Reconnect automático com backoff (1s/2s/5s/10s). Após WS_MAX_FAILURES falhas
+// seguidas, liga o polling de fallback — mas o WS continua tentando voltar.
+function handleWsFailure() {
+  state.wsFailures += 1;
+  if (state.wsFailures >= WS_MAX_FAILURES && !state.pollTimer) {
     startPolling();
   }
+  const delay = WS_BACKOFF_MS[Math.min(state.wsBackoffIdx, WS_BACKOFF_MS.length - 1)];
+  state.wsBackoffIdx += 1;
+  state.wsReconnectTimer = setTimeout(openWs, delay);
 }
 
 function disconnectWs() {
+  state.wsLobby = null;
+  if (state.wsReconnectTimer) { clearTimeout(state.wsReconnectTimer); state.wsReconnectTimer = null; }
   if (state.ws) {
     state.wsActive = false;
     state.ws.onclose = null;
+    state.ws.onerror = null;
+    state.ws.onmessage = null;
     state.ws.close();
     state.ws = null;
   }
+  state.wsFailures = 0;
+  state.wsBackoffIdx = 0;
   stopPolling();
 }
 
