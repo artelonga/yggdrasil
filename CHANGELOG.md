@@ -6,6 +6,19 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.33.0] — 2026-06-14 — Mundo do CO: federação inbound (navegar + editar universo do CO)
+
+### Added
+- **YG-153** — **`/co-mundo?u=<universe_key>`**: caminhe por um **universo do CO**
+  dentro do Mundo do Yggdrasil e **edite de volta** (round-trip CO↔YG). Federação
+  **inbound client-side**: o navegador chama a API do CO direto (`credentials:include`,
+  cookie compartilhado `.artelonga.com.br`; CO já tem CORS `mirror_request`+
+  `allow_credentials`) — **sem mudança no CO, sem token server-side, sem CO-413**.
+  (a) `GET /universes/:key/entries` → vault navegável (hierarquia pelos segmentos do
+  `path`: pasta=sala, nota=objeto; visibilidade do CO respeitada). (b) editar →
+  `PUT /entries/*path` (criar/excluir também); a permissão é a do CO. Módulo aditivo
+  `mundo/co-vault.js` + `co-mundo.js/.html` — reusa engine/temas sem tocar a MundoView.
+
 ## [2.32.0] — 2026-06-14 — Mundo: portais cross-universe + docs/GIFs; editar-no-CO; pôquer WS
 
 ### Added
