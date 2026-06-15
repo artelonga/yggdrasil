@@ -4874,7 +4874,7 @@ dependencies = [
 
 [[package]]
 name = "yggdrasil-core"
-version = "2.32.0"
+version = "2.33.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4891,7 +4891,7 @@ dependencies = [
 
 [[package]]
 name = "yggdrasil-web"
-version = "2.32.0"
+version = "2.33.0"
 dependencies = [
  "anyhow",
  "argon2",
