@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# Cancela runs superseded do MESMO ref (PR/branch) — evita pile-up de runners com
+# vários pushes/sessões em paralelo (builds chegaram a ~46min de fila). Em `main`
+# usa o SHA no group, então deploys legítimos em sequência não se cancelam.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest

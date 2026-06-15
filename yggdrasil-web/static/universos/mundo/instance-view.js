@@ -16,6 +16,9 @@
 import { World, isTyping } from './engine.js';
 import { THEMES, THEME_BY_ID } from './themes.js';
 import { buildRooms } from './loader.js';
+// YG-153: vaults do CO como portais cross-universe — atravessar pra um universo
+// do CO (federação inbound client-side). Read/navigate aqui; CRUD no /co-mundo.
+import { loadCoVault, buildCoRooms, getCoEntry } from './co-vault.js';
 
 let world = null;
 let rooms = null;
@@ -89,16 +92,37 @@ const authHdr = () => (ctx.token ? { headers: { Authorization: `Bearer ${ctx.tok
 // caller, exclui a origem) e devolve só o resumo (lazy: o mundo do destino só
 // é buscado ao cruzar).
 async function discoverPortals(c) {
+  let ygg = [];
   try {
     const r = await fetch(`${c.api}/instances/${c.instanceId}/portals`, c.token ? { headers: { Authorization: `Bearer ${c.token}` } } : {});
     if (r.ok) {
       const j = await r.json();
-      return (j.portals || [])
-        .filter((p) => p && p.id)
-        .map((p) => ({ id: p.id, title: p.title || p.id }));
+      ygg = (j.portals || []).filter((p) => p && p.id).map((p) => ({ id: p.id, title: p.title || p.id }));
     }
-  } catch { /* offline → sem portais (o mundo atual segue navegável) */ }
-  return [];
+  } catch { /* offline → sem portais YG (o mundo atual segue navegável) */ }
+  // YG-153: + universos do CO (federação inbound). Só da fronteira (raiz) do
+  // universo de origem; em vault CO não re-descobre (evita loop).
+  const co = c.co ? [] : await discoverCoPortals();
+  return ygg.concat(co);
+}
+
+// Universos do CO visíveis ao usuário, como portais `co:<key>`. Cliente: usa o
+// cookie compartilhado (.artelonga.com.br); logado → /me/universes, anon → públicos.
+async function discoverCoPortals() {
+  const CO = 'https://co.artelonga.com.br';
+  async function get(p) { try { const r = await fetch(CO + p, { credentials: 'include' }); return r.ok ? r.json() : null; } catch { return null; } }
+  let list = [];
+  const me = await get('/api/v1/me/universes');
+  if (me) {
+    const buckets = [].concat(me.owned || [], me.subscribed || []);
+    list = buckets.map((u) => ({ key: u.key, name: u.name }));
+  }
+  if (!list.length) {
+    const pub = await get('/api/v1/universes/public');
+    const arr = Array.isArray(pub) ? pub : (pub && pub.universes) || [];
+    list = arr.map((u) => ({ key: u.key, name: u.name }));
+  }
+  return list.filter((u) => u && u.key).slice(0, 12).map((u) => ({ id: 'co:' + u.key, title: (u.name || u.key) + ' ⟨CO⟩' }));
 }
 
 // Marca como `back` o portal que volta pro universo de onde se veio (topo da
@@ -116,14 +140,25 @@ function markBack(portals) {
 // `{rootId,ids,get,roomOf}` novo, navegável por inteiro como o de origem.
 async function crossTo(universeId) {
   if (!active || !universeId) return;
+  const isCo = universeId.startsWith('co:');
   let inst;
   let notes;
+  let coRooms = null;
   try {
-    const ri = await fetch(`${ctx.api}/instances/${universeId}`, authHdr());
-    if (!ri.ok) return;
-    inst = await ri.json();
-    const rn = await fetch(`${ctx.api}/instances/${universeId}/notes`, authHdr());
-    notes = rn.ok ? ((await rn.json()).notes || []) : [];
+    if (isCo) {
+      // YG-153: vault do CO — lê as entries do CO (cliente, cookie compartilhado)
+      // e monta as salas pelos paths. Read-only no Mundo (CRUD fica no /co-mundo).
+      const key = universeId.slice(3);
+      const entries = await loadCoVault(key);
+      coRooms = buildCoRooms(entries, key);
+      inst = { title: key + ' ⟨CO⟩' };
+    } else {
+      const ri = await fetch(`${ctx.api}/instances/${universeId}`, authHdr());
+      if (!ri.ok) return;
+      inst = await ri.json();
+      const rn = await fetch(`${ctx.api}/instances/${universeId}/notes`, authHdr());
+      notes = rn.ok ? ((await rn.json()).notes || []) : [];
+    }
   } catch { return; }
   if (!active) return;
   // guarda o universo de origem com a sala/posição + o coordMap atuais → ao
@@ -136,12 +171,16 @@ async function crossTo(universeId) {
     coordMap,
     title: (ctx.inst && ctx.inst.title) || 'Universo',
   });
-  ctx = { ...ctx, inst, notes, instanceId: universeId };
+  ctx = { ...ctx, inst, notes, instanceId: universeId, co: isCo ? universeId.slice(3) : null };
   coordMap = {}; // o drag-drop do destino é seu (commit usa ctx.instanceId)
   pending.clear();
-  const portals = markBack(await discoverPortals(ctx));
-  if (!active) return;
-  rooms = buildRooms(inst, notes, portals);
+  if (isCo) {
+    rooms = coRooms; // o co-vault já entrega o contrato {rootId,ids,get,roomOf}
+  } else {
+    const portals = markBack(await discoverPortals(ctx));
+    if (!active) return;
+    rooms = buildRooms(inst, notes, portals);
+  }
   navStack.length = 0;
   enterRoom(rooms.rootId);
 }
@@ -236,6 +275,7 @@ function onEdge(dir) {
 // coordMap e dispara o commit em lote ao backend.
 function onDragDrop(ent, tx, ty, target) {
   if (!active || !ent || ent.type !== 'note') return;
+  if (ctx && ctx.co) return; // YG-153: vault do CO é read-only no Mundo (CRUD no /co-mundo)
   const r = room(cur);
   if (!r) return;
   const obj = ent._ref || r.notes.find((n) => n.slug === ent.slug);
@@ -305,7 +345,11 @@ async function abrirNota(ent) {
   const slug = ent.slug;
   let title = ent.title || slug || 'Nota';
   let body = ent.body || '';
-  if (slug) {
+  if (slug && ctx.co) {
+    // YG-153: vault do CO → lê a entry do CO (cliente). Edição: /co-mundo.
+    const e = await getCoEntry(ctx.co, slug);
+    if (e) { body = e.body || ''; title = e.title || title; }
+  } else if (slug) {
     try {
       const r = await fetch(
         `${ctx.api}/instances/${ctx.instanceId}/notes/${encodeURIComponent(slug)}`,
