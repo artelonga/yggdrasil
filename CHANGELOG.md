@@ -6,6 +6,25 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.34.0] — 2026-06-15 — Vault do CO como portal cross-universe + CI concurrency
+
+### Added
+- **YG-153 (follow)** — universos do CO viram **portais** (`co:<key>`) no Mundo
+  unificado (instance view): na fronteira (raiz) aparecem portais para universos
+  do CO visíveis (logado → `/me/universes`; anon → públicos). Atravessar carrega o
+  vault via `co-vault.js` (inbound client-side) e o torna navegável como qualquer
+  outro; `abrirNota` lê a entry do CO. Read-only no Mundo (CRUD no `/co-mundo`); a
+  pilha de universos (YG-157) volta normal. Import-from-CO no fluxo normal do Mundo.
+
+### Changed
+- **CI `concurrency`** (`.github/workflows/ci.yml`): cancela runs superseded do
+  mesmo PR/branch (builds chegaram a ~46min de fila com sessões paralelas).
+
+### Tests
+- **e2e `co-mundo.spec.js`** (YG-153 a+b): mocka a API do CO via `page.route` e
+  prova o wiring — lê entries → vault; write-back faz `PUT` ao CO com path+body
+  corretos (hook `window.CoMundo`).
+
 ## [2.33.0] — 2026-06-14 — Mundo do CO: federação inbound (navegar + editar universo do CO)
 
 ### Added
