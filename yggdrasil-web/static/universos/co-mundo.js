@@ -57,6 +57,16 @@ function renderTemas() {
 }
 function setTema(id) { const t = THEME_BY_ID[id]; if (!t) return; world.setTheme(t); document.querySelectorAll('.tbtn').forEach((b) => b.classList.toggle('on', b.dataset.id === id)); }
 
+// Hooks determinísticos p/ e2e (sem pixel-math do canvas) — espelha o padrão do
+// window.MundoView. Dirigem o MESMO caminho (co-vault) que a UI.
+window.CoMundo = {
+  key: KEY,
+  loadVault: () => loadCoVault(KEY),
+  read: (slug) => getCoEntry(KEY, slug),
+  open: (slug, title) => abrirNota({ slug, title: title || slug }),
+  saveNote: (slug, text) => saveCoEntry(KEY, slug, text),
+};
+
 async function boot() {
   world = new World($('cv'), { onInteract });
   renderTemas();

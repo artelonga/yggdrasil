@@ -14,3 +14,9 @@
 - **CI `concurrency`** (`.github/workflows/ci.yml`): cancela runs superseded do
   mesmo PR/branch (builds chegaram a ~46min de fila com sessões paralelas). `main`
   usa o SHA no group p/ não cancelar deploys legítimos em sequência.
+
+### Tests
+- **e2e `co-mundo.spec.js`** (YG-153 a+b): mocka a API do CO via `page.route`
+  (auth real é inviável headless) e prova o wiring do cliente — (a) lê entries →
+  vault (hierarquia pelo path); (b) write-back faz `PUT` ao CO com path+body
+  corretos. Hook `window.CoMundo` em `co-mundo.js` dirige read/save sem pixel-math.
