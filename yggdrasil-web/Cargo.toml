@@ -69,6 +69,7 @@ sha2 = { workspace = true }
 
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 serde_yaml = { workspace = true }
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
