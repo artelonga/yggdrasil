@@ -6,6 +6,29 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.35.0] — 2026-06-16 — Identidade estável + i18n (tradução como camada)
+
+Fundação de i18n e compat-CO motivada pela revisão do `translator_sync.pyw`:
+separar **identidade estável (`slug`/`parent`)** de **display (`title`)** e
+**layout (`path`/`pos`)** — tradução vira camada fina sobre UM grafo, não espelho.
+
+### Added
+- **ADR** `docs/architecture/i18n-stable-identity.md` — o modelo + UI (toggle de
+  idioma, status por nó, traduzir-inline) + glossário = léxico do `comunicacao`.
+- **i18n MVP** no `/co-mundo`: seletor de idioma (Fonte · PT · EN · …) que
+  **relabela o MESMO grafo** a partir de `title_en`/`body_en`/`i18n:` no
+  frontmatter; sem-tradução → fallback fonte; painel lê tradução, edita a fonte.
+
+### Changed
+- **`co-vault`: hierarquia por `frontmatter.parent` (id estável)**, fallback path —
+  tradução (muda path/título) não reformata a árvore (alinha com `loader.js`/YG-154).
+- **Wikilinks por slug**: resolvem por id e **relabelam pro título do locale**,
+  clicáveis; alvo inexistente vira `wl-missing` (não erro) — link nunca quebra.
+
+### Tests
+- e2e `co-vault-id` (hierarquia por id) · `co-i18n` (relabel + fallback) ·
+  `co-links` (wikilink relabela por locale, slug estável).
+
 ## [2.34.0] — 2026-06-15 — Vault do CO como portal cross-universe + CI concurrency
 
 ### Added
