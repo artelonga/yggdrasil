@@ -37,8 +37,13 @@ async function abrirNota(n) {
   const e = await getCoEntry(KEY, n.slug);
   const srcBody = (e && e.body) || (re && re.body) || '';
   const shown = (tr && tr.body) || srcBody;              // lê localizado; edita a fonte
-  $('nv').innerHTML = md(shown) + (locale && tr && tr.body
+  $('nv').innerHTML = renderBody(shown) + (locale && tr && tr.body
     ? `<p class="dim" style="margin-top:.6rem">— tradução (${esc(locale.toUpperCase())}); editar altera a fonte —</p>` : '');
+  // wikilinks clicáveis: abrem o alvo por slug (relabelado no locale atual)
+  $('nv').querySelectorAll('a.wl[data-slug]').forEach((a) => (a.onclick = () => {
+    const e2 = raw.find((x) => x.path === a.dataset.slug);
+    if (e2) abrirNota({ slug: e2.path, title: e2.title });
+  }));
   $('ned').onclick = () => {
     $('nv').innerHTML = `<textarea id="nta" rows="12">${esc(srcBody)}</textarea>`;
     $('ned').textContent = '💾 Salvar no CO';
@@ -51,6 +56,27 @@ async function abrirNota(n) {
 }
 
 function md(s) { return esc(s).replace(/^#+ (.*)$/gm, '<h3>$1</h3>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>'); }
+
+// YG-159 passo 3: resolve um wikilink-alvo por SLUG (id estável) → {slug,title}
+// no locale atual. Aceita `bem-vindo`, `bem-vindo.md`. Nunca depende do título.
+function resolveLink(target) {
+  const t = target.trim().replace(/\.md$/, '');
+  const e = raw.find((x) => x.path === t || x.path.replace(/\.md$/, '') === t);
+  if (!e) return null;
+  const tr = e.i18n && e.i18n[locale];
+  return { slug: e.path, title: (tr && tr.title) || e.title };
+}
+// Render do corpo COM wikilinks resolvidos por slug e relabelados pro título
+// localizado (clicáveis). Trocar idioma só muda o rótulo — o link (slug) é estável.
+function renderBody(s) {
+  let html = esc(s).replace(/\[\[([^\]|]+?)(?:\|([^\]]*?))?\]\]/g, (m, tgt, alias) => {
+    const r = resolveLink(tgt);
+    const label = (alias && alias.trim()) || (r ? r.title : tgt.trim());
+    return r ? `<a class="wl" data-slug="${esc(r.slug)}">${esc(label)}</a>`
+      : `<span class="wl wl-missing">${esc(label)}</span>`;
+  });
+  return html.replace(/^#+ (.*)$/gm, '<h3>$1</h3>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+}
 
 function renderTrilha() {
   const chain = []; let id = cur; while (id) { chain.unshift(id); id = id === '__root__' ? null : (id.includes('/') ? id.slice(0, id.lastIndexOf('/')) : '__root__'); }
@@ -75,6 +101,9 @@ window.CoMundo = {
   // YG-159 i18n: títulos no locale (sobre as `raw` já carregadas) — prova relabel.
   locales: () => localesOf(raw),
   localized: (loc) => Object.fromEntries(localize(raw, loc).map((e) => [e.path, e.title])),
+  setLocale: (l) => { locale = l; rebuild(); renderLocales(); },
+  // YG-159 passo 3: wikilinks do corpo resolvidos por slug → rótulo no locale atual.
+  bodyLinks: (body) => { const out = []; String(body).replace(/\[\[([^\]|]+?)(?:\|([^\]]*?))?\]\]/g, (m, t, a) => { const r = resolveLink(t); out.push({ slug: r && r.slug, label: (a && a.trim()) || (r ? r.title : t.trim()) }); return m; }); return out; },
   read: (slug) => getCoEntry(KEY, slug),
   open: (slug, title) => abrirNota({ slug, title: title || slug }),
   saveNote: (slug, text) => saveCoEntry(KEY, slug, text),
