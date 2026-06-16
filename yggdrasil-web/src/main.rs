@@ -635,6 +635,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/games/invaders", get(redirect_to_universo_invaders))
         .route("/games/poker", get(redirect_to_universo_poker))
         .route("/health", get(health))
+        // Spec-path health (`/api/health`) com versão — `/health` (bare `ok`)
+        // permanece para back-compat.
+        .route("/api/health", get(api_health))
         .route("/version", get(version))
         .merge(auth_router)
         .merge(co_handover_router)
@@ -926,6 +929,16 @@ async fn redirect_to_universo_poker() -> impl IntoResponse {
 
 async fn health() -> impl IntoResponse {
     "ok"
+}
+
+/// `GET /api/health` — health-check no caminho de spec, com versão do binário
+/// (`CARGO_PKG_VERSION`). O `/health` (texto `ok`) permanece para back-compat.
+async fn api_health() -> impl IntoResponse {
+    axum::Json(serde_json::json!({
+        "ok": true,
+        "version": env!("CARGO_PKG_VERSION"),
+        "service": "yggdrasil",
+    }))
 }
 
 /// `GET /version` — versão do binário (`CARGO_PKG_VERSION`), para verificar
