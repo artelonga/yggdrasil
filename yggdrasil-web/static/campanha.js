@@ -65,6 +65,9 @@
     tierAtual = { slug: slug, nome: nome };
     $('ap-title').textContent = 'Apoiar — tier ' + nome;
     $('ap-ok').hidden = true;
+    $('ap-pix').hidden = true;            // reseta bloco PIX de um apoio anterior
+    $('ap-copy').textContent = '📋 Copiar código PIX';
+    $('ap-send').hidden = false;
     $('ap-send').disabled = false;
     $('ap').classList.add('open');
   }
@@ -88,12 +91,37 @@
         mostrar_creditos: !!$('ap-cred').checked,
       }),
     }).then(function (resp) {
-      if (resp.ok) {
+      if (!resp.ok) { $('ap-send').disabled = false; return; }
+      return resp.json().then(function (data) {
         $('ap-ok').hidden = false;
         if (window.yggTelemetria) window.yggTelemetria.track('campanha_apoio', { tier: tierAtual.slug });
-        setTimeout(fechar, 2200);
-      } else { $('ap-send').disabled = false; }
+        if (data && data.pix) {
+          mostrarPix(data.pix);          // tem PIX → mostra QR/copia-e-cola, não fecha sozinho
+          $('ap-send').hidden = true;
+        } else {
+          setTimeout(fechar, 2200);      // sem PIX → mensagem + fecha
+        }
+      });
     }).catch(function () { $('ap-send').disabled = false; });
+  });
+
+  // Mostra o bloco PIX (YG-163): QR (SVG inline) + copia-e-cola + botão copiar.
+  function mostrarPix(pix) {
+    $('ap-qr').innerHTML = pix.qr_svg || '';
+    $('ap-cec').textContent = pix.copia_e_cola || '';
+    $('ap-pix').hidden = false;
+  }
+  $('ap-copy').addEventListener('click', function () {
+    var txt = $('ap-cec').textContent || '';
+    var done = function () { $('ap-copy').textContent = '✓ Copiado!'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(done, done);
+    } else {
+      var r = document.createRange(); r.selectNodeContents($('ap-cec'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      try { document.execCommand('copy'); } catch (e) {}
+      done();
+    }
   });
 
   renderTiers();
