@@ -62,6 +62,9 @@ function setTema(id) { const t = THEME_BY_ID[id]; if (!t) return; world.setTheme
 window.CoMundo = {
   key: KEY,
   loadVault: () => loadCoVault(KEY),
+  // YG-159: monta as salas de um conjunto de entries e devolve roomOf por slug —
+  // hook determinístico p/ provar hierarquia por id estável (frontmatter.parent).
+  roomsFrom: (entries) => { const r = buildCoRooms(entries, 'test'); return Object.fromEntries(entries.map((e) => [e.path, r.roomOf(e.path)])); },
   read: (slug) => getCoEntry(KEY, slug),
   open: (slug, title) => abrirNota({ slug, title: title || slug }),
   saveNote: (slug, text) => saveCoEntry(KEY, slug, text),
