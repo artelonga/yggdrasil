@@ -14,6 +14,8 @@
     .tbtn { font: inherit; font-size: .78rem; padding: .25rem .55rem; border: 1px solid #33334a; background: #1c1c28; color: #d8d8e4; border-radius: 7px; cursor: pointer; }
     .tbtn.on { background: #2a2a40; border-color: #6366f1; color: #fff; }
     #hud { font-size: .78rem; color: #9a9aae; }
+    .locbtn { font: inherit; font-size: .74rem; padding: .15rem .45rem; border: 1px solid #33334a; background: #16161f; color: #b9b9c8; border-radius: 6px; cursor: pointer; }
+    .locbtn.on { border-color: #6cf; color: #cfe8ff; background: #14202c; }
     #trilha { padding: .35rem .9rem; background: #101018; border-bottom: 1px solid #262633; font-size: .8rem; color: #9a9aae; }
     .crumb { font: inherit; font-size: .8rem; border: none; background: none; color: #9a9aae; cursor: pointer; }
     .crumb.on { color: #6cf; font-weight: 600; }
@@ -38,6 +40,7 @@
       <h1>🌐 Mundo do CO</h1>
       <div id="temas"></div>
       <span style="flex:1"></span>
+      <span id="locales" class="dim" style="display:flex;gap:.3rem;align-items:center"></span>
       <span id="hud" class="dim">carregando…</span>
     </header>
     <div id="trilha"></div>

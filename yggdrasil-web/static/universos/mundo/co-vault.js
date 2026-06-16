@@ -35,7 +35,44 @@ export async function loadCoVault(key) {
     // frontmatter) quando existe; senão cai no path. Assim tradução (que muda
     // path/título) não reformata a árvore. Ver docs/architecture/i18n-stable-identity.md.
     parent: (e.frontmatter && e.frontmatter.parent) || null,
+    // YG-159 i18n: traduções por locale no frontmatter (`title_en`/`body_en` ou
+    // um mapa `i18n: {en:{title,body}}`). Identidade (slug/parent) é estável; só
+    // title/body variam por locale → trocar idioma não mexe na árvore nem nos links.
+    i18n: gatherI18n(e.frontmatter),
   }));
+}
+
+// Junta as traduções do frontmatter num mapa { <locale>: {title?, body?} }.
+function gatherI18n(fm) {
+  const m = {};
+  if (!fm) return m;
+  for (const k of Object.keys(fm)) {
+    const t = /^title_([a-z]{2})$/.exec(k);
+    const b = /^body_([a-z]{2})$/.exec(k);
+    if (t) (m[t[1]] = m[t[1]] || {}).title = fm[k];
+    else if (b) (m[b[1]] = m[b[1]] || {}).body = fm[k];
+  }
+  if (fm.i18n && typeof fm.i18n === 'object') {
+    for (const loc of Object.keys(fm.i18n)) m[loc] = Object.assign(m[loc] || {}, fm.i18n[loc]);
+  }
+  return m;
+}
+
+// Locales disponíveis no conjunto de entries (pro seletor de idioma).
+export function localesOf(entries) {
+  const s = new Set();
+  for (const e of entries) if (e.i18n) for (const l of Object.keys(e.i18n)) s.add(l);
+  return [...s];
+}
+
+// Aplica um locale: troca title/body pela tradução quando há; mantém slug/parent
+// (identidade) intactos. `loc` vazio = fonte. Render relabela; árvore/links não mudam.
+export function localize(entries, loc) {
+  if (!loc) return entries;
+  return entries.map((e) => {
+    const tr = e.i18n && e.i18n[loc];
+    return tr ? { ...e, title: tr.title || e.title, body: tr.body || e.body } : e;
+  });
 }
 
 // Lê uma entry única (corpo fresco) — pro inspetor/editor.
