@@ -150,6 +150,17 @@
     #mundo-tree li:hover { background: #1a1a26; }
     #mundo-tree .mt-folder { color: #e9c349; }
     #mundo-tree .mt-portal { color: #b48ead; } /* YG-157: porta p/ outro universo */
+    /* YG-160: Quadro (kanban) — lente secundária sobre tarefas (notas com status) */
+    #kanban-view { position: absolute; inset: 0; overflow: auto; padding: 1rem; background: #0b0a0a; }
+    #kanban-view .kb { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; max-width: 60rem; margin: 0 auto; }
+    #kanban-view .kcol { background: #131211; border: 1px solid #262320; border-radius: 9px; padding: .55rem; }
+    #kanban-view .khd { font-size: .76rem; font-weight: 700; letter-spacing: .04em; padding: .25rem .4rem; border-radius: 6px; margin-bottom: .5rem; display: flex; justify-content: space-between; }
+    #kanban-view .khd.todo { background: #1e3050; color: #8ab6ff; } #kanban-view .khd.doing { background: #4a3a16; color: #ffcf6b; } #kanban-view .khd.done { background: #1e4a32; color: #74e0a8; }
+    #kanban-view .kc { background: #1b1916; border: 1px solid #2c2823; border-radius: 7px; padding: .45rem .55rem; margin-bottom: .45rem; font-size: .85rem; cursor: pointer; }
+    #kanban-view .kc:hover { border-color: #e9c349; }
+    #kanban-view .kadd { width: 100%; text-align: left; font: inherit; font-size: .82rem; color: #9a9488; background: none; border: 1px dashed #3a352e; border-radius: 7px; padding: .4rem .55rem; cursor: pointer; }
+    #kanban-view .kadd:hover { color: #e9c349; border-color: #e9c349; }
+    #kanban-view .kempty { color: #5a554c; font-size: .8rem; padding: .3rem; }
     #mundo-panel { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
       width: min(560px, calc(100% - 24px)); max-height: 46%; overflow-y: auto;
       background: #14141b; border: 1px solid #2a2a44; border-radius: 10px;
@@ -181,12 +192,15 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
     <h1 id="title">Universo</h1>
     <span class="desc" id="desc"></span>
     <span class="grow"></span>
-    <!-- YG-126: views = lentes de runtime sobre o MESMO universo (padrão co) -->
+    <!-- YG-160: o Mundo é a visão PRIMÁRIA e editável (default); timeline/kanban
+         (+ mapa/grafo) são lentes secundárias sobre o MESMO universo. -->
     <span id="views">
-      <button id="view-mapa" class="active" data-view="mapa">🗺️ Mapa</button>
+      <button id="view-mundo" class="active" data-view="mundo">🌍 Mundo</button>
+      <span class="view-sep" aria-hidden="true">·</span>
       <button id="view-timeline" data-view="timeline">🕐 Timeline</button>
+      <button id="view-kanban" data-view="kanban">📋 Quadro</button>
       <button id="view-grafo" data-view="grafo">🕸️ Grafo</button>
-      <button id="view-mundo" data-view="mundo">🌍 Mundo</button>
+      <button id="view-mapa" data-view="mapa">🗺️ Mapa</button>
     </span>
     <button id="modeBtn" hidden>✏️ Editar</button>
     <button id="co-create" hidden title="Criar este universo no CO — convidar / deixar público pra subscribe">🌐 Criar no CO</button>
@@ -210,6 +224,8 @@ h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
         <div id="mundo-tree"></div>
         <div id="mundo-panel" hidden></div>
       </div>
+      <!-- YG-160: lente secundária Quadro (kanban) — tarefas (notas com status) -->
+      <div id="kanban-view" hidden></div>
     </div>
     <aside>
       <section>
