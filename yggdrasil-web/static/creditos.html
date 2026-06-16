@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Créditos — quem planta o Yggdrasil</title>
+  <meta name="description" content="Apoiadoras e apoiadores da campanha do Yggdrasil — quem planta junto, da semente ao topo.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; min-width: 0; }
+    html, body { overflow-x: hidden; }
+    :root { --gold:#e9c349; --rose:#ffb3b5; --ink:#e5e2e1; --dim:#c5c6cc; --bg:#131313; --bg2:#1c1b1b; --line:#2a2a2a; }
+    body { background: var(--bg); color: var(--ink); font-family: system-ui, sans-serif; min-height: 100vh; line-height: 1.55; }
+    .wrap { max-width: 56rem; margin: 0 auto; padding: 3.5rem 1.2rem 5rem; }
+    .hero { text-align: center; margin-bottom: 2.4rem; }
+    .hero .kick { font-size: 11px; letter-spacing: .32em; text-transform: uppercase; color: var(--gold); }
+    .hero h1 { font-family: Georgia, serif; font-style: italic; font-size: 2.4rem; margin: .5rem 0 .7rem; line-height: 1.08; }
+    .hero p { color: var(--dim); max-width: 44ch; margin: 0 auto; font-size: 1.02rem; }
+    .hero p a { color: var(--gold); }
+    h2.tier { font-family: Georgia, serif; font-style: italic; font-size: 1.45rem; color: var(--gold);
+      margin: 2.2rem 0 1rem; border-bottom: 1px solid var(--line); padding-bottom: .4rem; }
+    .roll { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .8rem; }
+    .cred { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1.1rem; }
+    .cred .nome { font-weight: 700; font-size: 1rem; }
+    .cred .nome .chk { color: #6dbf8b; font-size: .8rem; margin-left: .3rem; }
+    .cred .msg { color: var(--dim); font-size: .85rem; font-style: italic; margin-top: .3rem; }
+    .empty { text-align: center; color: var(--dim); padding: 2.5rem 1rem; font-size: .95rem; }
+    .empty a { color: var(--gold); }
+    .foot { margin-top: 2.8rem; color: var(--dim); font-size: .82rem; text-align: center; }
+    .foot a { color: var(--gold); }
+    .loading { text-align: center; color: var(--dim); padding: 2rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <span class="kick">Campanha · da semente ao topo</span>
+      <h1>Quem planta o Yggdrasil</h1>
+      <p>Estas pessoas escolheram plantar junto. Quer aparecer aqui?
+        <a href="/campanha">Apoie a campanha</a>.</p>
+    </div>
+
+    <div id="loading" class="loading">Carregando créditos…</div>
+    <div id="roll"></div>
+    <div id="empty" class="empty" hidden>
+      Ainda não há apoios públicos. Seja a primeira semente — <a href="/campanha">apoie a campanha</a>.
+    </div>
+
+    <p class="foot">
+      Crowdfunding independente do Yggdrasil. Nomes aparecem só com opt-in; ✓ marca
+      apoios já confirmados. Veja também o <a href="/universos">catálogo</a> e os
+      <a href="/analytics">números ao vivo</a>.
+    </p>
+  </div>
+  <script src="/static/creditos.js"></script>
+  <script defer src="/static/nav.js"></script>
+  <script defer src="/static/telemetria.js"></script>
+</body>
+</html>
