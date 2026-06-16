@@ -47,10 +47,19 @@ narrativas, com foco em diversidade cultural e sistemas próprios de mundo.
 - **Povos**
   - [Os Verdejantes — vinculados à vida](povos/verdejantes)
   - [Os Transmutos — vinculados à transformação](povos/transmutos)
+  - [Os Pétreos — vinculados à matéria](povos/petreos) · *rascunho*
+  - [Os Perenes — vinculados ao tempo](povos/perenes) · *rascunho*
+  - [Os Fulgores — vinculados à energia](povos/fulgores) · *rascunho*
 - **Regras**
   - [Atributos](regras/atributos)
   - [Criação de personagem](regras/criacao-personagem)
+  - [Combate](regras/combate) · *rascunho*
+  - [Magia das forças](regras/magia) · *rascunho*
+- **Bestiário**
+  - [Eco da Cicatriz](bestiario/eco-da-cicatriz) · *rascunho*
 
-> Esta é a **v0.1.0** do SRD. Bestiário, magias, combate, aventuras e os
-> povos restantes chegam em versões seguintes — cada bump é uma release
-> visível em `CHANGELOG.md`.
+> Esta é a **v0.1.0** do SRD, agora com **stubs navegáveis** (rascunho) para os
+> povos restantes, combate, magia e a primeira criatura. O conteúdo completo de
+> bestiário, magias, combate, aventuras e povos chega em versões seguintes —
+> cada bump é uma release visível em `CHANGELOG.md`. Stubs marcados *rascunho*
+> são propostas a confirmar com o autor.

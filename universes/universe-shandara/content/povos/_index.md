@@ -10,5 +10,11 @@ A **v0.1.0** do SRD detalha dois povos como exemplo completo:
 - [Os Verdejantes](verdejantes) — vinculados à **Vida**.
 - [Os Transmutos](transmutos) — vinculados à **Transformação**.
 
-> Os povos restantes (vinculados à Matéria, ao Tempo, à Energia e à sexta força
-> em aberto) chegam em versões seguintes do SRD.
+Esboços (rascunho) dos povos restantes já estão navegáveis como stubs:
+
+- [Os Pétreos](petreos) — vinculados à **Matéria**.
+- [Os Perenes](perenes) — vinculados ao **Tempo**.
+- [Os Fulgores](fulgores) — vinculados à **Energia**.
+
+> Os três acima são **propostas** (nome/detalhes a confirmar com o autor); o povo
+> da sexta força aguarda a [resolução da força em aberto](../mundo/forcas-primordiais).
