@@ -31,6 +31,10 @@ export async function loadCoVault(key) {
     title: e.title || lastSeg(e.path),
     body: e.body || '',
     status: (e.frontmatter && (e.frontmatter.status || e.frontmatter.state)) || null,
+    // YG-159: identidade estável — a hierarquia vem do `parent` (id/slug no
+    // frontmatter) quando existe; senão cai no path. Assim tradução (que muda
+    // path/título) não reformata a árvore. Ver docs/architecture/i18n-stable-identity.md.
+    parent: (e.frontmatter && e.frontmatter.parent) || null,
   }));
 }
 
@@ -69,34 +73,47 @@ export async function deleteCoEntry(key, path) {
 // Mesmo contrato do loader do Mundo: {rootId, ids, get(id)->Room, roomOf(slug)}.
 // `id` de sala = caminho do diretório ('' = raiz → ROOT). `slug` da nota = path.
 export function buildCoRooms(entries, title) {
-  // dir de cada entry + conjunto de todas as pastas (inclui ancestrais)
-  const folders = new Set([ROOT]);
-  const notesByRoom = {}; // roomId -> [{slug,title,status}]
-  const childFolders = {}; // roomId -> Set(childRoomId)
-  for (const e of entries) {
-    const dir = dirOf(e.path);
-    const rid = dir === '' ? ROOT : dir;
-    // registra a cadeia de pastas ancestrais + arestas pai→filho
-    let cur = '';
-    let parent = ROOT;
-    for (const seg of dir ? dir.split('/') : []) {
-      cur = cur ? cur + '/' + seg : seg;
-      folders.add(cur);
-      (childFolders[parent] = childFolders[parent] || new Set()).add(cur);
-      parent = cur;
-    }
-    (notesByRoom[rid] = notesByRoom[rid] || []).push({ slug: e.path, title: e.title, status: e.status });
-  }
-  const ids = [...folders];
-  const roomBySlug = {};
-  for (const rid of Object.keys(notesByRoom)) for (const n of notesByRoom[rid]) roomBySlug[n.slug] = rid;
+  const byId = {};
+  for (const e of entries) byId[e.path] = e;
+  // YG-159: sala efetiva de uma entry = `parent` (id/slug estável) se houver;
+  // senão o diretório do path (fallback). Id estável > display (path/título).
+  const effRoom = (e) => (e.parent ? e.parent : (dirOf(e.path) === '' ? ROOT : dirOf(e.path)));
+  // pastas-por-id: entries que aparecem como `parent` de alguém (são salas, não objetos)
+  const idFolders = new Set();
+  for (const e of entries) if (e.parent) idFolders.add(e.parent);
 
-  function get(id) {
-    const doors = [...(childFolders[id] || [])].map((cid) => ({ id: cid, title: lastSeg(cid) }));
-    const notes = notesByRoom[id] || [];
-    return layout(id, id === ROOT ? (title || 'Universo CO') : lastSeg(id), id === ROOT ? null : parentOf(id), doors, notes);
+  const notesByRoom = {};   // roomId -> [{slug,title,status}]
+  const roomBySlug = {};    // slug -> roomId efetivo
+  for (const e of entries) {
+    if (idFolders.has(e.path)) continue; // é pasta (tem filhos por id), não folha
+    const r = effRoom(e);
+    (notesByRoom[r] = notesByRoom[r] || []).push({ slug: e.path, title: e.title, status: e.status });
+    roomBySlug[e.path] = r;
   }
-  return { rootId: ROOT, ids, get, roomOf: (slug) => roomBySlug[slug] || ROOT };
+
+  // conjunto de salas + pai de cada sala (id-folders + cadeia de path-dirs)
+  const folders = new Set([ROOT]);
+  const parentOfRoom = {};
+  for (const fid of idFolders) { folders.add(fid); parentOfRoom[fid] = byId[fid] ? effRoom(byId[fid]) : ROOT; }
+  for (const e of entries) {
+    if (e.parent) continue; // id-based: sem pasta de path
+    let cur = '', par = ROOT;
+    for (const seg of (dirOf(e.path) ? dirOf(e.path).split('/') : [])) {
+      cur = cur ? cur + '/' + seg : seg;
+      folders.add(cur); if (parentOfRoom[cur] == null) parentOfRoom[cur] = par; par = cur;
+    }
+  }
+  const childFolders = {};
+  for (const f of folders) { if (f === ROOT) continue; const p = parentOfRoom[f] || ROOT; (childFolders[p] = childFolders[p] || []).push(f); }
+
+  const folderTitle = (fid) => (byId[fid] ? byId[fid].title : lastSeg(fid));
+  function get(id) {
+    const doors = (childFolders[id] || []).map((cid) => ({ id: cid, title: folderTitle(cid) }));
+    const notes = notesByRoom[id] || [];
+    return layout(id, id === ROOT ? (title || 'Universo CO') : folderTitle(id),
+      id === ROOT ? null : (parentOfRoom[id] || ROOT), doors, notes);
+  }
+  return { rootId: ROOT, ids: [...folders], get, roomOf: (slug) => roomBySlug[slug] || ROOT };
 }
 
 // auto-layout determinístico (grade) — espelha o layoutRoom do loader do Mundo.
