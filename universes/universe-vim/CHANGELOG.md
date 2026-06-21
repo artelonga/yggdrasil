@@ -9,6 +9,7 @@ SemVer. Versionamento independente do core (ver `docs/UNIVERSE-VERSIONING.md`).
 - YG-58 — emulador modal Rust + 10 níveis progressivos (#23)
 
 ### Other
+- chore(universes): per-universe changelog via git pathspec (YG-71)
 - feat(YG-63): versionamento independente por universe (#38)
 
 ## [1.0.0] — 2026-05-22

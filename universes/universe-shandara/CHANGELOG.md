@@ -9,6 +9,7 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased] <!-- regenerated via git pathspec; jj log universes/universe-shandara/ also works -->
 
 ### Other
+- chore(universes): per-universe changelog via git pathspec (YG-71)
 - feat(YG-162): Shandara — stubs navegáveis de povos, combate, magia e bestiário (#101)
 - feat(YG-68): catálogo expandido de universos — REGISTRY + filtros + Shandara (#39)
 
