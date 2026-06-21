@@ -1,4 +1,4 @@
-// E2E do ÑE'Ẽ Mundo caminhável (YG-167): LexiconPack vira sala walkable.
+// E2E do ÑE'Ẽ Mundo caminhável (YG-171): LexiconPack vira sala walkable.
 //
 // Prova, SEM depender de hardware de som, que:
 //   1. O pack de música seed carrega e vira uma Room (via packToRoom).
@@ -41,7 +41,7 @@ const FAKE_AUDIO = `
   window.webkitAudioContext = FakeCtx;
 `;
 
-test('ÑE\'Ẽ Mundo: pack de música → sala caminhável → pisar numa nota toca som + inspector (YG-167)', async ({ page }) => {
+test('ÑE\'Ẽ Mundo: pack de música → sala caminhável → pisar numa nota toca som + inspector (YG-171)', async ({ page }) => {
   const erros = [];
   page.on('pageerror', (e) => erros.push(String(e)));
   await page.addInitScript(FAKE_AUDIO);
@@ -92,7 +92,7 @@ test('ÑE\'Ẽ Mundo: pack de música → sala caminhável → pisar numa nota t
   expect(erros, `erros de página: ${erros.join(' | ')}`).toEqual([]);
 });
 
-test('ÑE\'Ẽ Mundo: memory-light preservado — residentes ≤ MAX_RESIDENT_ENTRIES (YG-167)', async ({ page }) => {
+test('ÑE\'Ẽ Mundo: memory-light preservado — residentes ≤ MAX_RESIDENT_ENTRIES (YG-171)', async ({ page }) => {
   await page.addInitScript(FAKE_AUDIO);
   await page.goto('/universos/nee/world?pack=musica');
   await page.waitForFunction(() => window.__neeWorld && window.__neeWorld.room !== null, { timeout: 15_000 });

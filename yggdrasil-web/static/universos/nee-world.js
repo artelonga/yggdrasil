@@ -1,4 +1,4 @@
-/* nee-world.js — sala caminhável de um LexiconPack (YG-167).
+/* nee-world.js — sala caminhável de um LexiconPack (YG-171).
  *
  * Combina:
  *   packToRoom      (nee/pack-room.js)   → Room JSON

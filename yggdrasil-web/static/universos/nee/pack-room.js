@@ -1,4 +1,4 @@
-/* nee/pack-room.js — adaptador LexiconPack → Room (YG-167).
+/* nee/pack-room.js — adaptador LexiconPack → Room (YG-171).
  *
  * packToRoom(pack): converte um LexiconPack no Room JSON que o engine.js
  * (YG-148) já consome. pos.x/y do pack → coordenadas de tile (× TILE_SCALE);
