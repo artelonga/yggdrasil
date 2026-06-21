@@ -454,6 +454,11 @@ async fn main() -> anyhow::Result<()> {
             .ok()
             .and_then(|v| v.trim().parse::<u32>().ok())
             .unwrap_or(0),
+        // YG-172: onde os comprovantes de PIX são gravados (volume persistente).
+        comprovantes_dir: std::path::PathBuf::from(
+            std::env::var("YGGDRASIL_COMPROVANTES_DIR")
+                .unwrap_or_else(|_| "data/comprovantes".to_string()),
+        ),
     });
     let campanha_router = Router::new()
         .route("/api/v1/campanha/tiers", get(api::campanha::list_tiers))
@@ -465,6 +470,15 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/campanha/pledges/{id}/confirmar",
             post(api::campanha::confirmar_pledge),
+        )
+        // YG-172: apoiador anexa comprovante (público, por id); operador baixa (admin)
+        .route(
+            "/api/v1/campanha/pledges/{id}/comprovante",
+            post(api::campanha::enviar_comprovante),
+        )
+        .route(
+            "/api/v1/campanha/pledges/{id}/comprovante/arquivo",
+            get(api::campanha::baixar_comprovante),
         )
         .with_state(campanha_state);
 

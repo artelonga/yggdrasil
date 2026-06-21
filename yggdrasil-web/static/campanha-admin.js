@@ -22,12 +22,22 @@
     var acao = p.status === 'pendente'
       ? '<button class="conf" data-id="' + esc(p.id) + '">✓ Confirmar</button>'
       : '';
+    // YG-172: estado do comprovante (aguardando / enviado + nota + arquivo)
+    var comp;
+    if (p.comprovante_em) {
+      comp = '<span class="comp-yes">📎 enviado</span>' +
+        (p.comprovante_nota ? '<div class="comp-nota">' + esc(p.comprovante_nota) + '</div>' : '') +
+        (p.comprovante_arquivo ? '<button class="dl" data-id="' + esc(p.id) + '">ver arquivo</button>' : '');
+    } else {
+      comp = '<span class="comp-no">aguardando</span>';
+    }
     return '<tr data-id="' + esc(p.id) + '">' +
       '<td>' + esc(fmtData(p.created_at)) + '</td>' +
       '<td>' + esc(TIER[p.tier] || p.tier) + '</td>' +
       '<td class="val">R$ ' + esc(p.valor) + '</td>' +
       '<td>' + quem + '</td>' +
       '<td>' + (p.mensagem ? esc(p.mensagem) : '') + '</td>' +
+      '<td>' + comp + '</td>' +
       '<td><span class="st ' + esc(p.status) + '">' + esc(p.status) + '</span></td>' +
       '<td>' + acao + '</td>' +
     '</tr>';
@@ -37,12 +47,31 @@
     $('rows').innerHTML = pledges.map(row).join('');
     $('tbl').hidden = pledges.length === 0;
     var conf = pledges.filter(function (p) { return p.status === 'confirmado'; }).length;
+    var comps = pledges.filter(function (p) { return p.comprovante_em; }).length;
     $('sum').textContent = pledges.length + ' apoios · ' + conf + ' confirmados · ' +
-      (pledges.length - conf) + ' pendentes';
+      (pledges.length - conf) + ' pendentes · ' + comps + ' com comprovante';
     $('rows').querySelectorAll('button.conf').forEach(function (b) {
       b.addEventListener('click', function () { confirmar(b.dataset.id, b); });
     });
-    window.AdminApoios = { count: pledges.length, confirmados: conf };
+    // download do arquivo: fetch autenticado → blob → abre em nova aba
+    $('rows').querySelectorAll('button.dl').forEach(function (b) {
+      b.addEventListener('click', function () { baixarArquivo(b.dataset.id); });
+    });
+    window.AdminApoios = { count: pledges.length, confirmados: conf, comComprovante: comps };
+  }
+
+  function baixarArquivo(id) {
+    fetch('/api/v1/campanha/pledges/' + encodeURIComponent(id) + '/comprovante/arquivo', {
+      headers: { Authorization: 'Bearer ' + tok() },
+    }).then(function (r) {
+      if (!r.ok) { msg('Falha ao baixar comprovante (' + r.status + ').', 'err'); return null; }
+      return r.blob();
+    }).then(function (blob) {
+      if (!blob) return;
+      var url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    }).catch(function () { msg('Falha de rede ao baixar.', 'err'); });
   }
 
   function carregar() {

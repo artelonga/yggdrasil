@@ -96,6 +96,21 @@ pub fn init_campanha_db(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_pledges_created ON pledges(created_at);
         CREATE INDEX IF NOT EXISTS idx_pledges_tier ON pledges(tier);",
     )?;
+    // YG-172: comprovante de PIX (opcional). `ALTER TABLE ADD COLUMN` não é
+    // idempotente — engolimos "duplicate column" quando a migração roda de novo
+    // (mesmo padrão da coluna `resolved` em feedback.rs).
+    for col in [
+        "comprovante_nota TEXT",
+        "comprovante_arquivo TEXT",
+        "comprovante_mime TEXT",
+        "comprovante_em INTEGER",
+    ] {
+        if let Err(e) = conn.execute(&format!("ALTER TABLE pledges ADD COLUMN {col}"), [])
+            && !e.to_string().contains("duplicate column name")
+        {
+            return Err(e);
+        }
+    }
     Ok(())
 }
 
@@ -141,6 +156,12 @@ pub struct PledgeFull {
     pub mostrar_creditos: bool,
     pub status: String,
     pub created_at: i64,
+    /// YG-172: comprovante de PIX (opcional, enviado pelo apoiador).
+    /// Nota/referência em texto; `arquivo`=true se há um arquivo anexado
+    /// (servido por rota admin); `em`=timestamp do envio (None = não enviado).
+    pub comprovante_nota: Option<String>,
+    pub comprovante_arquivo: bool,
+    pub comprovante_em: Option<i64>,
 }
 
 pub struct PledgeDb {
@@ -282,7 +303,8 @@ impl PledgeDb {
         let conn = self.db.lock().unwrap();
         let mut stmt = match conn.prepare(
             "SELECT id, tier, valor, nome, email, user_sub, mensagem,
-                    mostrar_creditos, status, created_at
+                    mostrar_creditos, status, created_at,
+                    comprovante_nota, comprovante_arquivo, comprovante_em
              FROM pledges ORDER BY created_at DESC",
         ) {
             Ok(s) => s,
@@ -300,12 +322,69 @@ impl PledgeDb {
                 mostrar_creditos: r.get::<_, i64>(7)? == 1,
                 status: r.get(8)?,
                 created_at: r.get(9)?,
+                comprovante_nota: r.get(10)?,
+                comprovante_arquivo: r.get::<_, Option<String>>(11)?.is_some(),
+                comprovante_em: r.get(12)?,
             })
         });
         match rows {
             Ok(it) => it.filter_map(Result::ok).collect(),
             Err(_) => Vec::new(),
         }
+    }
+
+    /// YG-172: registra o comprovante de um pledge (nota e/ou arquivo). `arquivo`
+    /// é o nome do arquivo salvo em disco (em geral o id), `mime` o content-type
+    /// para servir depois. Devolve `false` se o `id` não existe. Carimba
+    /// `comprovante_em` = agora (sinaliza "comprovante enviado").
+    pub fn registrar_comprovante(
+        &self,
+        id: &str,
+        nota: Option<&str>,
+        arquivo: Option<&str>,
+        mime: Option<&str>,
+    ) -> bool {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let conn = self.db.lock().unwrap();
+        conn.execute(
+            "UPDATE pledges SET comprovante_nota = ?1, comprovante_arquivo = ?2,
+                 comprovante_mime = ?3, comprovante_em = ?4 WHERE id = ?5",
+            params![nota, arquivo, mime, now_ms, id],
+        )
+        .map(|n| n > 0)
+        .unwrap_or(false)
+    }
+
+    /// `true` se o pledge existe (YG-172: valida antes de aceitar comprovante).
+    pub fn exists(&self, id: &str) -> bool {
+        let conn = self.db.lock().unwrap();
+        conn.query_row("SELECT 1 FROM pledges WHERE id = ?1", params![id], |_| {
+            Ok(())
+        })
+        .is_ok()
+    }
+
+    /// Existência + mime do arquivo de comprovante de um pledge (para servir,
+    /// admin-gated). `None` se o pledge não tem arquivo.
+    pub fn comprovante_arquivo(&self, id: &str) -> Option<(String, String)> {
+        let conn = self.db.lock().unwrap();
+        conn.query_row(
+            "SELECT comprovante_arquivo, comprovante_mime FROM pledges WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .ok()
+        .and_then(|(arq, mime)| {
+            Some((
+                arq?,
+                mime.unwrap_or_else(|| "application/octet-stream".into()),
+            ))
+        })
     }
 }
 
