@@ -223,6 +223,51 @@ impl PledgeDb {
             was_pendente,
         })
     }
+
+    /// Agregados públicos da campanha (YG-164): total **confirmado** em BRL,
+    /// nº de apoios confirmados e nº de pendentes ("em processamento"). Conta
+    /// **só confirmados** no arrecadado — o número não infla com intenções não
+    /// pagas. Sem PII (só somas/contagens).
+    pub fn progresso(&self) -> Progresso {
+        let conn = self.db.lock().unwrap();
+        let arrecadado: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(valor), 0) FROM pledges WHERE status = ?1",
+                params![STATUS_CONFIRMADO],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let apoiadores: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pledges WHERE status = ?1",
+                params![STATUS_CONFIRMADO],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let pendentes: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pledges WHERE status = ?1",
+                params![STATUS_PENDENTE],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        Progresso {
+            arrecadado: arrecadado.max(0) as u64,
+            apoiadores: apoiadores.max(0) as u64,
+            pendentes: pendentes.max(0) as u64,
+        }
+    }
+}
+
+/// Agregados da campanha (YG-164) — sem PII.
+#[derive(Serialize, Default)]
+pub struct Progresso {
+    /// Total arrecadado (BRL) — soma do `valor` dos apoios **confirmados**.
+    pub arrecadado: u64,
+    /// Nº de apoios confirmados.
+    pub apoiadores: u64,
+    /// Nº de apoios `pendente` (registrados, pagamento ainda não confirmado).
+    pub pendentes: u64,
 }
 
 /// Resultado de confirmar um pledge.
@@ -365,5 +410,35 @@ mod tests {
     fn confirmar_id_inexistente_none() {
         let db = PledgeDb::in_memory().unwrap();
         assert!(db.confirmar("nao-existe").is_none());
+    }
+
+    #[test]
+    fn progresso_conta_so_confirmados() {
+        let db = PledgeDb::in_memory().unwrap();
+        let np = |tier: &'static str, valor: u32, sub: &'static str| NewPledge {
+            tier,
+            valor,
+            nome: None,
+            email: None,
+            user_sub: Some(sub),
+            mensagem: None,
+            mostrar_creditos: true,
+        };
+        let a = db.apoiar(&np("raiz", 60, "u1"));
+        let b = db.apoiar(&np("galho", 120, "u2"));
+        let _c = db.apoiar(&np("semente", 25, "u3")); // fica pendente
+
+        // nada confirmado ainda
+        let p0 = db.progresso();
+        assert_eq!(p0.arrecadado, 0);
+        assert_eq!(p0.apoiadores, 0);
+        assert_eq!(p0.pendentes, 3);
+
+        db.confirmar(&a);
+        db.confirmar(&b);
+        let p = db.progresso();
+        assert_eq!(p.arrecadado, 180, "60 + 120 confirmados");
+        assert_eq!(p.apoiadores, 2);
+        assert_eq!(p.pendentes, 1);
     }
 }

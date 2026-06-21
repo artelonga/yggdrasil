@@ -59,6 +59,24 @@
     $('s-lex').textContent = fmt(mbya ? mbya.terms : null);
   });
 
+  // ── progresso da campanha (YG-164): meta · arrecadado · % · nº apoiadores ──
+  // Só conta apoios CONFIRMADOS (backend); mostra a barra quando há meta ou já
+  // há algum apoiador. Sem meta e sem apoios → fica oculto (não polui a página).
+  J('/api/v1/campanha/progresso').then(function (p) {
+    if (!p) return;
+    var temMeta = p.meta > 0;
+    if (!temMeta && !p.apoiadores) return; // nada a mostrar ainda
+    $('prog-arrecadado').textContent = 'R$ ' + fmt(p.arrecadado);
+    $('prog-meta').textContent = temMeta ? ('de R$ ' + fmt(p.meta)) : '';
+    var pct = temMeta ? (p.percentual || 0) : (p.apoiadores ? 100 : 0);
+    $('prog-fill').style.width = pct + '%';
+    var nApo = p.apoiadores + ' ' + (p.apoiadores === 1 ? 'apoiador' : 'apoiadores');
+    $('prog-foot').innerHTML = (temMeta ? '<b>' + pct + '%</b> da meta · ' : '') +
+      '<b>' + esc(nApo) + '</b>' +
+      (p.pendentes ? ' · ' + p.pendentes + ' em processamento' : '');
+    $('progresso').hidden = false;
+  });
+
   // ── modal de apoio → ledger independente (/api/v1/campanha/apoiar) ──
   var tierAtual = null;
   function abrirApoio(slug, nome) {
