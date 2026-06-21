@@ -6,6 +6,26 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.37.0] — 2026-06-21 — Campanha operável: meta/progresso + admin de apoios
+
+Fecha a operabilidade do crowdfunding próprio (sobre YG-161/163): a campanha
+agora mostra **progresso** e tem **painel de operador** para confirmar pagamentos.
+
+### Added
+- **YG-164 — Meta & progresso** (`GET /api/v1/campanha/progresso`, público, sem
+  PII): `{ meta, arrecadado, apoiadores, pendentes, percentual }`. Conta **só
+  apoios `confirmado`** (não infla com pendentes). Barra de progresso na landing
+  `/campanha`; meta via `YGGDRASIL_CAMPANHA_META` (0/ausente = sem meta).
+- **YG-165 — Admin de apoios**: `GET /api/v1/campanha/pledges` (admin-gated,
+  `YGGDRASIL_ADMIN_TOKEN`) — **única** rota que expõe PII (e-mail/`user_sub`);
+  as públicas seguem sem PII. Página `/campanha/admin` (`noindex`, token em
+  `sessionStorage`) lista os apoios e **confirma** pendentes por linha (credita
+  as sementes do tier). Helper `check_admin` compartilhado.
+
+### Tests
+- Unit + API (`campanha`): `progresso()`/`list_all()`, percentual, gate 401/200,
+  PII só na rota admin. e2e `campanha-progresso` e `campanha-admin`.
+
 ## [2.36.1] — 2026-06-21 — Hotfix: Ayvu Rapyta acessível (loop de /login)
 
 ### Fixed
