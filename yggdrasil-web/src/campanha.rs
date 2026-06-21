@@ -126,6 +126,23 @@ pub struct Credito {
     pub created_at: i64,
 }
 
+/// Linha **completa** de um pledge — visão do operador (YG-165). Inclui
+/// `email`/`user_sub`: só sai pela rota admin (`GET /pledges`, gated por token),
+/// nunca pelas rotas públicas.
+#[derive(Serialize)]
+pub struct PledgeFull {
+    pub id: String,
+    pub tier: String,
+    pub valor: u32,
+    pub nome: Option<String>,
+    pub email: Option<String>,
+    pub user_sub: Option<String>,
+    pub mensagem: Option<String>,
+    pub mostrar_creditos: bool,
+    pub status: String,
+    pub created_at: i64,
+}
+
 pub struct PledgeDb {
     db: Arc<Mutex<Connection>>,
 }
@@ -255,6 +272,39 @@ impl PledgeDb {
             arrecadado: arrecadado.max(0) as u64,
             apoiadores: apoiadores.max(0) as u64,
             pendentes: pendentes.max(0) as u64,
+        }
+    }
+
+    /// Todos os pledges, completos (YG-165) — visão do operador (admin-only na
+    /// rota). Mais recentes primeiro. Devolve `email`/`user_sub`: **só** use por
+    /// trás do admin token.
+    pub fn list_all(&self) -> Vec<PledgeFull> {
+        let conn = self.db.lock().unwrap();
+        let mut stmt = match conn.prepare(
+            "SELECT id, tier, valor, nome, email, user_sub, mensagem,
+                    mostrar_creditos, status, created_at
+             FROM pledges ORDER BY created_at DESC",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map([], |r| {
+            Ok(PledgeFull {
+                id: r.get(0)?,
+                tier: r.get(1)?,
+                valor: r.get::<_, i64>(2)? as u32,
+                nome: r.get(3)?,
+                email: r.get(4)?,
+                user_sub: r.get(5)?,
+                mensagem: r.get(6)?,
+                mostrar_creditos: r.get::<_, i64>(7)? == 1,
+                status: r.get(8)?,
+                created_at: r.get(9)?,
+            })
+        });
+        match rows {
+            Ok(it) => it.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
         }
     }
 }

@@ -460,6 +460,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/campanha/apoiar", post(api::campanha::apoiar))
         .route("/api/v1/campanha/progresso", get(api::campanha::progresso))
         .route("/api/v1/creditos", get(api::campanha::list_creditos))
+        // YG-165: admin de apoios (gated por YGGDRASIL_ADMIN_TOKEN no handler)
+        .route("/api/v1/campanha/pledges", get(api::campanha::list_pledges))
         .route(
             "/api/v1/campanha/pledges/{id}/confirmar",
             post(api::campanha::confirmar_pledge),
@@ -702,6 +704,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/campanha", get(serve_campanha))
         // YG-161: créditos — apoiadores que optaram por aparecer (público)
         .route("/creditos", get(serve_creditos))
+        // YG-165: admin de apoios (a página pede o admin token; API é gated)
+        .route("/campanha/admin", get(serve_campanha_admin))
         // YG-144: reader do SRD de Shandara (estático vence o fallback {slug})
         .route("/universos/shandara", get(serve_shandara))
         .route("/api/v1/shandara/srd", get(serve_shandara_tree))
@@ -782,6 +786,12 @@ async fn serve_campanha() -> impl IntoResponse {
 /// YG-161: créditos — rol de apoiadores (lê `GET /api/v1/creditos`, sem e-mail).
 async fn serve_creditos() -> impl IntoResponse {
     Html(include_str!("../static/creditos.html"))
+}
+
+/// YG-165: admin de apoios — a página pede o `YGGDRASIL_ADMIN_TOKEN` e lê
+/// `GET /api/v1/campanha/pledges` (gated). Fora da nav pública.
+async fn serve_campanha_admin() -> impl IntoResponse {
+    Html(include_str!("../static/campanha-admin.html"))
 }
 
 // ─── YG-144: reader do SRD de Shandara (conteúdo embutido) ───────────────────
