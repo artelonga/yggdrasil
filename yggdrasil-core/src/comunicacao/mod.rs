@@ -19,6 +19,7 @@ pub mod pack;
 pub mod public;
 pub mod review;
 pub mod room;
+pub mod score;
 pub mod store;
 pub mod templates;
 pub mod writeback;
@@ -32,6 +33,7 @@ pub use pack::{
 pub use public::{PUBLIC_MBYA, PUBLIC_YORUBA, SYSTEM_OWNER, ensure_public_rooms, is_public_id};
 pub use review::{ReviewItem, ReviewQueue};
 pub use room::{EditError, Element, LexiconLink, Link, Reference, Room, RoomEdit, Viewport};
+pub use score::{BitsLedger, BitsLedgerStore, pack_bits_per_symbol};
 pub use store::{RoomStore, StoreError};
 pub use templates::{TemplateSummary, instantiate as template_instantiate, template_summaries};
 pub use writeback::{Writeback, WritebackConfig, WritebackError, WritebackOutcome};

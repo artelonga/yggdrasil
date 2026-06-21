@@ -8,12 +8,13 @@
     :root {
       --bg: #0b0d14; --ink: #e8e3d3; --dim: #9a937f; --gold: #d4af37;
       --panel: #151723; --line: #2a2c3a; --note: #5b8def; --chord: #c77dff;
-      --motif: #4caf72; --word: #f0a35e;
+      --motif: #4caf72; --word: #f0a35e; --danger: #e05050; --green: #4caf72;
     }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: radial-gradient(120% 80% at 50% 0%, #14182a, var(--bg));
       color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-    header { padding: 24px 20px 8px; }
+    header { padding: 24px 20px 8px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+    .header-text { flex: 1; min-width: 240px; }
     h1 { margin: 0; font-size: 1.5rem; letter-spacing: .5px; }
     h1 small { color: var(--gold); font-weight: 400; }
     .sub { color: var(--dim); margin: 6px 0 0; max-width: 56ch; font-size: .9rem; }
@@ -24,27 +25,90 @@
     button.entry {
       background: var(--panel); color: var(--ink); border: 1px solid var(--line);
       border-radius: 10px; padding: 12px 14px; cursor: pointer; min-width: 92px;
-      text-align: left; transition: transform .06s ease, border-color .15s ease;
+      text-align: left; transition: transform .06s ease, border-color .15s ease; position: relative;
     }
     button.entry:hover { border-color: var(--gold); transform: translateY(-2px); }
     button.entry:active { transform: translateY(0) scale(.97); }
     button.entry .term { font-weight: 600; font-size: 1.05rem; }
     button.entry .gloss { display: block; color: var(--dim); font-size: .75rem; margin-top: 4px; max-width: 22ch; }
+    button.entry .gloss.hidden { color: var(--line); font-style: italic; }
     .note .term { color: var(--note); } .chord .term { color: var(--chord); }
     .motif .term { color: var(--motif); } .word .term { color: var(--word); }
     .meta { color: var(--dim); font-size: .78rem; margin-top: 6px; }
     #log { margin-top: 18px; font-size: .78rem; color: var(--dim); white-space: pre-wrap;
       font-family: ui-monospace, monospace; }
     a.back { color: var(--gold); text-decoration: none; font-size: .85rem; }
+
+    /* ── Bits HUD ─────────────────────────────────────────────────── */
+    #bits-hud {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 10px; padding: 8px 14px; font-size: .9rem;
+      white-space: nowrap;
+    }
+    #bits-hud .hud-label { color: var(--dim); font-size: .78rem; }
+    #bits-hud .hud-value { color: var(--gold); font-weight: 700; font-size: 1.1rem; }
+    #bits-hud.guest { opacity: .5; pointer-events: none; }
+
+    /* ── Revelar button on each entry ─────────────────────────────── */
+    .btn-reveal {
+      display: block; margin-top: 6px; padding: 2px 6px;
+      background: transparent; color: var(--dim); border: 1px dashed var(--line);
+      border-radius: 5px; cursor: pointer; font-size: .7rem;
+      transition: color .15s, border-color .15s;
+    }
+    .btn-reveal:hover { color: var(--gold); border-color: var(--gold); }
+    .btn-reveal.insufficient { color: var(--danger); border-color: var(--danger); animation: shake .2s ease; }
+    @keyframes shake {
+      0%,100%{transform:translateX(0)} 30%{transform:translateX(-4px)} 70%{transform:translateX(4px)}
+    }
+
+    /* ── Quiz overlay ─────────────────────────────────────────────── */
+    #quiz-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      align-items: center; justify-content: center; z-index: 100;
+    }
+    #quiz-overlay.open { display: flex; }
+    #quiz-box {
+      background: var(--panel); border: 1px solid var(--gold); border-radius: 14px;
+      padding: 24px; max-width: 380px; width: 90%;
+    }
+    #quiz-box h3 { margin: 0 0 6px; color: var(--gold); font-size: 1rem; }
+    #quiz-question { color: var(--dim); font-size: .88rem; margin-bottom: 14px; }
+    #quiz-gloss { font-size: 1.1rem; color: var(--ink); font-weight: 600; margin-bottom: 16px; }
+    .quiz-options { display: flex; flex-direction: column; gap: 8px; }
+    .quiz-option {
+      background: #1a1c2a; border: 1px solid var(--line); border-radius: 8px;
+      padding: 10px 14px; cursor: pointer; text-align: left; color: var(--ink);
+      font-size: .95rem; transition: border-color .15s;
+    }
+    .quiz-option:hover { border-color: var(--gold); }
+    .quiz-option.correct { border-color: var(--green); color: var(--green); }
+    .quiz-option.wrong { border-color: var(--danger); color: var(--danger); }
+    #quiz-feedback { margin-top: 12px; font-size: .85rem; min-height: 20px; }
+    #quiz-close {
+      margin-top: 16px; padding: 8px 20px; background: transparent;
+      border: 1px solid var(--line); border-radius: 8px; color: var(--dim);
+      cursor: pointer; font-size: .85rem; width: 100%;
+    }
+    #quiz-close:hover { border-color: var(--gold); color: var(--gold); }
   </style>
 </head>
 <body>
   <header>
-    <a class="back" href="/universos">← universos</a>
-    <h1>ÑE'Ẽ <small>— qualquer linguagem é um pacote que <em>soa</em></small></h1>
-    <p class="sub">Uma <strong>linguagem</strong> = qualquer sistema de símbolos com léxico:
-      idioma, <strong>música</strong> ou domínio. A música é a 1ª linguagem áudio-nativa —
-      a "palavra" <em>é</em> o som (sintetizado ao vivo, sem arquivos). Clique numa entrada para ouvir.</p>
+    <div class="header-text">
+      <a class="back" href="/universos">← universos</a>
+      <h1>ÑE'Ẽ <small>— qualquer linguagem é um pacote que <em>soa</em></small></h1>
+      <p class="sub">Uma <strong>linguagem</strong> = qualquer sistema de símbolos com léxico:
+        idioma, <strong>música</strong> ou domínio. A música é a 1ª linguagem áudio-nativa —
+        a "palavra" <em>é</em> o som (sintetizado ao vivo, sem arquivos). Clique numa entrada para ouvir.</p>
+    </div>
+    <!-- Bits HUD — YG-168 -->
+    <div id="bits-hud" class="guest" title="Bits Shannon acumulados — faça login para jogar">
+      <span class="hud-label">bits</span>
+      <span class="hud-value" id="hud-bits">–</span>
+      <span class="hud-label" id="hud-discovered"></span>
+    </div>
   </header>
   <main>
     <section id="music">
@@ -57,6 +121,19 @@
     </section>
     <div id="log"></div>
   </main>
+
+  <!-- Quiz modal — YG-168 -->
+  <div id="quiz-overlay" role="dialog" aria-modal="true" aria-labelledby="quiz-title">
+    <div id="quiz-box">
+      <h3 id="quiz-title">Quiz rápido</h3>
+      <p id="quiz-question">Qual é o nome deste símbolo?</p>
+      <div id="quiz-gloss"></div>
+      <div class="quiz-options" id="quiz-options"></div>
+      <div id="quiz-feedback"></div>
+      <button id="quiz-close">Fechar</button>
+    </div>
+  </div>
+
   <script type="module" src="/static/universos/nee.js"></script>
   <script defer src="/static/nav.js"></script>
 </body>
