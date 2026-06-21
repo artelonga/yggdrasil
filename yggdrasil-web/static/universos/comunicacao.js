@@ -45,7 +45,16 @@ async function api(method, path, body) {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401) {
-    location.assign('/login?next=' + encodeURIComponent(location.pathname + location.search));
+    // Token ausente/expirado: limpa o token inválido para não repetir o 401 a
+    // cada chamada (era a causa do loop /login ↔ página numa sala PÚBLICA —
+    // o GET /revisao no boot, com JWT velho, redirecionava em looping). YG-167.
+    try { localStorage.removeItem(JWT_KEY); } catch (_) {}
+    state.token = null;
+    // Conteúdo público é GET e continua acessível anônimo — NÃO redireciona.
+    // Só ações de escrita (POST/PATCH/DELETE) pedem re-login.
+    if (method !== 'GET') {
+      location.assign('/login?next=' + encodeURIComponent(location.pathname + location.search));
+    }
     throw new Error('nao_autenticado');
   }
   if (!res.ok) {
