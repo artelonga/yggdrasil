@@ -6,6 +6,132 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.36.0] — 2026-06-21 — Campanha pronta para lançar (Mundo primário · apoio + PIX · créditos · Shandara)
+
+Fatia que fecha as lacunas north-star do roadmap para a campanha: o **Mundo**
+vira a visão primária editável com uma lente **Quadro** (kanban), o crowdfunding
+ganha **ledger de apoios próprio** com **PIX de verdade** (BR Code copia-e-cola +
+QR, sem PSP) e uma **página de créditos**, e o SRD de **Shandara** recebe os stubs
+navegáveis que faltavam. Nenhuma cobrança acontece no app; o apoio nasce
+`pendente` e a confirmação do pagamento é registrada pelo time.
+
+### YG-160 — Mundo é a visão primária editável; Quadro (kanban) é lente secundária
+
+O instance view abre **no Mundo** (a visão editável, "a casa"), não mais na
+timeline — `projection=timeline` ainda respeita a timeline; qualquer outro caso
+cai no Mundo. Timeline/Grafo/Mapa e o novo **📋 Quadro** são lentes secundárias
+sobre o MESMO universo.
+
+#### Added
+- **Lente "📋 Quadro" (kanban)**: as **tarefas** (notas com `status`) agrupadas em
+  3 colunas — *A fazer · Fazendo · Feita* — com contador por coluna. Clicar num
+  card abre o **editor da nota** (tarefa = nota com status); o Mundo continua a casa.
+- **Criar tarefa num gesto** (dono): botão "+ tarefa" → título → cria a nota
+  (`PUT …/notes/{slug}` com `status`) **e** um bloco no Mundo (`place_block`), então
+  recarrega o Quadro. Slug canônico vem do servidor (sem divergir nota↔bloco).
+
+#### Changed
+- Ordem das views: **Mundo primeiro e ativo por default**; Quadro entra logo após
+  Timeline.
+
+#### Tests
+- e2e `kanban`: default = Mundo (não timeline) · tarefas caem na coluna do status ·
+  "+ tarefa" cria nota+bloco reais (persiste via API) · clicar card abre o editor.
+
+### YG-161 — Apoio independente (crowdfunding próprio) + página de créditos
+
+A campanha deixa de só "registrar interesse" no canal de feedback e passa a ter
+um **ledger de apoios próprio** — crowdfunding independente, sem Catarse. Nenhuma
+cobrança acontece no app: o apoio (pledge) nasce `pendente` e a confirmação do
+pagamento (PIX/transferência, fora de banda) é registrada pelo time.
+
+#### Added
+- **Ledger de apoios** (`campanha::PledgeDb`, SQLite): cada apoio amarra a um tier
+  (Semente…Yggdrasil), guarda nome/recado/opt-in e o `user_sub` (se logado).
+  `e-mail` e `user_sub` **nunca** saem na lista pública (espelha `feedback`).
+- **Tiers canônicos no backend** — `GET /api/v1/campanha/tiers` (preço + sementes
+  do tier); a landing passa a ler o preço daqui (prosa segue em `docs/REWARDS.md`).
+- **`POST /api/v1/campanha/apoiar`** — registra um apoio (JWT opcional). Resposta
+  honesta: `status: pendente` + próximos passos (PIX a seguir), nada cobrado.
+- **Página `/creditos`** + `GET /api/v1/creditos` — rol de apoiadores que optaram
+  por aparecer, agrupados por tier (da semente ao topo), com recado e ✓ de
+  confirmado. Vazio convida a apoiar.
+- **`POST /api/v1/campanha/pledges/{id}/confirmar`** (admin, `YGGDRASIL_ADMIN_TOKEN`)
+  — confirma o pagamento e **credita as sementes do tier** ao usuário logado; só
+  na primeira confirmação (não recredita).
+
+#### Changed
+- Landing `/campanha`: CTA "Tenho interesse" → "Apoiar" posta no ledger próprio;
+  modal ganha recado público + opt-in de créditos; link para `/creditos`.
+
+#### Tests
+- Unit (`campanha`): tiers/lookup, apoiar-pendente, créditos só opt-in (sem
+  e-mail), confirmar credita sementes uma vez.
+- API (`api::campanha`): tiers, tier inválido 400, e-mail inválido 400, opt-in
+  vs opt-out nos créditos, confirmar 401/404 e crédito de sementes idempotente.
+- e2e (`creditos`): apoio opt-in aparece / opt-out some / e-mail nunca vaza;
+  página renderiza por tier; tier inválido 400.
+
+### YG-162 — Shandara: stubs de conteúdo navegáveis no SRD
+
+O SRD de Shandara (v0.1.0) tinha só 2 dos povos prometidos e seções de bestiário,
+combate e magia vazias. Esta tarefa adiciona **stubs navegáveis** — docs reais,
+honestamente marcados como *rascunho/proposta a confirmar com o autor* (mesma
+postura da "sexta força em aberto"), para o reader já mostrar a estrutura completa.
+
+#### Added
+- **Povos restantes** (prometidos em `povos/_index`): [Os Pétreos](povos/petreos)
+  (Matéria), [Os Perenes](povos/perenes) (Tempo), [Os Fulgores](povos/fulgores)
+  (Energia) — cada um com semente de identidade + TODOs.
+- **Regras**: [Combate](regras/combate) e [Magia das forças](regras/magia) —
+  esqueletos ligados a Atributos e às forças primordiais.
+- **Bestiário**: [Eco da Cicatriz](bestiario/eco-da-cicatriz) — primeira
+  criatura-semente, ligada à Grande Guerra.
+
+#### Changed
+- `index.md`, `povos/_index.md`, `bestiario/_index.md`: sumários atualizados para
+  listar e linkar os novos stubs (marcados *rascunho*).
+
+#### Tests
+- Unit (`shandara`): os 6 stubs aparecem no `tree()` e são servidos por `doc()`;
+  seção "Bestiário" agora presente; título extraído do `#`.
+- e2e (`shandara-stubs`): API serve os 6 stubs (marcados como `stub`); reader
+  renderiza um stub via deep-link (`#povos/petreos`).
+
+> Conteúdo CC-BY-SA 4.0. Os stubs são propostas estruturais; nome/detalhes
+> aguardam confirmação do autor antes de virarem canônicos (bump `1.0.0` do crate).
+
+### YG-163 — Pagamento PIX independente (BR Code copia-e-cola + QR)
+
+Fecha o ciclo do crowdfunding próprio (YG-161): o apoio agora vem com PIX **de
+verdade**, sem PSP, sem conta de gateway e sem webhook. Geramos o **BR Code**
+(EMV/BCB) localmente a partir de uma chave PIX configurada; o apoiador paga
+direto à chave do recebedor pelo app do banco. A confirmação segue manual (rota
+admin `confirmar`), casando com o ledger `pendente → confirmado`.
+
+#### Added
+- **`pix` module**: gerador de BR Code "copia e cola" em Rust puro (TLV EMV +
+  CRC-16/CCITT-FALSE, validado contra o check value `0x29B1`), sanitização
+  ASCII de nome/cidade, txid = id do pledge; QR em SVG via crate `qrcode`
+  (feature `svg` só). `PixConfig::from_env` (`YGGDRASIL_PIX_KEY` liga a feature;
+  `YGGDRASIL_PIX_NAME`/`_CITY` com defaults).
+- **`POST /apoiar` devolve `pix`** (`copia_e_cola` + `qr_svg` + `valor`) quando há
+  chave configurada; sem chave, mantém o texto "instruções em breve".
+- **Landing**: ao apoiar, o modal mostra o **QR + copia-e-cola + botão copiar**
+  e não fecha sozinho (deixa o apoiador pagar).
+
+#### Tests
+- Unit (`pix`): CRC check value, BR Code com campos essenciais + CRC self-check,
+  ASCII-fold, txid, QR SVG.
+- API (`api::campanha`): `apoiar` com/sem PIX (bloco presente só quando ligado).
+- e2e (`pix`): API devolve copia-e-cola+QR; landing mostra QR/copia-e-cola ao apoiar.
+
+#### Notas
+- **Sem segredos no repo.** A chave PIX é env de deploy (`YGGDRASIL_PIX_KEY`);
+  desligada por padrão → feature inerte até o operador configurar.
+- Confirmação automática (webhook de PSP) fica como evolução futura opcional —
+  exige conta/segredos de provedor; o BR Code estático é o caminho independente.
+
 ## [2.35.0] — 2026-06-16 — Identidade estável + i18n (tradução como camada)
 
 Fundação de i18n e compat-CO motivada pela revisão do `translator_sync.pyw`:
