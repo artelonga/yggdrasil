@@ -27,8 +27,8 @@ use nanoid::nanoid;
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use yggdrasil_core::comunicacao::{
-    Caderno, CadernoStore, LexiconError, LexiconStore, ReviewItem, Room, RoomEdit, RoomStore,
-    Writeback,
+    Caderno, CadernoStore, Element, LexiconError, LexiconScope, LexiconStore, ReviewItem, Room,
+    RoomEdit, RoomStore, Writeback,
     lexicon::{Contribution, slugify},
     room::EditError,
     store::StoreError,
@@ -1101,6 +1101,152 @@ pub async fn set_progresso(
     Json(serde_json::json!({ "chave": key, "verse": body.verse })).into_response()
 }
 
+// ─── Sugestões de corpus (YG-113) ───────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct SugestaoBody {
+    /// `"verso"` (correção de verso) ou `"glosa"` (sugestão de glosa de palavra).
+    #[allow(dead_code)]
+    pub kind: String,
+    /// Código de língua (`gn-mbya`, `es`, …).
+    pub lang: String,
+    /// Palavra ou âncora estável do verso (ex.: `"verso-2-1"`).
+    pub word: String,
+    /// Texto da sugestão (correção ou nova glosa). Uma linha — sem quebras.
+    #[serde(default)]
+    pub gloss: Option<String>,
+    /// Rótulo legível (ex.: `"Cap II · v1"`). Armazenado como `concept:` no stub.
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// `POST /api/v1/comunicacao/caderno/sugestoes` — roteia uma sugestão de verso/
+/// glosa para o pipeline contribute→revisar→publicar (YG-113). Cria o stub
+/// `_users/<u>/<slug>.md` via [`LexiconStore::contribute`], enfileira na fila de
+/// revisão e dispara write-back assíncrono. Idempotente: re-enviar a mesma
+/// sugestão liga ao stub já existente sem recriar.
+pub async fn sugerir_verso(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<SugestaoBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if body.word.trim().is_empty() {
+        return err_json(StatusCode::UNPROCESSABLE_ENTITY, "palavra_vazia");
+    }
+    let mut el = Element::new("sugestao", &body.word, &body.lang);
+    el.gloss = body.gloss.clone();
+    if let Some(lbl) = &body.label {
+        el.concept = Some(lbl.clone());
+    }
+    let contribution = match state.lexicon.contribute(&user, &el, &[]) {
+        Ok(c) => c,
+        Err(e) => return map_lexicon_err(e),
+    };
+    let mut queue = match state.store.load_review(&user) {
+        Ok(q) => q,
+        Err(e) => return map_store_err(e),
+    };
+    let item = ReviewItem::new(
+        contribution.relative_path.clone(),
+        body.word.clone(),
+        body.lang.clone(),
+        body.gloss.clone(),
+        chrono::Utc::now(),
+    );
+    let review_added = queue.upsert(item);
+    if let Err(e) = state.store.save_review(&user, &queue) {
+        return map_store_err(e);
+    }
+    if contribution.created {
+        spawn_writeback(state.writeback.clone(), contribution.relative_path.clone());
+    }
+    let scope = match contribution.scope {
+        LexiconScope::Shared => "compartilhado",
+        LexiconScope::User => "usuario",
+    };
+    Json(serde_json::json!({
+        "caminho": contribution.relative_path,
+        "criado": contribution.created,
+        "escopo": scope,
+        "revisao_adicionada": review_added,
+    }))
+    .into_response()
+}
+
+/// `GET /api/v1/comunicacao/corpus/{slug}/correcoes` — mapa de correções curadas
+/// de versos do corpus (YG-113). Público (sem auth). Retorna as entradas
+/// `<lang>/terms/verso-*.md` com `seed_status: reviewed`, agrupadas por âncora:
+/// `{ "verso-2-1": { "gn": "texto revisado", "es": "texto revisado" } }`.
+pub async fn corpus_correcoes(
+    State(state): ApiState,
+    Path(_slug): Path<String>,
+) -> impl IntoResponse {
+    let map = collect_verse_corrections(state.lexicon.root());
+    Json(serde_json::Value::Object(map)).into_response()
+}
+
+/// Varre `guarani-mbya/terms/verso-*.md` e `spanish/terms/verso-*.md` em busca
+/// de entradas com `seed_status: reviewed`, agrupando por slug de âncora.
+fn collect_verse_corrections(
+    lex_root: &std::path::Path,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut out: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    let planes = [("guarani-mbya", "gn"), ("spanish", "es")];
+    for (lang_dir, key) in planes {
+        let terms_dir = lex_root.join(lang_dir).join("terms");
+        let Ok(rd) = std::fs::read_dir(&terms_dir) else {
+            continue;
+        };
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                continue;
+            }
+            if p.extension().is_none_or(|e| e != "md") {
+                continue;
+            }
+            let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !stem.starts_with("verso-") {
+                continue;
+            }
+            let Ok(raw) = std::fs::read_to_string(&p) else {
+                continue;
+            };
+            if !raw.contains("seed_status: reviewed\n") {
+                continue;
+            }
+            if let Some(gloss) = extract_fm_single_line(&raw, "gloss") {
+                out.entry(stem.to_string())
+                    .or_default()
+                    .insert(key.to_string(), serde_json::Value::String(gloss));
+            }
+        }
+    }
+    out.into_iter()
+        .map(|(k, v)| (k, serde_json::Value::Object(v)))
+        .collect()
+}
+
+/// Extrai o valor de um campo YAML de linha única do frontmatter.
+/// Ex.: `"gloss: 'tekoa'\n..."` → `"tekoa"`.
+fn extract_fm_single_line(raw: &str, field: &str) -> Option<String> {
+    let needle = format!("{field}: ");
+    raw.lines().find(|l| l.starts_with(&needle)).map(|l| {
+        l[needle.len()..]
+            .trim()
+            .trim_matches('\'')
+            .replace("''", "'")
+            .to_string()
+    })
+}
+
 /// `POST /api/v1/comunicacao/caderno/migrar` — recebe o blob do `localStorage`
 /// (o Caderno local-first de antes da YG-112) e o **funde** no servidor
 /// (idempotente, sem perda — [`Caderno::merge_from`]). É o caminho do primeiro
@@ -1231,6 +1377,12 @@ mod tests {
                 axum::routing::put(set_progresso),
             )
             .route("/api/v1/comunicacao/caderno/migrar", post(migrar_caderno))
+            // YG-113: sugestões de corpus
+            .route("/api/v1/comunicacao/caderno/sugestoes", post(sugerir_verso))
+            .route(
+                "/api/v1/comunicacao/corpus/{slug}/correcoes",
+                get(corpus_correcoes),
+            )
             .with_state(state);
         (router, rooms_dir, lex_dir, term_rx, room_rx)
     }
@@ -2075,5 +2227,158 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(body_json(m2).await, c1);
+    }
+
+    // ── YG-113: sugestões de corpus (verso/glosa → contribute → promover) ─────
+
+    fn sugestao_req(user: &str, body: serde_json::Value) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/api/v1/comunicacao/caderno/sugestoes")
+            .header("authorization", format!("Bearer {}", token(user)))
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn sugerir_verso_sem_jwt_401() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/comunicacao/caderno/sugestoes")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "kind": "verso", "lang": "gn-mbya", "word": "verso-2-1", "gloss": "tekoa" })
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn sugerir_verso_cria_stub_e_enfileira_revisao() {
+        let (app, rooms_dir, lex_dir, _t, _r) = app_full();
+        let body = serde_json::json!({
+            "kind": "verso",
+            "lang": "gn-mbya",
+            "word": "verso-2-1",
+            "gloss": "tekoa reko",
+            "label": "Cap II · v1",
+        });
+        let resp = app
+            .clone()
+            .oneshot(sugestao_req("alice", body))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["criado"], true);
+        assert_eq!(v["escopo"], "usuario");
+        assert_eq!(v["revisao_adicionada"], true);
+        let expected_path = "guarani-mbya/terms/_users/alice/verso-2-1.md";
+        assert_eq!(v["caminho"], expected_path);
+
+        // stub existe em disco com seed_status: stub e gloss: no frontmatter
+        let stub = std::fs::read_to_string(lex_dir.path().join(expected_path)).unwrap();
+        assert!(stub.contains("seed_status: stub"));
+        assert!(stub.contains("gloss: 'tekoa reko'"));
+        assert!(stub.contains("concept: 'Cap II \u{b7} v1'"));
+
+        // item na fila de revisão
+        let rstore = RoomStore::new(rooms_dir.path()).unwrap();
+        let queue = rstore.load_review("alice").unwrap();
+        assert_eq!(queue.items.len(), 1);
+        assert_eq!(queue.items[0].term_path, expected_path);
+        assert_eq!(queue.items[0].lang, "gn-mbya");
+        assert_eq!(queue.items[0].gloss.as_deref(), Some("tekoa reko"));
+    }
+
+    #[tokio::test]
+    async fn sugerir_idempotente_liga_sem_recriar() {
+        let (app, _r, _l) = app();
+        let body = serde_json::json!({
+            "kind": "verso",
+            "lang": "gn-mbya",
+            "word": "verso-2-1",
+            "gloss": "primeira sugestão",
+        });
+        let r1 = app
+            .clone()
+            .oneshot(sugestao_req("alice", body.clone()))
+            .await
+            .unwrap();
+        assert_eq!(body_json(r1).await["criado"], true);
+        let r2 = app
+            .clone()
+            .oneshot(sugestao_req("alice", body))
+            .await
+            .unwrap();
+        assert_eq!(body_json(r2).await["criado"], false);
+    }
+
+    #[tokio::test]
+    async fn corpus_correcoes_vazio_antes_de_curar() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/corpus/ayvu-rapyta/correcoes")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert!(v.as_object().unwrap().is_empty());
+    }
+
+    /// Fluxo completo: sugerir → promover → corpus_correcoes exibe a versão revisada.
+    #[tokio::test]
+    async fn corpus_correcoes_mostra_curado_apos_promocao() {
+        let (app, _r, _l, _t, _ro) = app_full();
+        // 1. usuário sugere correção do verso (Mbyá)
+        app.clone()
+            .oneshot(sugestao_req(
+                "alice",
+                serde_json::json!({
+                    "kind": "verso",
+                    "lang": "gn-mbya",
+                    "word": "verso-2-1",
+                    "gloss": "Nhandereko porã",
+                }),
+            ))
+            .await
+            .unwrap();
+
+        // 2. curador promove o stub
+        let prom = app
+            .clone()
+            .oneshot(promover_req(Some(ADMIN), "gn-mbya", "alice", "verso-2-1"))
+            .await
+            .unwrap();
+        assert_eq!(prom.status(), StatusCode::OK);
+
+        // 3. correcoes reflete a versão revisada
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/corpus/ayvu-rapyta/correcoes")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        let corr = &v["verso-2-1"];
+        assert_eq!(corr["gn"], "Nhandereko porã");
     }
 }

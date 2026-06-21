@@ -637,6 +637,15 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/comunicacao/corpus/{slug}",
             get(comunicacao_routes::corpus),
         )
+        // YG-113: sugestões do Caderno → pipeline de curadoria
+        .route(
+            "/api/v1/comunicacao/caderno/sugestoes",
+            post(comunicacao_routes::sugerir_verso),
+        )
+        .route(
+            "/api/v1/comunicacao/corpus/{slug}/correcoes",
+            get(comunicacao_routes::corpus_correcoes),
+        )
         .with_state(comunicacao_state);
 
     let app = Router::new()

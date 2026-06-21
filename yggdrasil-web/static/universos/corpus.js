@@ -8,7 +8,7 @@
 'use strict';
 
 const SLUG = 'ayvu-rapyta';
-const state = { work: null, chapters: [], lex: {}, ci: 0, vi: 0, stack: [], tab: 'fav' };
+const state = { work: null, chapters: [], lex: {}, ci: 0, vi: 0, stack: [], tab: 'fav', correcoes: {} };
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -46,6 +46,7 @@ const srv = (() => {
     putNote: (k, title, markdown) => call('PUT', '/notas/' + encodeURIComponent(k), { title, markdown }),
     delNote: (k) => call('DELETE', '/notas/' + encodeURIComponent(k)),
     putProgress: (k, verse) => call('PUT', '/progresso/' + encodeURIComponent(k), { verse }),
+    submitSugg: (body) => call('POST', '/sugestoes', body),
   };
 })();
 
@@ -132,6 +133,38 @@ function refreshCadCount() {
   $('cad-count').textContent = n;
 }
 
+// ── correções curadas de corpus (YG-113) ─────────────────────────────────────
+// Carrega o mapa de versos com correções curadas pelo pipeline de curadoria.
+// Resultado: state.correcoes["verso-2-1"] = { gn: "...", es: "..." }.
+async function loadCorrecoes() {
+  const r = await fetch(`/api/v1/comunicacao/corpus/${SLUG}/correcoes`).catch(() => null);
+  if (r && r.ok) state.correcoes = await r.json();
+}
+
+// Submete uma sugestão de verso (kind:"verso") ou glosa (kind:"glosa") ao
+// pipeline de curadoria. Requer login (srv.on). Para versos, separa os textos
+// Mbyá e Espanhol do campo `after` e os submete como contribuições independentes
+// por plano de língua (gn-mbya / es). Retorna { ok: boolean }.
+async function submitSugestao(s) {
+  if (s.kind === 'verso') {
+    const lines = (s.after || '').split('\n');
+    const gnLine = lines.find((l) => l.startsWith('MBYÁ: '));
+    const esLine = lines.find((l) => l.startsWith('ESP: '));
+    const gnText = gnLine ? gnLine.slice(6) : null;
+    const esText = esLine ? esLine.slice(5) : null;
+    const word = `verso-${s.chap_n ?? s.ci}-${s.verse_n ?? s.vi}`;
+    const reqs = [];
+    if (gnText) reqs.push(srv.submitSugg({ kind: 'verso', lang: 'gn-mbya', word, gloss: gnText, label: s.label }));
+    if (esText) reqs.push(srv.submitSugg({ kind: 'verso', lang: 'es', word, gloss: esText, label: s.label }));
+    if (!reqs.length) return { ok: false };
+    const results = await Promise.all(reqs);
+    return { ok: results.every((r) => r && r.ok) };
+  }
+  // glosa: word = a própria palavra, gloss = proposta do usuário
+  const r = await srv.submitSugg({ kind: 'glosa', lang: 'gn-mbya', word: s.label, gloss: s.after || '', label: s.label });
+  return { ok: !!(r && r.ok) };
+}
+
 // ── boot ─────────────────────────────────────────────────────────────────────
 async function boot() {
   db.load();
@@ -152,6 +185,8 @@ async function boot() {
   // YG-116: logado → funde o Caderno local no servidor e traz o consolidado
   // (precisa dos capítulos já carregados para reconstruir labels/ci/vi).
   try { await syncCaderno(); } catch { /* local-first segue valendo */ }
+  // YG-113: correções curadas sobrepõem os versos com OCR limpo.
+  try { await loadCorrecoes(); } catch { /* sem correções → exibe OCR original */ }
   $('work-title').textContent = data.work.title || 'Ayvu Rapyta';
   $('work-sub').textContent = `${data.work.author || ''} · ${data.work.year || ''}`.replace(/^ · | · $/g, '');
 
@@ -246,6 +281,13 @@ function renderChapter(keepVi) {
   $('trail').innerHTML = ch.verses.map((v, i) => {
     const vk = verseKey(ch, v);
     const fav = isFav(vk), note = !!getNote(vk);
+    const corr = state.correcoes[`verso-${ch.n}-${v.v}`];
+    const corrHtml = corr
+      ? `<div class="corr-bloco" title="versão revisada por curador">` +
+        (corr.gn ? `<div class="corr-gn">↝ ${esc(corr.gn)}</div>` : '') +
+        (corr.es ? `<div class="corr-es">↝ ${esc(corr.es)}</div>` : '') +
+        `</div>`
+      : '';
     return `<div class="stone${i === state.vi ? ' on' : ''}" data-i="${i}">
       <div class="dot">${v.v ?? i + 1}</div>
       <div class="card">
@@ -255,6 +297,7 @@ function renderChapter(keepVi) {
         </div>
         <div class="gn">${gnTokens(v.words || [])}</div>
         <div class="es">${esc(v.es)}</div>
+        ${corrHtml}
         <div class="vnote" data-vnote="${i}" style="display:none"></div>
       </div></div>`;
   }).join('');
@@ -305,6 +348,7 @@ function toggleVerseNote(i) {
   };
   box.querySelector('[data-suggest]').onclick = () => {
     addSuggestion({ kind: 'verso', label: `Cap ${ch.roman} · v${v.v}`, ci: state.ci, vi: i,
+      chap_n: ch.n, verse_n: v.v,
       before: `MBYÁ: ${v.gn}\nESP: ${v.es}`, after: `MBYÁ: ${v.gn}\nESP: ${v.es}` });
     openCaderno('sugg');
   };
@@ -541,19 +585,37 @@ function renderCaderno() {
       : '<div class="empty">Sem notas. Toque ✎ num verso ou palavra para anotar.</div>';
     body.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { setNote(b.dataset.del, '', null); renderCaderno(); renderChapter(true); });
   } else {
-    body.innerHTML = db.sugg.length ? db.sugg.map((s) => `
-      <div class="item"><div class="h"><span class="badge">${esc(s.kind)}</span><b>${esc(s.label)}</b>
+    body.innerHTML = db.sugg.length ? db.sugg.map((s) => {
+      const enviado = s.status === 'enviado';
+      const btnLabel = enviado ? '✓ enviado' : srv.on ? 'enviar p/ revisão' : 'enviar p/ revisão (login)';
+      return `<div class="item"><div class="h"><span class="badge">${esc(s.kind)}</span><b>${esc(s.label)}</b>
         <button class="del" data-del="${s.id}">descartar</button></div>
         <div class="sugg-form">
           <label>proposta (${esc(s.kind)})</label>
-          <textarea data-edit="${s.id}">${esc(s.after)}</textarea>
+          <textarea data-edit="${s.id}"${enviado ? ' disabled' : ''}>${esc(s.after)}</textarea>
         </div>
-        <div class="rowbtns"><button class="iconbtn" data-submit="${s.id}">enviar p/ revisão (Fase 2)</button>
-        <span class="insp-sub" style="align-self:center">status: ${esc(s.status)}</span></div></div>`).join('')
+        <div class="rowbtns">
+          <button class="iconbtn" data-submit="${s.id}"${enviado ? ' disabled' : ''}>${btnLabel}</button>
+          <span class="insp-sub" style="align-self:center">status: ${esc(s.status)}</span>
+        </div></div>`;
+    }).join('')
       : '<div class="empty">Sem sugestões. Use ✦ num verso (correção) ou palavra (glosa) para propor melhorias ao corpus.</div>';
     body.querySelectorAll('[data-edit]').forEach((t) => t.oninput = () => updateSuggestion(t.dataset.edit, { after: t.value }));
     body.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => delSuggestion(b.dataset.del));
-    body.querySelectorAll('[data-submit]').forEach((b) => b.onclick = () => { updateSuggestion(b.dataset.submit, { status: 'enviado (local)' }); alert('Fase 2: isto irá para a fila de revisão do léxico (Writeback). Por enquanto fica salvo no Caderno.'); renderCaderno(); });
+    body.querySelectorAll('[data-submit]').forEach((b) => b.onclick = async () => {
+      const s = db.sugg.find((x) => x.id === b.dataset.submit);
+      if (!s || s.status === 'enviado') return;
+      if (!srv.on) {
+        updateSuggestion(s.id, { status: 'rascunho — faça login p/ enviar' });
+        renderCaderno();
+        return;
+      }
+      b.disabled = true;
+      b.textContent = 'enviando…';
+      const result = await submitSugestao(s);
+      updateSuggestion(s.id, { status: result.ok ? 'enviado' : 'erro ao enviar' });
+      renderCaderno();
+    });
   }
   body.querySelectorAll('[data-jump]').forEach((el) => el.onclick = () => jumpTo(JSON.parse(el.dataset.jump)));
 }
