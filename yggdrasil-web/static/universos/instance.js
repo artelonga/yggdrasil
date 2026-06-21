@@ -148,8 +148,10 @@ async function load() {
   render();
   wireNoteEditor();
   wireInline();
-  // instâncias geradas com projection=timeline abrem direto na lente timeline
+  // YG-160: o Mundo é a visão PRIMÁRIA editável (default). projection=timeline
+  // ainda abre na timeline; senão, cai no Mundo.
   if (state.inst.projection === 'timeline') setView('timeline');
+  else setView('mundo');
   openFromHash();
 }
 
@@ -844,9 +846,13 @@ function setView(v) {
   document.querySelectorAll('#views button').forEach((b) =>
     b.classList.toggle('active', b.dataset.view === v));
   const mundo = v === 'mundo';
+  const kanban = v === 'kanban';
   document.body.classList.toggle('mundo', mundo);
   const ui = document.getElementById('mundo-ui');
   if (ui) ui.hidden = !mundo;
+  const kel = document.getElementById('kanban-view');
+  if (kel) kel.hidden = !kanban;
+  if (window.MundoView && !mundo) window.MundoView.unmount();
   if (mundo) {
     if (window.MundoView) {
       window.MundoView.mount(canvas, {
@@ -860,9 +866,50 @@ function setView(v) {
     }
     return;
   }
-  if (window.MundoView) window.MundoView.unmount();
+  if (kanban) { renderKanban(); return; } // YG-160: lente Quadro
   sizeCanvas();
   render();
+}
+
+// ─── YG-160: Quadro (kanban) — tarefas (notas com status) em 3 colunas ───────
+const KB_COLS = [['todo', 'A fazer'], ['doing', 'Fazendo'], ['done', 'Feita']];
+function renderKanban() {
+  const el = document.getElementById('kanban-view');
+  if (!el) return;
+  const tasks = (state.notes || []).filter((n) => n.status);
+  const dono = state.me && state.inst && state.me === state.inst.owner;
+  el.innerHTML = '<div class="kb">' + KB_COLS.map(([s, label]) => {
+    const items = tasks.filter((n) => n.status === s);
+    const cards = items.map((n) =>
+      `<div class="kc" data-slug="${escapeHtml(n.slug)}" data-title="${escapeHtml(n.title || n.slug)}">${escapeHtml(n.title || n.slug)}</div>`).join('')
+      || '<div class="kempty">—</div>';
+    const add = dono ? `<button class="kadd" data-st="${s}">+ tarefa</button>` : '';
+    return `<div class="kcol"><div class="khd ${s}">${label}<span>${items.length}</span></div>${cards}${add}</div>`;
+  }).join('') + '</div>';
+  // clicar no card abre o editor (a tarefa É uma nota) — gesto de edição direto
+  el.querySelectorAll('.kc').forEach((c) => (c.onclick = () => openNoteEditor(c.dataset.slug, c.dataset.title)));
+  el.querySelectorAll('.kadd').forEach((b) => (b.onclick = () => criarTarefa(b.dataset.st)));
+}
+
+// Criar tarefa = nota + status (YG-130), num gesto: título → nota + bloco no Mundo.
+async function criarTarefa(status) {
+  const titulo = (prompt('Nova tarefa:') || '').trim();
+  if (!titulo) return;
+  const base = slugifyJs(titulo) || 't';
+  let slug = base, i = 1;
+  while (noteBySlug(slug)) slug = `${base}-${i++}`;
+  const r = await fetch(`${API}/instances/${state.id}/notes/${encodeURIComponent(slug)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ title: titulo, markdown: '', status }),
+  });
+  if (!r.ok) { toast('⚠ não consegui criar a tarefa'); return; }
+  slug = (await r.json()).slug; // slug canônico normalizado pelo servidor
+  // bloco no Mundo (aparece espacialmente também); patch recarrega state.inst
+  const layer = state.inst.layers[0].id;
+  await patch({ op: 'place_block', layer, block: { id: slug, block_type: 'note', pos: { x: 2, y: 2 }, label: titulo, props: { note_slug: slug } } });
+  await loadNotes();
+  renderKanban();
+  toast('✓ tarefa criada');
 }
 function wireGraphToggle() {
   document.querySelectorAll('#views button').forEach((b) =>
