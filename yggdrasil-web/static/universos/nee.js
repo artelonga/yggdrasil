@@ -1,16 +1,35 @@
-/* nee.js — página do ÑE'Ẽ (YG-155 + YG-168): carrega pacotes de léxico, toca,
- * e implementa o loop de bits/score (Shannon economy).
+/* nee.js — página do ÑE'Ẽ (YG-155 + YG-168 + YG-170): carrega pacotes de léxico,
+ * toca, implementa o loop de bits/score (Shannon economy) e o sequencer espacial.
+ *
+ * YG-155: carrega pacotes, renderiza entradas, toca via AudioEngine.
+ * YG-168: score/bits server-side (Shannon economy), HUD #bits-hud, quiz A/B.
+ * YG-170: sequencer espacial — compor andando a um BPM, gravar motivo,
+ *         integração de bits client-side (HUD #music-bits).
  *
  * A/B de timing do quiz: variante atribuída aleatoriamente por usuário (localStorage).
  *   A = "imediato" — quiz dispara logo após a 1ª reprodução da entrada.
  *   B = "sob_demanda" — o botão "testar" aparece na entrada; quiz só quando clicado.
- */
+ *
+ * UM consumidor do contrato engine-neutro `LexiconPack`; o áudio sai pela
+ * `AudioEngine` (Web Audio). Um cliente 3D futuro reusaria os MESMOS módulos. */
 import { AudioEngine } from './nee/audio-engine.js';
 import { PackLoader } from './nee/pack-loader.js';
+import { Sequencer, MAX_STEPS } from './nee/sequencer.js';
 
 const engine = new AudioEngine();
 const loader = new PackLoader();
-window.__nee = { engine, loader };
+const sequencer = new Sequencer(engine);
+
+// Integração de bits YG-170 (client-side, sequencer).
+// Design A/B escolhido: gravar RENDE bits (floor(bits_per_symbol)/passo, mín 1);
+// salvar CUSTA bits (ceil(bits_per_symbol)). Saldo nunca negativo.
+// Alternativa B: salvar grátis + gastar bits para ouvir motivos alheios (futuro).
+// Decisão registrada no CHANGELOG-PENDING/YG-170.md.
+// Obs: distinto do score/bits server-side do YG-168 (HUD #bits-hud).
+const bits = { balance: 0, perSymbol: 1 };
+
+// expõe p/ e2e/observabilidade
+window.__nee = { engine, loader, sequencer, bits };
 
 // ── A/B de timing do quiz ────────────────────────────────────────────────────
 const QUIZ_VARIANT_KEY = 'nee_quiz_variant';
@@ -207,7 +226,31 @@ function openQuiz(pack, entry) {
   quizOverlay.classList.add('open');
 }
 
-// ── Render ───────────────────────────────────────────────────────────────────
+// ── Bits HUD (música — YG-170, client-side) ───────────────────────────────────
+
+const musicBitsEl = document.getElementById('music-bits');
+function updateBitsHud() {
+  if (musicBitsEl) musicBitsEl.textContent = `⚡ ${bits.balance} bits`;
+}
+
+// ── Compose status ─────────────────────────────────────────────────────────────
+
+const composeStatusEl = document.getElementById('compose-status');
+const composeMeta = document.getElementById('compose-meta');
+function updateComposeStatus() {
+  if (!composeStatusEl) return;
+  const n = sequencer.steps.length;
+  if (sequencer.recording) {
+    composeStatusEl.textContent = `⏺ Gravando… ${n}/${MAX_STEPS} passos`;
+  } else if (n > 0) {
+    const cost = Math.ceil(bits.perSymbol);
+    composeStatusEl.textContent = `${n} passos gravados${cost > 0 ? ` · salvar custa ${cost} bit${cost !== 1 ? 's' : ''}` : ''}.`;
+  } else {
+    composeStatusEl.textContent = 'Clique em ⏺ Gravar e depois nas notas para compor.';
+  }
+}
+
+// ── Render de pacote ───────────────────────────────────────────────────────────
 function renderPack(pack, gridId, metaId) {
   const grid = document.getElementById(gridId);
   const meta = document.getElementById(metaId);
@@ -254,10 +297,26 @@ function renderPack(pack, gridId, metaId) {
     });
     btn.appendChild(revealBtn);
 
-    // Click principal: toca o áudio + descoberta + quiz (se variante imediata)
+    // Click principal: em modo gravação (YG-170) registra o passo no sequencer e
+    // rende bits client-side; fora dele, toca o áudio + descoberta + quiz (YG-168).
     let played = false;
     btn.addEventListener('click', async (e) => {
       if (e.target === revealBtn || revealBtn.contains(e.target)) return;
+
+      // ── Modo compor andando (YG-170) ──
+      if (sequencer.recording) {
+        const freqs = sequencer.step(entry);
+        if (freqs) {
+          const earned = Math.max(1, Math.floor(bits.perSymbol));
+          bits.balance += earned;
+          updateBitsHud();
+          updateComposeStatus();
+          log(`⏺ ${entry.term} — passo ${sequencer.steps.length}/${MAX_STEPS} +${earned}bit`);
+        }
+        return;
+      }
+
+      // ── Modo normal: tocar + descobrir + quiz (YG-168) ──
       const ok = engine.play(entry.audio);
       log(
         ok
@@ -291,16 +350,107 @@ function renderPack(pack, gridId, metaId) {
   }
 }
 
+// ── Controles de composição (YG-170) ───────────────────────────────────────────
+
+const bpmInput = document.getElementById('bpm');
+const btnRecord = document.getElementById('btn-record');
+const btnStop = document.getElementById('btn-stop');
+const btnReplay = document.getElementById('btn-replay');
+const btnSave = document.getElementById('btn-save');
+
+if (btnRecord) btnRecord.addEventListener('click', () => {
+  sequencer.bpm = Number(bpmInput?.value) || 120;
+  sequencer.startRecording();
+  btnRecord.classList.add('recording');
+  btnRecord.disabled = true;
+  btnStop.disabled = false;
+  btnReplay.disabled = true;
+  btnSave.disabled = true;
+  updateComposeStatus();
+  log(`⏺ Gravando a ${sequencer.bpm} BPM — clique nas notas para compor`);
+});
+
+if (btnStop) btnStop.addEventListener('click', () => {
+  sequencer.stopRecording();
+  btnRecord.classList.remove('recording');
+  btnRecord.disabled = false;
+  btnStop.disabled = true;
+  const hasSteps = sequencer.steps.length > 0;
+  btnReplay.disabled = !hasSteps;
+  btnSave.disabled = !hasSteps;
+  updateComposeStatus();
+  log(`⏹ Parado — ${sequencer.steps.length} passos gravados`);
+});
+
+if (btnReplay) btnReplay.addEventListener('click', () => {
+  const ok = sequencer.replay();
+  log(ok ? `▶ Reproduzindo motivo (${sequencer.steps.length} passos)…` : '· Nenhum passo gravado');
+});
+
+if (btnSave) btnSave.addEventListener('click', async () => {
+  const seq = sequencer.toSequence();
+  if (!seq) { log('· Nenhum passo para salvar'); return; }
+
+  const cost = Math.ceil(bits.perSymbol);
+  if (cost > 0 && bits.balance < cost) {
+    log(`⚠ Bits insuficientes para salvar (precisa ${cost}, tem ${bits.balance})`);
+    return;
+  }
+
+  const token = localStorage.getItem('jwt_token') || localStorage.getItem('token') || '';
+  if (!token) {
+    log('⚠ Login necessário para salvar o motivo');
+    return;
+  }
+
+  const entry = {
+    term: `motivo-${sequencer.steps.length}p`,
+    role: 'motif',
+    gloss: `Motivo de ${sequencer.steps.length} passos a ${sequencer.bpm} BPM.`,
+    audio: seq,
+    pos: { x: 0.0, y: 0.0, z: 0.0 },
+  };
+
+  try {
+    const resp = await fetch('/api/v1/comunicacao/motivos', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(entry),
+    });
+    if (resp.ok) {
+      bits.balance = Math.max(0, bits.balance - cost);
+      updateBitsHud();
+      btnSave.disabled = true;
+      log(`💾 Motivo salvo! Custo: ${cost} bit${cost !== 1 ? 's' : ''}. Saldo: ${bits.balance}`);
+    } else if (resp.status === 401) {
+      log('⚠ Login necessário para salvar o motivo');
+    } else {
+      log(`⚠ Erro ao salvar: HTTP ${resp.status}`);
+    }
+  } catch (e) {
+    log(`⚠ Erro ao salvar: ${e.message}`);
+  }
+});
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 async function boot() {
   await fetchScore();
   try {
     const music = await loader.load('musica');
+    // bits_per_symbol do pack de música define o custo/ganho de bits (YG-170)
+    if (music.entropy_stats) bits.perSymbol = music.entropy_stats.bits_per_symbol;
     renderPack(music, 'music-grid', 'music-meta');
     const lang = await loader.load('guarani-mbya');
     renderPack(lang, 'language-grid', 'language-meta');
     log(`pacotes residentes: ${loader.residentEntries} entradas (teto ${loader.cap}).`);
     log(`quiz variant: ${QUIZ_VARIANT}`);
+    if (composeMeta) {
+      composeMeta.textContent = `BPM configurável · teto ${MAX_STEPS} passos`;
+    }
+    updateComposeStatus();
   } catch (e) {
     log(`erro ao carregar pacotes: ${e.message}`);
   }
