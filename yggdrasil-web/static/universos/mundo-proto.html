@@ -89,6 +89,34 @@
     .hb-nav { font: inherit; border: 1px solid #2a2a40; background: #1c1c28; color: #cbd5e1; border-radius: 6px; padding: .15rem .5rem; cursor: pointer; }
     .hb-nav:hover { border-color: #6366f1; }
     @media (max-width: 720px) { main { grid-template-columns: 1fr; } aside { display: none; } }
+    /* ── missões (tutorial 2 páginas) ─── */
+    #missao { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: none; align-items: center; justify-content: center; z-index: 50; }
+    #missao.open { display: flex; }
+    .ms-card { width: min(480px, 92vw); background: #14141c; border: 1px solid #4a3a6a; border-radius: 14px; padding: 1.5rem 1.6rem; position: relative; }
+    .ms-badge { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .08em; padding: .2rem .5rem; border-radius: 5px; background: #2a1a4a; color: #c4b5fd; margin-bottom: .7rem; }
+    .ms-card h2 { font-size: 1.05rem; color: #e8e3d3; margin-bottom: .55rem; }
+    .ms-card p { font-size: .88rem; color: #b0b0c4; line-height: 1.6; margin-bottom: .5rem; }
+    .ms-anim { margin: 1rem auto; width: 220px; height: 70px; position: relative; overflow: hidden; border-radius: 8px; background: #0d0d14; border: 1px solid #262633; }
+    .ms-note { position: absolute; top: 18px; left: 20px; width: 50px; height: 34px; background: #1b1b28; border: 1px solid #4a4a6a; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: .75rem; color: #e8e3d3; animation: ms-drag 2.4s ease-in-out infinite; }
+    .ms-cursor { position: absolute; top: 26px; left: 28px; font-size: 1.1rem; animation: ms-cursor 2.4s ease-in-out infinite; pointer-events: none; }
+    @keyframes ms-drag {
+      0%,15%  { left: 20px; }
+      55%,70% { left: 130px; }
+      90%,100%{ left: 20px; }
+    }
+    @keyframes ms-cursor {
+      0%,15%  { left: 28px; top: 26px; }
+      55%,70% { left: 138px; top: 26px; }
+      90%,100%{ left: 28px; top: 26px; }
+    }
+    .ms-dots { display: flex; gap: .4rem; justify-content: center; margin: .8rem 0 .4rem; }
+    .ms-dot { width: 7px; height: 7px; border-radius: 50%; background: #33334a; }
+    .ms-dot.on { background: #6366f1; }
+    .ms-footer { display: flex; align-items: center; justify-content: space-between; margin-top: .8rem; }
+    .ms-skip { font: inherit; font-size: .78rem; background: none; border: none; color: #6f6f7d; cursor: pointer; padding: 0; }
+    .ms-skip:hover { color: #9a9aae; }
+    .ms-next { font: inherit; font-size: .82rem; padding: .4rem .9rem; border: none; background: #6366f1; color: #fff; border-radius: 7px; cursor: pointer; }
+    .ms-next:hover { background: #7578f3; }
   </style>
 </head>
 <body>
@@ -117,6 +145,7 @@
       </aside>
     </main>
     <div id="overlay"></div>
+    <div id="missao"></div>
   </div>
   <script defer src="/static/telemetria.js"></script>
   <script type="module" src="/static/universos/mundo/proto.js"></script>

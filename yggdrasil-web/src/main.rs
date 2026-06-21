@@ -445,6 +445,12 @@ async fn main() -> anyhow::Result<()> {
 
     // YG-139: motor NLP de corpus (DuckDB em memória, montado do canônico no
     // boot). Best-effort: se o DuckDB falhar, o router de corpus não sobe.
+    // YG-146: NPC endpoint (Ollama env-gated + fallback determinístico).
+    let npc_state = Arc::new(api::npc::NpcState::from_env());
+    let npc_router = Router::new()
+        .route("/api/v1/npc", axum::routing::post(api::npc::post_npc))
+        .with_state(npc_state);
+
     let corpus_router = match corpus_nlp::CorpusDb::build(std::path::Path::new(
         &comunicacao_lexicon_dir,
     )) {
@@ -654,6 +660,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(stream_router)
         .merge(atividade_router)
         .merge(corpus_router)
+        .merge(npc_router)
         // Criar universo autorado (template picker + meus universos). O segmento
         // estático "new" vence a captura {id} da rota do player abaixo.
         .route("/universos/instance/new", get(serve_instance_new))

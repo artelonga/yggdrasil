@@ -24,6 +24,7 @@ function onInteract(ent) {
   if (ent.type === 'door') {
     navStack.push({ from: curId, at: { x: ent.x, y: ent.y } });
     const tgt = ROOMS[ent.target];
+    triggerMissaoPasta();
     enterRoom(ent.target, tgt && tgt.exit ? { x: tgt.exit.x, y: tgt.exit.y - 1 } : null);
   } else if (ent.type === 'exit') {
     const back = navStack.pop();
@@ -241,6 +242,81 @@ async function abrirNPC(p) {
   $('npc-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
 }
 
+// ── missões: tutorial 2 páginas (first-time, gatilho ao entrar numa pasta) ──
+// Página 1: boas-vindas + movimento. Página 2: drag-drop (com animação).
+// Visto = salvo em localStorage p/ nunca re-disparar (a não ser que o usuário
+// limpe o storage). Gatilho extra: ao entrar na 1ª pasta da sessão.
+const MS_VISITED_KEY = 'mundo_missao_v1';
+let missaoPastaTriggerado = false;
+
+const MISSOES = [
+  {
+    badge: 'MISSÃO 1 de 2 · Boas-vindas',
+    title: '🧭 Bem-vindo ao Mundo!',
+    body: `Você está num universo 2D navegável. Cada <b>pasta</b> é uma sala, cada <b>nota</b>
+    é um objeto no chão.<br><br>
+    <b>Para andar</b>, use <kbd>WASD</kbd> ou <kbd>↑↓←→</kbd> — segure para acelerar.
+    Ou simplesmente <b>clique</b> num tile e o avatar vai até lá.<br><br>
+    <b>Para entrar numa sala</b>, pise na porta (📁). Para voltar, pise no tile ↑&nbsp;voltar.`,
+    anim: false,
+  },
+  {
+    badge: 'MISSÃO 2 de 2 · Organizar',
+    title: '✋ Objetos movem com click-drag',
+    body: `Você pode <b>arrastar</b> qualquer nota para um tile livre da sala — a posição fica
+    salva. Se soltar sobre uma <b>porta (📁)</b>, a nota <b>muda de pasta</b> e a árvore
+    lateral atualiza na hora.<br><br>Experimente: clique e segure uma nota, arraste, solte.`,
+    anim: true,
+  },
+];
+
+function mostrarMissao() {
+  try { if (localStorage.getItem(MS_VISITED_KEY)) return; } catch (_) {}
+  let page = 0;
+
+  function renderPage() {
+    const m = MISSOES[page];
+    const dots = MISSOES.map((_, i) => `<span class="ms-dot${i === page ? ' on' : ''}"></span>`).join('');
+    const anim = m.anim ? `
+      <div class="ms-anim" aria-hidden="true">
+        <div class="ms-note">📝 nota</div>
+        <div class="ms-cursor">👆</div>
+      </div>` : '';
+    $('missao').innerHTML = `
+      <div class="ms-card" role="dialog" aria-modal="true" aria-label="${m.title}">
+        <span class="ms-badge">${m.badge}</span>
+        <h2>${m.title}</h2>
+        <p>${m.body}</p>
+        ${anim}
+        <div class="ms-dots">${dots}</div>
+        <div class="ms-footer">
+          <button class="ms-skip" id="ms-skip">Pular tutorial</button>
+          <button class="ms-next" id="ms-next">${page < MISSOES.length - 1 ? 'Próximo →' : 'Começar!'}</button>
+        </div>
+      </div>`;
+    $('ms-skip').onclick = fecharMissao;
+    $('ms-next').onclick = () => {
+      if (page < MISSOES.length - 1) { page++; renderPage(); }
+      else fecharMissao();
+    };
+  }
+
+  function fecharMissao() {
+    $('missao').classList.remove('open');
+    try { localStorage.setItem(MS_VISITED_KEY, '1'); } catch (_) {}
+  }
+
+  renderPage();
+  $('missao').classList.add('open');
+}
+
+function triggerMissaoPasta() {
+  if (missaoPastaTriggerado) return;
+  try { if (localStorage.getItem(MS_VISITED_KEY)) return; } catch (_) {}
+  missaoPastaTriggerado = true;
+  mostrarMissao();
+}
+
 // ── seletor de tema ──────────────────────────────────────────────────────────
 function renderTemas() {
   const fam = { medieval: '🏰 Medieval', garden: '🌿 Jardim', modern: '🏢 Moderno' };
@@ -346,8 +422,18 @@ try {
 setTema(THEME_BY_ID[inicial] ? inicial : 'medieval-castle');
 enterRoom('raiz');
 world.start();
+// missão aparece na 1ª visita, 800ms após a primeira pintura do canvas
+setTimeout(mostrarMissao, 800);
 $('nova-pasta').onclick = novaPasta;
 $('fb-btn').onclick = abrirFeedback;
 $('npc-top').onclick = () => abrirNPC({ name: 'Guia' });
 $('npc-ab').onclick = () => { npcTop = !npcTop; $('npc-ab').textContent = npcTop ? 'NPC: topo (B)' : 'NPC: lateral (A)'; renderFerramentas(); };
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hidePanel(); fecharOverlay(); } });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    hidePanel(); fecharOverlay();
+    if ($('missao').classList.contains('open')) {
+      $('missao').classList.remove('open');
+      try { localStorage.setItem(MS_VISITED_KEY, '1'); } catch (_) {}
+    }
+  }
+});
