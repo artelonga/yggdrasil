@@ -4,6 +4,7 @@ pub mod analytics_stream;
 mod api;
 mod auth;
 mod auth_co;
+pub mod campanha;
 pub mod catalog;
 pub mod co_bridge_inbound;
 pub mod co_bridge_producer;
@@ -435,6 +436,27 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(feedback_state);
 
+    // Campanha (YG-161) — crowdfunding independente: ledger de apoios (pledges),
+    // tiers canônicos e página de créditos. Pledge nasce `pendente`; a confirmação
+    // (admin, fora de banda) credita as sementes do tier. Mesma SQLite + sementes.
+    let campanha_state = Arc::new(api::campanha::CampanhaState {
+        jwt_secret: auth_state.jwt_secret.clone(),
+        db: Arc::new(
+            campanha::PledgeDb::open(&db_path).map_err(|e| anyhow::anyhow!("campanha db: {e}"))?,
+        ),
+        sementes: sementes.clone(),
+        admin_token: std::env::var("YGGDRASIL_ADMIN_TOKEN").ok(),
+    });
+    let campanha_router = Router::new()
+        .route("/api/v1/campanha/tiers", get(api::campanha::list_tiers))
+        .route("/api/v1/campanha/apoiar", post(api::campanha::apoiar))
+        .route("/api/v1/creditos", get(api::campanha::list_creditos))
+        .route(
+            "/api/v1/campanha/pledges/{id}/confirmar",
+            post(api::campanha::confirmar_pledge),
+        )
+        .with_state(campanha_state);
+
     // Universo `comunicacao` — salas interativas de léxico cross-linguístico
     // (Mbyá Guaraní × Iorubá). Auto-contido: salas em disco + write-back de
     // termos novos no repo `comunicacao` (markdown) + fila de revisão.
@@ -650,6 +672,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(instances_router)
         .merge(profile_router)
         .merge(feedback_router)
+        .merge(campanha_router)
         .merge(comunicacao_router)
         .merge(stream_router)
         .merge(atividade_router)
@@ -668,6 +691,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/analytics", get(serve_analytics))
         // YG-143: landing de campanha (tiers de REWARDS.md + stats ao vivo)
         .route("/campanha", get(serve_campanha))
+        // YG-161: créditos — apoiadores que optaram por aparecer (público)
+        .route("/creditos", get(serve_creditos))
         // YG-144: reader do SRD de Shandara (estático vence o fallback {slug})
         .route("/universos/shandara", get(serve_shandara))
         .route("/api/v1/shandara/srd", get(serve_shandara_tree))
@@ -743,6 +768,11 @@ async fn serve_neuro() -> impl IntoResponse {
 /// YG-143: landing de campanha (da semente ao topo) — tiers + stats ao vivo.
 async fn serve_campanha() -> impl IntoResponse {
     Html(include_str!("../static/campanha.html"))
+}
+
+/// YG-161: créditos — rol de apoiadores (lê `GET /api/v1/creditos`, sem e-mail).
+async fn serve_creditos() -> impl IntoResponse {
+    Html(include_str!("../static/creditos.html"))
 }
 
 // ─── YG-144: reader do SRD de Shandara (conteúdo embutido) ───────────────────

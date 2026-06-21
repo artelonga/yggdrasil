@@ -1,6 +1,8 @@
-/* /campanha — landing de campanha (YG-143). Tiers espelham docs/REWARDS.md;
- * stats ao vivo de /api/v1/stats + /universos + léxico. CTA registra interesse
- * no canal de feedback (sem pagamento ainda — Catarse é externo). */
+/* /campanha — landing de campanha (YG-143 + YG-161). A prosa das recompensas
+ * espelha docs/REWARDS.md (aqui); preço/slug vêm do backend
+ * (/api/v1/campanha/tiers, fonte canônica) com fallback aos preços locais.
+ * O CTA registra um APOIO (pledge) independente em /api/v1/campanha/apoiar —
+ * crowdfunding próprio, sem Catarse; nada é cobrado aqui (PIX vem depois). */
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
@@ -8,8 +10,10 @@
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var fmt = function (n) { return n == null ? '—' : Number(n).toLocaleString('pt-BR'); };
   function J(u) { return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
+  function token() { try { return localStorage.getItem('yggdrasil-jwt'); } catch (e) { return null; } }
 
-  // espelha docs/REWARDS.md (fonte canônica da prosa; aqui só o display)
+  // Prosa das recompensas (espelha docs/REWARDS.md). preco/slug aqui são fallback;
+  // o backend (/api/v1/campanha/tiers) é a fonte canônica de preço quando responde.
   var TIERS = [
     { slug: 'semente', nome: 'Semente', preco: 25, rec: ['Acesso à v1.0 + nome nos créditos', 'Newsletter mensal de desenvolvimento'] },
     { slug: 'raiz', nome: 'Raiz', preco: 60, rec: ['Tudo da Semente', 'Skin "raiz dourada" + 1.000 sementes', 'Selo de apoiador'] },
@@ -26,13 +30,24 @@
         '<div class="price">R$ ' + t.preco + ' <small>apoio</small></div>' +
         (t.limite ? '<div class="limit">' + esc(t.limite) + '</div>' : '') +
         '<ul>' + t.rec.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
-        '<button data-tier="' + esc(t.slug) + '" data-nome="' + esc(t.nome) + '">Tenho interesse</button>' +
+        '<button data-tier="' + esc(t.slug) + '" data-nome="' + esc(t.nome) + '">Apoiar</button>' +
       '</div>';
     }).join('');
     $('tiers').querySelectorAll('button[data-tier]').forEach(function (b) {
-      b.addEventListener('click', function () { abrirInteresse(b.dataset.tier, b.dataset.nome); });
+      b.addEventListener('click', function () { abrirApoio(b.dataset.tier, b.dataset.nome); });
     });
   }
+
+  // Preço canônico do backend sobrescreve o fallback local (slug casa os dois).
+  J('/api/v1/campanha/tiers').then(function (rows) {
+    if (Array.isArray(rows)) {
+      rows.forEach(function (bt) {
+        var local = TIERS.find(function (t) { return t.slug === bt.slug; });
+        if (local && typeof bt.preco === 'number') local.preco = bt.preco;
+      });
+    }
+    renderTiers();
+  });
 
   // ── stats ao vivo (credibilidade: a plataforma já existe) ──
   Promise.all([J('/api/v1/stats'), J('/api/v1/universos'), J('/api/v1/corpus')]).then(function (r) {
@@ -44,11 +59,11 @@
     $('s-lex').textContent = fmt(mbya ? mbya.terms : null);
   });
 
-  // ── modal de interesse → canal de feedback ──
+  // ── modal de apoio → ledger independente (/api/v1/campanha/apoiar) ──
   var tierAtual = null;
-  function abrirInteresse(slug, nome) {
+  function abrirApoio(slug, nome) {
     tierAtual = { slug: slug, nome: nome };
-    $('ap-title').textContent = 'Interesse — tier ' + nome;
+    $('ap-title').textContent = 'Apoiar — tier ' + nome;
     $('ap-ok').hidden = true;
     $('ap-send').disabled = false;
     $('ap').classList.add('open');
@@ -59,21 +74,24 @@
   $('ap-send').addEventListener('click', function () {
     if (!tierAtual) return;
     $('ap-send').disabled = true;
-    fetch('/api/v1/feedback', {
+    var headers = { 'Content-Type': 'application/json' };
+    var t = token();
+    if (t) headers.Authorization = 'Bearer ' + t; // logado → sementes na confirmação
+    fetch('/api/v1/campanha/apoiar', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify({
-        universe: 'campanha',
-        kind: 'apoio',
-        message: 'interesse no tier ' + tierAtual.slug + ' (R$)',
-        name: ($('ap-nome').value || '').trim() || null,
+        tier: tierAtual.slug,
+        nome: ($('ap-nome').value || '').trim() || null,
         email: ($('ap-email').value || '').trim() || null,
+        mensagem: ($('ap-msg').value || '').trim() || null,
+        mostrar_creditos: !!$('ap-cred').checked,
       }),
     }).then(function (resp) {
       if (resp.ok) {
         $('ap-ok').hidden = false;
-        if (window.yggTelemetria) window.yggTelemetria.track('campanha_interesse', { tier: tierAtual.slug });
-        setTimeout(fechar, 1400);
+        if (window.yggTelemetria) window.yggTelemetria.track('campanha_apoio', { tier: tierAtual.slug });
+        setTimeout(fechar, 2200);
       } else { $('ap-send').disabled = false; }
     }).catch(function () { $('ap-send').disabled = false; });
   });

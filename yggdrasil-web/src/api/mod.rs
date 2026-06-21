@@ -1,3 +1,4 @@
+pub mod campanha;
 pub mod feedback;
 pub mod instances;
 pub mod me;

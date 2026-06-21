@@ -51,6 +51,9 @@
       border-radius: 8px; padding: .6rem; font: inherit; }
     #ap .row button.primary { background: var(--gold); color: #1a1408; font-weight: 700; border-color: var(--gold); }
     #ap .ok { color: #6dbf8b; font-size: .85rem; }
+    #ap .check { display: flex; align-items: flex-start; gap: .5rem; font-size: .82rem; color: var(--dim); margin-bottom: .8rem; }
+    #ap .check input { width: auto; margin: .2rem 0 0; }
+    #ap .ok a { color: var(--gold); }
   </style>
 </head>
 <body>
@@ -75,22 +78,27 @@
     <p class="foot">
       As recompensas seguem a metáfora da árvore (sementes são também a moeda interna
       da plataforma). Detalhes completos: <a href="/static/../docs/REWARDS.md">REWARDS.md</a>.
-      O Yggdrasil já está no ar — explore o <a href="/universos">catálogo</a> e os
-      <a href="/analytics">números ao vivo</a> enquanto a campanha não abre.
+      O Yggdrasil já está no ar — explore o <a href="/universos">catálogo</a>, os
+      <a href="/analytics">números ao vivo</a> e quem já planta junto nos
+      <a href="/creditos">créditos</a>.
     </p>
   </div>
 
-  <!-- modal: registra interesse (reusa o canal de feedback; sem pagamento ainda) -->
+  <!-- modal: registra um apoio (pledge independente; instruções de pagamento depois) -->
   <div id="ap" role="dialog" aria-modal="true">
     <div class="box">
-      <h3 id="ap-title">Tenho interesse</h3>
-      <p>A campanha ainda não abriu. Deixe contato e avisamos quando este tier estiver disponível — sem compromisso.</p>
-      <input id="ap-nome" type="text" placeholder="nome (opcional)" autocomplete="name">
-      <input id="ap-email" type="email" placeholder="e-mail para avisar (opcional)" autocomplete="email">
-      <div class="ok" id="ap-ok" hidden>✓ Anotado! Avisaremos quando abrir.</div>
+      <h3 id="ap-title">Apoiar</h3>
+      <p>Crowdfunding independente — sem intermediário. Registre seu apoio agora;
+        nada é cobrado aqui: enviaremos as instruções de pagamento (PIX) em seguida.</p>
+      <input id="ap-nome" type="text" placeholder="nome (como quer aparecer nos créditos)" autocomplete="name">
+      <input id="ap-email" type="email" placeholder="e-mail para as instruções (opcional)" autocomplete="email">
+      <textarea id="ap-msg" rows="2" placeholder="recado público (opcional)"></textarea>
+      <label class="check"><input id="ap-cred" type="checkbox" checked>
+        <span>Mostrar meu nome nos <a href="/creditos" target="_blank">créditos</a> da campanha.</span></label>
+      <div class="ok" id="ap-ok" hidden>✓ Apoio registrado! Veja-se nos <a href="/creditos">créditos</a>. Enviaremos o PIX em breve.</div>
       <div class="row">
         <button id="ap-cancel">Fechar</button>
-        <button class="primary" id="ap-send">Registrar interesse</button>
+        <button class="primary" id="ap-send">Registrar apoio</button>
       </div>
     </div>
   </div>
