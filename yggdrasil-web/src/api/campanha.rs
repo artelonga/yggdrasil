@@ -53,6 +53,44 @@ fn bad(msg: &str) -> axum::response::Response {
         .into_response()
 }
 
+/// Valida o admin token (`YGGDRASIL_ADMIN_TOKEN`). Devolve `Some(401)` quando
+/// **rejeita** (não configurado ou token errado) e `None` quando autoriza —
+/// `Option` em vez de `Result` evita o `result_large_err` (Response é grande).
+/// Compartilhado pelas rotas de operador (confirmar / listar pledges).
+fn check_admin(state: &CampanhaState, headers: &HeaderMap) -> Option<axum::response::Response> {
+    let admin_token = match state.admin_token.as_deref() {
+        Some(t) => t,
+        None => {
+            return Some(
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(ErrorBody {
+                        error: "admin_token_nao_configurado".to_string(),
+                    }),
+                )
+                    .into_response(),
+            );
+        }
+    };
+    let provided = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if provided != admin_token {
+        return Some(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorBody {
+                    error: "token_invalido".to_string(),
+                }),
+            )
+                .into_response(),
+        );
+    }
+    None
+}
+
 fn clean(v: Option<String>, max: usize) -> Option<String> {
     v.map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -234,6 +272,19 @@ pub async fn progresso(State(state): State<Arc<CampanhaState>>) -> Json<Progress
     })
 }
 
+/// `GET /api/v1/campanha/pledges` — lista **completa** de apoios para o operador
+/// (YG-165). Gated por `YGGDRASIL_ADMIN_TOKEN`. **Única** rota que devolve
+/// `email`/`user_sub` — as públicas (`/creditos`, `/progresso`) nunca expõem PII.
+pub async fn list_pledges(
+    State(state): State<Arc<CampanhaState>>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    if let Some(r) = check_admin(&state, &headers) {
+        return r;
+    }
+    Json(state.db.list_all()).into_response()
+}
+
 /// `POST /api/v1/campanha/pledges/{id}/confirmar` — admin confirma o pagamento
 /// (registrado fora de banda) e credita as sementes do tier ao usuário, se
 /// logado. Gated por `YGGDRASIL_ADMIN_TOKEN`. Só credita na primeira confirmação.
@@ -242,31 +293,8 @@ pub async fn confirmar_pledge(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> axum::response::Response {
-    let admin_token = match &state.admin_token {
-        Some(t) => t.clone(),
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(ErrorBody {
-                    error: "admin_token_nao_configurado".to_string(),
-                }),
-            )
-                .into_response();
-        }
-    };
-    let provided = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .unwrap_or("");
-    if provided != admin_token {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorBody {
-                error: "token_invalido".to_string(),
-            }),
-        )
-            .into_response();
+    if let Some(r) = check_admin(&state, &headers) {
+        return r;
     }
 
     let info = match state.db.confirmar(&id) {
@@ -347,6 +375,7 @@ mod tests {
             .route("/api/v1/campanha/tiers", get(list_tiers))
             .route("/api/v1/campanha/apoiar", post(apoiar))
             .route("/api/v1/campanha/progresso", get(progresso))
+            .route("/api/v1/campanha/pledges", get(list_pledges))
             .route("/api/v1/creditos", get(list_creditos))
             .route(
                 "/api/v1/campanha/pledges/{id}/confirmar",
@@ -580,6 +609,59 @@ mod tests {
         )
         .await;
         assert_eq!(st, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn list_pledges_sem_token_401() {
+        let (app, _s, _dir) = app();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/campanha/pledges")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn list_pledges_com_admin_traz_tudo_inclusive_email() {
+        let (app, state, _dir) = app();
+        state.db.apoiar(&NewPledge {
+            tier: "raiz",
+            valor: 60,
+            nome: Some("Ana"),
+            email: Some("ana@x.com"),
+            user_sub: Some("u1"),
+            mensagem: Some("vamo"),
+            mostrar_creditos: false, // mesmo opt-out, o operador vê
+        });
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/campanha/pledges")
+                    .header("authorization", "Bearer sekret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8_lossy(&bytes);
+        assert!(body.contains("Ana"));
+        assert!(
+            body.contains("ana@x.com"),
+            "visão do operador inclui e-mail"
+        );
+        assert!(body.contains("u1"));
+        assert!(body.contains("pendente"));
     }
 
     #[tokio::test]

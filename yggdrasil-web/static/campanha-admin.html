@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Admin de apoios — Yggdrasil</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --gold:#e9c349; --ink:#e5e2e1; --dim:#c5c6cc; --bg:#131313; --bg2:#1c1b1b; --line:#2a2a2a; }
+    body { background: var(--bg); color: var(--ink); font-family: system-ui, sans-serif; line-height: 1.5; padding: 2rem 1.2rem; }
+    .wrap { max-width: 60rem; margin: 0 auto; }
+    h1 { font-family: Georgia, serif; font-style: italic; font-size: 1.8rem; margin-bottom: .3rem; }
+    p.sub { color: var(--dim); font-size: .85rem; margin-bottom: 1.4rem; }
+    .bar { display: flex; gap: .6rem; margin-bottom: 1.2rem; flex-wrap: wrap; align-items: center; }
+    .bar input { flex: 1; min-width: 14rem; background: #07070b; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: .55rem .7rem; font: inherit; }
+    .bar button { background: var(--gold); color: #1a1408; font-weight: 700; border: 0; border-radius: 8px; padding: .55rem 1rem; cursor: pointer; font: inherit; }
+    .bar button:hover { filter: brightness(1.08); }
+    .msg { font-size: .85rem; margin-bottom: 1rem; min-height: 1.2em; }
+    .msg.err { color: #ff8f8f; } .msg.ok { color: #6dbf8b; }
+    .sum { color: var(--dim); font-size: .85rem; margin-bottom: .8rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    th, td { text-align: left; padding: .5rem .55rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--dim); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; }
+    td .em { color: var(--dim); font-size: .76rem; }
+    .st { font-size: .72rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+    .st.pendente { background: #4a3a16; color: #ffcf6b; } .st.confirmado { background: #1e4a32; color: #74e0a8; }
+    td button.conf { background: #1e4a32; color: #74e0a8; border: 1px solid #2c6a48; border-radius: 7px; padding: .3rem .6rem; cursor: pointer; font: inherit; font-size: .76rem; }
+    td button.conf:hover { filter: brightness(1.15); }
+    td button.conf:disabled { opacity: .5; cursor: default; }
+    .val { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Admin de apoios</h1>
+    <p class="sub">Apoios da campanha (YG-165). Informe o admin token para listar e confirmar pagamentos. Esta página não é pública.</p>
+    <div class="bar">
+      <input id="tok" type="password" placeholder="admin token (YGGDRASIL_ADMIN_TOKEN)" autocomplete="off">
+      <button id="load">Carregar</button>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="sum" id="sum"></div>
+    <table id="tbl" hidden>
+      <thead><tr><th>Quando</th><th>Tier</th><th class="val">Valor</th><th>Apoiador</th><th>Recado</th><th>Status</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <script src="/static/campanha-admin.js"></script>
+</body>
+</html>
