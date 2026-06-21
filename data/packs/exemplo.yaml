@@ -1,0 +1,72 @@
+# Pack-exemplo de autoria por arquivo — YG-166
+#
+# Demonstra o formato ponta-a-ponta: note + chord + sequence + speech.
+# Drope um *.yaml em data/packs/ (ou $YGGDRASIL_PACKS_DIR) para criar
+# uma nova linguagem/domínio sem editar nem recompilar Rust.
+
+id: exemplo
+kind: music
+notation: 12tet
+title: "Pack-exemplo — nota, acorde, sequência e fala"
+theme: aurora
+
+entries:
+  # ── nota nomeada ─────────────────────────────────────────────────────────
+  - term: "A4"
+    gloss: "Nota Lá — 440 Hz (afinação de referência)"
+    role: note
+    pos: { x: 0.0, y: 0.0 }
+    audio:
+      note: "A4"
+      waveform: triangle
+      duration_ms: 500
+
+  # ── acorde (tríade maior) ─────────────────────────────────────────────────
+  - term: "Dó maior"
+    gloss: "Tríade: C4 + E4 + G4"
+    role: chord
+    pos: { x: 1.0, y: 0.0 }
+    audio:
+      chord: ["C4", "E4", "G4"]
+      waveform: sawtooth
+      duration_ms: 900
+
+  # ── acorde menor ──────────────────────────────────────────────────────────
+  - term: "Lá menor"
+    gloss: "Tríade: A4 + C5 + E5 (relativa de Dó maior)"
+    role: chord
+    pos: { x: 2.0, y: 0.0 }
+    audio:
+      chord: ["A4", "C5", "E5"]
+      waveform: sawtooth
+      duration_ms: 900
+
+  # ── sequência / motivo ────────────────────────────────────────────────────
+  - term: "Motivo I–vi"
+    gloss: "Progressão mínima: Dó maior → Lá menor"
+    role: motif
+    pos: { x: 0.0, y: 2.0 }
+    audio:
+      sequence:
+        - chord: ["C4", "E4", "G4"]
+          duration_ms: 480
+        - chord: ["A4", "C5", "E5"]
+          duration_ms: 480
+      waveform: square
+
+  # ── speech (pronúncia de idioma) ─────────────────────────────────────────
+  - term: "ñe'ẽ"
+    gloss: "palavra; fala; alma-linguagem (Guaraní Mbyá)"
+    role: word
+    pos: { x: 1.0, y: 2.0 }
+    audio:
+      speech:
+        text: "nhe en"
+        ipa: "ɲẽˈʔẽ"
+        lang: "gn"
+
+  # ── nota sem áudio (entrada muda — aceita por design) ───────────────────
+  - term: "Silêncio"
+    gloss: "Pausa — ausência de som também é música"
+    role: note
+    pos: { x: 2.0, y: 2.0 }

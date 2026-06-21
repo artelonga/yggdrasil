@@ -16,6 +16,7 @@
 pub mod caderno;
 pub mod lexicon;
 pub mod pack;
+pub mod pack_file;
 pub mod public;
 pub mod review;
 pub mod room;
@@ -29,6 +30,7 @@ pub use pack::{
     Adsr, EntropyStats, EntryAudio, LexiconPack, PackEntry, PackKind, PackSummary, Relation,
     Waveform, note_freq, seed_pack, seed_packs, seed_summaries,
 };
+pub use pack_file::{PackFileError, load_dir as load_packs_dir, load_file as load_pack_file};
 pub use public::{PUBLIC_MBYA, PUBLIC_YORUBA, SYSTEM_OWNER, ensure_public_rooms, is_public_id};
 pub use review::{ReviewItem, ReviewQueue};
 pub use room::{EditError, Element, LexiconLink, Link, Reference, Room, RoomEdit, Viewport};

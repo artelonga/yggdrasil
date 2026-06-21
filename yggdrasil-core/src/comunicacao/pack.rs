@@ -447,7 +447,7 @@ pub struct PackSummary {
 }
 
 impl PackSummary {
-    fn of(p: &LexiconPack) -> Self {
+    pub fn of(p: &LexiconPack) -> Self {
         Self {
             id: p.id.clone(),
             kind: p.kind,
