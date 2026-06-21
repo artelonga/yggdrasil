@@ -6,6 +6,17 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.36.1] — 2026-06-21 — Hotfix: Ayvu Rapyta acessível (loop de /login)
+
+### Fixed
+- **YG-167** — sala **pública** da comunicação prendia usuários com JWT velho num
+  loop `/login ↔ /universos/comunicacao` (não chegavam ao Ayvu Rapyta). No boot,
+  `GET /revisao` com token expirado dava 401 e `api()` redirecionava em **qualquer**
+  401, mesmo em conteúdo público. Agora o 401 **limpa o token inválido** e segue
+  anônimo; só escrita (POST/PATCH/DELETE) pede re-login. Bug 100% client-side (o
+  backend já servia salas `published` anonimamente). e2e de regressão
+  `comunicacao-stale-token`.
+
 ## [2.36.0] — 2026-06-21 — Campanha pronta para lançar (Mundo primário · apoio + PIX · créditos · Shandara)
 
 Fatia que fecha as lacunas north-star do roadmap para a campanha: o **Mundo**
