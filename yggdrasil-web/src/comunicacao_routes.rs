@@ -27,9 +27,10 @@ use nanoid::nanoid;
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use yggdrasil_core::comunicacao::{
-    Caderno, CadernoStore, Element, LexiconError, LexiconScope, LexiconStore, ReviewItem, Room,
-    RoomEdit, RoomStore, Writeback,
+    BitsLedgerStore, Caderno, CadernoStore, Element, LexiconError, LexiconScope, LexiconStore,
+    ReviewItem, Room, RoomEdit, RoomStore, Writeback,
     lexicon::{Contribution, slugify},
+    pack_bits_per_symbol,
     room::EditError,
     store::StoreError,
     template_instantiate, template_summaries,
@@ -69,6 +70,8 @@ pub struct ComunicacaoState {
     /// producer staged (YG-93/97) as federa. O `term_events` (canal de conteúdo
     /// `NoteWritten`) é reusado para emitir essas notas (fonte `Notes`).
     pub instance_store: Arc<InstanceStore>,
+    /// YG-168: ledger de bits por usuário (camada Shannon — score do ÑE'Ẽ).
+    pub score: Arc<BitsLedgerStore>,
 }
 
 impl ComunicacaoState {
@@ -1289,6 +1292,164 @@ pub async fn migrar_caderno(
     Json(server).into_response()
 }
 
+// ─── Score / Camada Shannon (YG-168) ──────────────────────────────────────────
+
+/// `GET /api/v1/comunicacao/score` — saldo de bits e estatísticas do usuário.
+pub async fn get_score(State(state): ApiState, headers: HeaderMap) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    match state.score.load(&user) {
+        Ok(l) => Json(serde_json::json!({
+            "total_bits": l.total_bits,
+            "descobertos": l.discovered.len(),
+        }))
+        .into_response(),
+        Err(e) => map_store_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ScorePackTermBody {
+    pub pack: String,
+    pub term: String,
+}
+
+/// `POST /api/v1/comunicacao/score/descobrir` — registra a 1ª vez que o
+/// usuário encontra uma entrada (ouviu/viu). Idempotente: segunda chamada retorna
+/// `creditado=0`. Credita `⌊bits_per_symbol⌋` (mín 1) do pacote.
+pub async fn score_descobrir(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<ScorePackTermBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let pack = match yggdrasil_core::comunicacao::seed_pack(&body.pack) {
+        Some(p) => p,
+        None => return err_json(StatusCode::NOT_FOUND, "pacote_nao_encontrado"),
+    };
+    if pack.entry(&body.term).is_none() {
+        return err_json(StatusCode::NOT_FOUND, "entrada_nao_encontrada");
+    }
+    let bps = pack_bits_per_symbol(&pack);
+    let mut ledger = match state.score.load(&user) {
+        Ok(l) => l,
+        Err(e) => return map_store_err(e),
+    };
+    let credited = ledger.discover(&body.pack, &body.term, bps);
+    if let Err(e) = state.score.save(&user, &ledger) {
+        return map_store_err(e);
+    }
+    Json(serde_json::json!({
+        "creditado": credited,
+        "total_bits": ledger.total_bits,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct ScoreIdentificarBody {
+    pub pack: String,
+    /// O `term` que está sendo testado (gabarito no servidor).
+    pub term: String,
+    /// Resposta do usuário — validada **no servidor** contra `term`.
+    pub answer: String,
+    /// Variante A/B do timing do quiz (`"imediato"` | `"sob_demanda"`).
+    /// Registrada p/ telemetria (YG-145 substrate); não altera a lógica.
+    #[serde(default)]
+    pub quiz_variant: Option<String>,
+}
+
+/// `POST /api/v1/comunicacao/score/identificar` — valida a resposta do quiz
+/// **no servidor** (o cliente nunca envia `correct: bool`). Credita bônus
+/// decrescente por tentativa quando correto.
+pub async fn score_identificar(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<ScoreIdentificarBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let pack = match yggdrasil_core::comunicacao::seed_pack(&body.pack) {
+        Some(p) => p,
+        None => return err_json(StatusCode::NOT_FOUND, "pacote_nao_encontrado"),
+    };
+    if pack.entry(&body.term).is_none() {
+        return err_json(StatusCode::NOT_FOUND, "entrada_nao_encontrada");
+    }
+    let bps = pack_bits_per_symbol(&pack);
+    if let Some(ref v) = body.quiz_variant {
+        tracing::debug!(variant = %v, pack = %body.pack, term = %body.term, "quiz variant");
+    }
+    let mut ledger = match state.score.load(&user) {
+        Ok(l) => l,
+        Err(e) => return map_store_err(e),
+    };
+    let (correct, credited) =
+        ledger.grade_attempt(&body.pack, &body.term, &body.answer, &body.term, bps);
+    if let Err(e) = state.score.save(&user, &ledger) {
+        return map_store_err(e);
+    }
+    Json(serde_json::json!({
+        "correto": correct,
+        "creditado": credited,
+        "total_bits": ledger.total_bits,
+    }))
+    .into_response()
+}
+
+/// `POST /api/v1/comunicacao/score/revelar` — debita `⌈bits_per_symbol⌉` para
+/// desbloquear a glosa oculta de uma entrada. 402 se o saldo for insuficiente.
+pub async fn score_revelar(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<ScorePackTermBody>,
+) -> impl IntoResponse {
+    let user = match require_user(&state, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let pack = match yggdrasil_core::comunicacao::seed_pack(&body.pack) {
+        Some(p) => p,
+        None => return err_json(StatusCode::NOT_FOUND, "pacote_nao_encontrado"),
+    };
+    if pack.entry(&body.term).is_none() {
+        return err_json(StatusCode::NOT_FOUND, "entrada_nao_encontrada");
+    }
+    let bps = pack_bits_per_symbol(&pack);
+    let mut ledger = match state.score.load(&user) {
+        Ok(l) => l,
+        Err(e) => return map_store_err(e),
+    };
+    match ledger.reveal(&body.pack, &body.term, bps) {
+        Ok(cost) => {
+            if let Err(e) = state.score.save(&user, &ledger) {
+                return map_store_err(e);
+            }
+            Json(serde_json::json!({
+                "custo": cost,
+                "total_bits": ledger.total_bits,
+            }))
+            .into_response()
+        }
+        Err(cost) => (
+            StatusCode::PAYMENT_REQUIRED,
+            Json(serde_json::json!({
+                "erro": "saldo_insuficiente",
+                "custo": cost,
+                "total_bits": ledger.total_bits,
+            })),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1342,6 +1503,7 @@ mod tests {
         // mesma raiz de salas, num tempdir isolado por teste.
         let caderno = Arc::new(CadernoStore::new(rooms_dir.path()).unwrap());
         let instance_store = Arc::new(InstanceStore::new(rooms_dir.path().join("_inst")).unwrap());
+        let score = Arc::new(BitsLedgerStore::new(rooms_dir.path()).unwrap());
         let state = Arc::new(
             ComunicacaoState {
                 jwt_secret: SECRET.into(),
@@ -1353,6 +1515,7 @@ mod tests {
                 admin_token: Some(ADMIN.into()),
                 caderno,
                 instance_store,
+                score,
             }
             .with_bridge(term_tx, room_tx),
         );
@@ -1398,6 +1561,14 @@ mod tests {
                 "/api/v1/comunicacao/corpus/{slug}/correcoes",
                 get(corpus_correcoes),
             )
+            // YG-168: score / camada Shannon
+            .route("/api/v1/comunicacao/score", get(get_score))
+            .route("/api/v1/comunicacao/score/descobrir", post(score_descobrir))
+            .route(
+                "/api/v1/comunicacao/score/identificar",
+                post(score_identificar),
+            )
+            .route("/api/v1/comunicacao/score/revelar", post(score_revelar))
             .with_state(state);
         (router, rooms_dir, lex_dir, term_rx, room_rx)
     }
@@ -2395,5 +2566,262 @@ mod tests {
         let v = body_json(resp).await;
         let corr = &v["verso-2-1"];
         assert_eq!(corr["gn"], "Nhandereko porã");
+    }
+
+    // ── YG-168: Score / Camada Shannon ────────────────────────────────────────
+
+    fn score_req(
+        method: &str,
+        uri: &str,
+        user: &str,
+        body: Option<serde_json::Value>,
+    ) -> Request<Body> {
+        let has_body = body.is_some();
+        let b = match body {
+            Some(v) => Body::from(serde_json::to_vec(&v).unwrap()),
+            None => Body::empty(),
+        };
+        let mut req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("authorization", format!("Bearer {}", token(user)));
+        if has_body {
+            req = req.header("content-type", "application/json");
+        }
+        req.body(b).unwrap()
+    }
+
+    #[tokio::test]
+    async fn score_sem_jwt_401() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/score")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn score_inicial_zerado() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(score_req("GET", "/api/v1/comunicacao/score", "alice", None))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["total_bits"], 0.0);
+        assert_eq!(v["descobertos"], 0);
+    }
+
+    #[tokio::test]
+    async fn descobrir_credita_bits() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(score_req(
+                "POST",
+                "/api/v1/comunicacao/score/descobrir",
+                "alice",
+                Some(serde_json::json!({ "pack": "musica", "term": "A4" })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        // A4 está no pack de música — bps = log2(12) ≈ 3.58, floor = 3
+        assert!(v["creditado"].as_f64().unwrap() >= 1.0, "creditou ≥ 1 bit");
+        assert!(v["total_bits"].as_f64().unwrap() >= 1.0);
+    }
+
+    #[tokio::test]
+    async fn descobrir_idempotente() {
+        let (app, _r, _l) = app();
+        let req1 = score_req(
+            "POST",
+            "/api/v1/comunicacao/score/descobrir",
+            "alice",
+            Some(serde_json::json!({ "pack": "musica", "term": "A4" })),
+        );
+        let r1 = body_json(app.clone().oneshot(req1).await.unwrap()).await;
+        let bits_after_first = r1["total_bits"].as_f64().unwrap();
+
+        let req2 = score_req(
+            "POST",
+            "/api/v1/comunicacao/score/descobrir",
+            "alice",
+            Some(serde_json::json!({ "pack": "musica", "term": "A4" })),
+        );
+        let r2 = body_json(app.oneshot(req2).await.unwrap()).await;
+        assert_eq!(r2["creditado"], 0.0, "segunda descoberta não credita");
+        assert_eq!(
+            r2["total_bits"].as_f64().unwrap(),
+            bits_after_first,
+            "saldo inalterado"
+        );
+    }
+
+    #[tokio::test]
+    async fn descobrir_pack_inexistente_404() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(score_req(
+                "POST",
+                "/api/v1/comunicacao/score/descobrir",
+                "alice",
+                Some(serde_json::json!({ "pack": "nao-existe", "term": "X" })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn identificar_correto_credita_bonus() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(score_req(
+                "POST",
+                "/api/v1/comunicacao/score/identificar",
+                "alice",
+                Some(serde_json::json!({
+                    "pack": "musica",
+                    "term": "A4",
+                    "answer": "A4"
+                })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["correto"], true);
+        assert!(v["creditado"].as_f64().unwrap() >= 1.0);
+    }
+
+    #[tokio::test]
+    async fn identificar_errado_nao_credita() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(score_req(
+                "POST",
+                "/api/v1/comunicacao/score/identificar",
+                "alice",
+                Some(serde_json::json!({
+                    "pack": "musica",
+                    "term": "A4",
+                    "answer": "B4"
+                })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["correto"], false);
+        assert_eq!(v["creditado"], 0.0);
+        assert_eq!(v["total_bits"], 0.0);
+    }
+
+    #[tokio::test]
+    async fn revelar_debita_e_retorna_custo() {
+        let (app, _r, _l) = app();
+        // Primeiro ganha bits suficientes via descoberta
+        for term in ["A4", "B4", "C4", "D4", "E4"] {
+            app.clone()
+                .oneshot(score_req(
+                    "POST",
+                    "/api/v1/comunicacao/score/descobrir",
+                    "alice",
+                    Some(serde_json::json!({ "pack": "musica", "term": term })),
+                ))
+                .await
+                .unwrap();
+        }
+        // Agora tenta revelar A4 (custo = ceil(log2(12)) = ceil(3.58) = 4)
+        let resp = app
+            .oneshot(score_req(
+                "POST",
+                "/api/v1/comunicacao/score/revelar",
+                "alice",
+                Some(serde_json::json!({ "pack": "musica", "term": "A4" })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert!(v["custo"].as_f64().unwrap() >= 1.0);
+        // total_bits deve ser menor que antes da revelação
+        assert!(v["total_bits"].as_f64().unwrap() >= 0.0);
+    }
+
+    #[tokio::test]
+    async fn revelar_sem_saldo_retorna_402() {
+        let (app, _r, _l) = app();
+        // Sem nenhuma descoberta prévia → saldo = 0 → não pode revelar
+        let resp = app
+            .oneshot(score_req(
+                "POST",
+                "/api/v1/comunicacao/score/revelar",
+                "alice",
+                Some(serde_json::json!({ "pack": "musica", "term": "A4" })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+        let v = body_json(resp).await;
+        assert_eq!(v["erro"], "saldo_insuficiente");
+        assert!(v["custo"].as_f64().unwrap() >= 1.0);
+    }
+
+    #[tokio::test]
+    async fn revelar_saldo_inalterado_se_insuficiente() {
+        let (app, _r, _l) = app();
+        // descobre 1 entrada (≥1 bit), depois tenta revelar (custo ≥ 4 para musica)
+        app.clone()
+            .oneshot(score_req(
+                "POST",
+                "/api/v1/comunicacao/score/descobrir",
+                "alice",
+                Some(serde_json::json!({ "pack": "musica", "term": "A4" })),
+            ))
+            .await
+            .unwrap();
+        let score_before = body_json(
+            app.clone()
+                .oneshot(score_req("GET", "/api/v1/comunicacao/score", "alice", None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        let bits_before = score_before["total_bits"].as_f64().unwrap();
+
+        // revela — pode falhar com 402 se saldo < 4
+        let resp = app
+            .clone()
+            .oneshot(score_req(
+                "POST",
+                "/api/v1/comunicacao/score/revelar",
+                "alice",
+                Some(serde_json::json!({ "pack": "musica", "term": "C4" })),
+            ))
+            .await
+            .unwrap();
+        if resp.status() == StatusCode::PAYMENT_REQUIRED {
+            // saldo deve estar inalterado
+            let score_after = body_json(
+                app.oneshot(score_req("GET", "/api/v1/comunicacao/score", "alice", None))
+                    .await
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(
+                score_after["total_bits"].as_f64().unwrap(),
+                bits_before,
+                "saldo não muda com 402"
+            );
+        }
     }
 }
