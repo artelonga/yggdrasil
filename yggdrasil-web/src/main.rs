@@ -16,6 +16,7 @@ pub mod hint_engine;
 mod lobby;
 mod mail;
 pub mod openapi;
+pub mod pix;
 pub mod presenca;
 mod scores_store;
 pub mod shandara;
@@ -446,6 +447,8 @@ async fn main() -> anyhow::Result<()> {
         ),
         sementes: sementes.clone(),
         admin_token: std::env::var("YGGDRASIL_ADMIN_TOKEN").ok(),
+        // YG-163: PIX independente — ligado só se YGGDRASIL_PIX_KEY estiver setada.
+        pix: pix::PixConfig::from_env(),
     });
     let campanha_router = Router::new()
         .route("/api/v1/campanha/tiers", get(api::campanha::list_tiers))

@@ -30,6 +30,9 @@ pub struct CampanhaState {
     pub sementes: Arc<Sementes>,
     /// Mesma chave de admin do feedback/analytics. `None` → confirmar = 401.
     pub admin_token: Option<String>,
+    /// Recebedor PIX (YG-163). `None` → campanha sem PIX (cai no texto
+    /// "instruções em breve"); `Some` → `apoiar` devolve copia-e-cola + QR.
+    pub pix: Option<crate::pix::PixConfig>,
 }
 
 #[derive(Serialize)]
@@ -90,6 +93,21 @@ pub struct ApoiarOk {
     pub status: String,
     /// Próximos passos honestos: nada foi cobrado ainda.
     pub proximos_passos: String,
+    /// Instruções de pagamento PIX (YG-163). `None` se a campanha não tem chave
+    /// PIX configurada (`YGGDRASIL_PIX_KEY`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pix: Option<PixInfo>,
+}
+
+/// Dados para o apoiador pagar via PIX agora mesmo — copia-e-cola + QR (SVG).
+#[derive(Serialize)]
+pub struct PixInfo {
+    /// BR Code "copia e cola" (cole no app do banco).
+    pub copia_e_cola: String,
+    /// QR do mesmo código, como `<svg>` inline. `None` se a geração falhar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qr_svg: Option<String>,
+    pub valor: u32,
 }
 
 /// `POST /api/v1/campanha/apoiar` — registra um apoio (pledge). JWT opcional:
@@ -132,6 +150,33 @@ pub async fn apoiar(
         mostrar_creditos: body.mostrar_creditos,
     });
 
+    // PIX independente (YG-163): se há chave configurada, devolve copia-e-cola +
+    // QR para pagar agora. O txid é o id do pledge (rastreia a conciliação).
+    let (pix, proximos_passos) = match &state.pix {
+        Some(cfg) => {
+            let copia_e_cola = crate::pix::br_code(cfg, t.preco, &id);
+            let qr_svg = crate::pix::qr_svg(&copia_e_cola);
+            (
+                Some(PixInfo {
+                    copia_e_cola,
+                    qr_svg,
+                    valor: t.preco,
+                }),
+                format!(
+                    "Apoio registrado! Pague R$ {} via PIX (copia-e-cola ou QR abaixo). \
+                     Assim que confirmarmos, seu nome entra nos créditos.",
+                    t.preco
+                ),
+            )
+        }
+        None => (
+            None,
+            "Apoio registrado! Em breve enviaremos as instruções de pagamento (PIX). \
+             Nada foi cobrado ainda."
+                .to_string(),
+        ),
+    };
+
     (
         StatusCode::CREATED,
         Json(ApoiarOk {
@@ -140,10 +185,8 @@ pub async fn apoiar(
             tier: t.slug.to_string(),
             valor: t.preco,
             status: crate::campanha::STATUS_PENDENTE.to_string(),
-            proximos_passos:
-                "Apoio registrado! Em breve enviaremos as instruções de pagamento (PIX). \
-                 Nada foi cobrado ainda."
-                    .to_string(),
+            proximos_passos,
+            pix,
         }),
     )
         .into_response()
@@ -249,12 +292,19 @@ mod tests {
     }
 
     fn app() -> (Router, Arc<CampanhaState>, tempfile::TempDir) {
+        app_with_pix(None)
+    }
+
+    fn app_with_pix(
+        pix: Option<crate::pix::PixConfig>,
+    ) -> (Router, Arc<CampanhaState>, tempfile::TempDir) {
         let (sementes, dir) = sementes_tmp();
         let state = Arc::new(CampanhaState {
             jwt_secret: "dev".to_string(),
             db: Arc::new(PledgeDb::in_memory().unwrap()),
             sementes,
             admin_token: Some("sekret".to_string()),
+            pix,
         });
         let router = Router::new()
             .route("/api/v1/campanha/tiers", get(list_tiers))
@@ -342,6 +392,48 @@ mod tests {
         assert!(body.contains("pendente"));
         assert!(body.contains("\"valor\":60"));
         assert_eq!(state.db.count(), 1);
+    }
+
+    #[tokio::test]
+    async fn apoiar_sem_pix_nao_inclui_bloco_pix() {
+        let (app, _s, _dir) = app(); // pix None
+        let (st, body) = post_json(
+            &app,
+            "/api/v1/campanha/apoiar",
+            serde_json::json!({"tier":"semente"}),
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::CREATED);
+        assert!(
+            !body.contains("copia_e_cola"),
+            "sem PIX configurado → sem bloco pix"
+        );
+    }
+
+    #[tokio::test]
+    async fn apoiar_com_pix_devolve_copia_e_cola_e_qr() {
+        let pix = crate::pix::PixConfig {
+            key: "yuri@artelonga.com.br".to_string(),
+            merchant_name: "Yggdrasil".to_string(),
+            merchant_city: "Sao Paulo".to_string(),
+        };
+        let (app, _s, _dir) = app_with_pix(Some(pix));
+        let (st, body) = post_json(
+            &app,
+            "/api/v1/campanha/apoiar",
+            serde_json::json!({"tier":"raiz","nome":"Ana"}),
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::CREATED);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let cec = v["pix"]["copia_e_cola"].as_str().expect("copia_e_cola");
+        assert!(cec.starts_with("000201"));
+        assert!(cec.contains("yuri@artelonga.com.br"));
+        assert!(cec.contains("540560.00"), "valor do tier raiz (60)");
+        assert!(v["pix"]["qr_svg"].as_str().unwrap().contains("<svg"));
+        assert_eq!(v["pix"]["valor"].as_u64(), Some(60));
     }
 
     #[tokio::test]
