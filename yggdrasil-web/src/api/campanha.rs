@@ -33,6 +33,9 @@ pub struct CampanhaState {
     /// Recebedor PIX (YG-163). `None` → campanha sem PIX (cai no texto
     /// "instruções em breve"); `Some` → `apoiar` devolve copia-e-cola + QR.
     pub pix: Option<crate::pix::PixConfig>,
+    /// Meta de arrecadação em BRL (YG-164, `YGGDRASIL_CAMPANHA_META`). `0` =
+    /// sem meta → a barra mostra só total + nº de apoiadores.
+    pub meta: u32,
 }
 
 #[derive(Serialize)]
@@ -198,6 +201,39 @@ pub async fn list_creditos(State(state): State<Arc<CampanhaState>>) -> Json<Vec<
     Json(state.db.creditos())
 }
 
+#[derive(Serialize)]
+pub struct ProgressoOut {
+    /// Meta em BRL (0 = sem meta configurada).
+    pub meta: u32,
+    /// Total arrecadado (BRL) — só apoios confirmados.
+    pub arrecadado: u64,
+    /// Nº de apoios confirmados.
+    pub apoiadores: u64,
+    /// Nº de apoios pendentes (em processamento).
+    pub pendentes: u64,
+    /// Percentual da meta (0–100, saturado). `null` quando não há meta.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub percentual: Option<u32>,
+}
+
+/// `GET /api/v1/campanha/progresso` — agregados públicos (YG-164): meta, total
+/// arrecadado (só confirmados), nº de apoiadores e percentual. Sem PII.
+pub async fn progresso(State(state): State<Arc<CampanhaState>>) -> Json<ProgressoOut> {
+    let p = state.db.progresso();
+    let percentual = if state.meta > 0 {
+        Some(((p.arrecadado.saturating_mul(100)) / state.meta as u64).min(100) as u32)
+    } else {
+        None
+    };
+    Json(ProgressoOut {
+        meta: state.meta,
+        arrecadado: p.arrecadado,
+        apoiadores: p.apoiadores,
+        pendentes: p.pendentes,
+        percentual,
+    })
+}
+
 /// `POST /api/v1/campanha/pledges/{id}/confirmar` — admin confirma o pagamento
 /// (registrado fora de banda) e credita as sementes do tier ao usuário, se
 /// logado. Gated por `YGGDRASIL_ADMIN_TOKEN`. Só credita na primeira confirmação.
@@ -305,10 +341,12 @@ mod tests {
             sementes,
             admin_token: Some("sekret".to_string()),
             pix,
+            meta: 1000, // meta de teste p/ exercitar o percentual
         });
         let router = Router::new()
             .route("/api/v1/campanha/tiers", get(list_tiers))
             .route("/api/v1/campanha/apoiar", post(apoiar))
+            .route("/api/v1/campanha/progresso", get(progresso))
             .route("/api/v1/creditos", get(list_creditos))
             .route(
                 "/api/v1/campanha/pledges/{id}/confirmar",
@@ -542,5 +580,41 @@ mod tests {
         )
         .await;
         assert_eq!(st, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn progresso_agrega_so_confirmados_com_percentual() {
+        let (app, state, _dir) = app(); // meta = 1000
+        // dois apoios; confirma um (raiz=60)
+        let id = state.db.apoiar(&NewPledge {
+            tier: "raiz",
+            valor: 60,
+            nome: None,
+            email: None,
+            user_sub: Some("u1"),
+            mensagem: None,
+            mostrar_creditos: true,
+        });
+        state.db.apoiar(&NewPledge {
+            tier: "galho",
+            valor: 120,
+            nome: None,
+            email: None,
+            user_sub: None,
+            mensagem: None,
+            mostrar_creditos: true,
+        });
+        state.db.confirmar(&id);
+
+        let (st, body) = get_body(&app, "/api/v1/campanha/progresso").await;
+        assert_eq!(st, StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["meta"].as_u64(), Some(1000));
+        assert_eq!(v["arrecadado"].as_u64(), Some(60), "só o confirmado");
+        assert_eq!(v["apoiadores"].as_u64(), Some(1));
+        assert_eq!(v["pendentes"].as_u64(), Some(1));
+        assert_eq!(v["percentual"].as_u64(), Some(6), "60/1000 = 6%");
+        // nunca vaza PII
+        assert!(!body.contains("u1"));
     }
 }

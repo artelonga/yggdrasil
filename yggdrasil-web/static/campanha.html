@@ -20,6 +20,15 @@
     .stat .n { font-family: Georgia, serif; font-size: 1.9rem; color: var(--gold); line-height: 1; }
     .stat .k { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-top: .4rem; }
     h2.sec { font-family: Georgia, serif; font-style: italic; font-size: 1.7rem; margin: 2.4rem 0 1.2rem; }
+    /* YG-164: barra de progresso da campanha */
+    #progresso { margin: 1.6rem 0 .4rem; }
+    #progresso .prog-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .5rem; }
+    #progresso #prog-arrecadado { font-family: Georgia, serif; font-size: 1.7rem; color: var(--gold); }
+    #progresso #prog-meta { color: var(--dim); font-size: .9rem; }
+    #progresso .prog-bar { height: 12px; background: var(--bg2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+    #progresso .prog-fill { height: 100%; width: 0; background: linear-gradient(90deg, #b9892f, var(--gold)); border-radius: 999px; transition: width .6s ease; }
+    #progresso .prog-foot { color: var(--dim); font-size: .82rem; margin-top: .5rem; }
+    #progresso .prog-foot b { color: var(--ink); }
     .tiers { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1.1rem; }
     .tier { background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 1.3rem 1.4rem;
       display: flex; flex-direction: column; gap: .6rem; position: relative; }
@@ -81,6 +90,13 @@
       <div class="stat"><div class="n" id="s-jog">—</div><div class="k">jogando agora</div></div>
       <div class="stat"><div class="n" id="s-ses">—</div><div class="k">sessões 24h</div></div>
       <div class="stat"><div class="n" id="s-lex">—</div><div class="k">termos no léxico Mbyá</div></div>
+    </div>
+
+    <!-- YG-164: progresso da campanha — preenchido por campanha.js (oculto até ter dados) -->
+    <div id="progresso" hidden>
+      <div class="prog-top"><span id="prog-arrecadado">R$ 0</span><span id="prog-meta"></span></div>
+      <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+      <div class="prog-foot" id="prog-foot"></div>
     </div>
 
     <h2 class="sec">Recompensas</h2>

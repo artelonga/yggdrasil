@@ -449,10 +449,16 @@ async fn main() -> anyhow::Result<()> {
         admin_token: std::env::var("YGGDRASIL_ADMIN_TOKEN").ok(),
         // YG-163: PIX independente — ligado só se YGGDRASIL_PIX_KEY estiver setada.
         pix: pix::PixConfig::from_env(),
+        // YG-164: meta de arrecadação (BRL). 0/ausente = sem meta (barra mostra só total).
+        meta: std::env::var("YGGDRASIL_CAMPANHA_META")
+            .ok()
+            .and_then(|v| v.trim().parse::<u32>().ok())
+            .unwrap_or(0),
     });
     let campanha_router = Router::new()
         .route("/api/v1/campanha/tiers", get(api::campanha::list_tiers))
         .route("/api/v1/campanha/apoiar", post(api::campanha::apoiar))
+        .route("/api/v1/campanha/progresso", get(api::campanha::progresso))
         .route("/api/v1/creditos", get(api::campanha::list_creditos))
         .route(
             "/api/v1/campanha/pledges/{id}/confirmar",
