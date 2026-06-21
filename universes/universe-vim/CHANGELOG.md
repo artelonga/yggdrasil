@@ -3,6 +3,14 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 SemVer. Versionamento independente do core (ver `docs/UNIVERSE-VERSIONING.md`).
 
+## [Unreleased] <!-- regenerated via git pathspec; jj log universes/universe-vim/ also works -->
+
+### Added
+- YG-58 — emulador modal Rust + 10 níveis progressivos (#23)
+
+### Other
+- feat(YG-63): versionamento independente por universe (#38)
+
 ## [1.0.0] — 2026-05-22
 
 ### Added
