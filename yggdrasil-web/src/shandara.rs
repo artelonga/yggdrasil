@@ -135,4 +135,29 @@ mod tests {
         assert!(doc("../../etc/passwd").is_none());
         assert!(doc("nao-existe").is_none());
     }
+
+    #[test]
+    fn stubs_yg162_navegaveis_no_tree_e_servidos() {
+        let t = tree();
+        // os stubs prometidos viram docs reais na árvore
+        for path in [
+            "povos/petreos",
+            "povos/perenes",
+            "povos/fulgores",
+            "regras/combate",
+            "regras/magia",
+            "bestiario/eco-da-cicatriz",
+        ] {
+            assert!(
+                t.iter().any(|d| d.path == path),
+                "stub {path} deve aparecer no tree"
+            );
+            assert!(doc(path).is_some(), "stub {path} deve ser servível");
+        }
+        // título extraído do `# ` e seção Bestiário agora presente
+        let petreos = t.iter().find(|d| d.path == "povos/petreos").unwrap();
+        assert_eq!(petreos.title, "Os Pétreos — vinculados à Matéria");
+        let secs: std::collections::BTreeSet<&str> = t.iter().map(|d| d.section.as_str()).collect();
+        assert!(secs.contains("Bestiário"));
+    }
 }
