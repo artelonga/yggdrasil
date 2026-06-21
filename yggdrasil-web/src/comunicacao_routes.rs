@@ -853,6 +853,19 @@ pub async fn get_pack(Path(id): Path<String>) -> impl IntoResponse {
     }
 }
 
+/// `GET /api/v1/comunicacao/packs/lang/{plano}` — pack projetado sob demanda do
+/// léxico CO (`<plano>/terms/**/*.md`). Sem auth — packs são públicos. `{plano}`
+/// é o diretório CO (`yoruba`, `guarani-mbya`, `portuguese`…). 404 para planos
+/// desconhecidos.
+pub async fn get_lang_pack(State(state): ApiState, Path(plano): Path<String>) -> impl IntoResponse {
+    if !yggdrasil_core::comunicacao::is_known_plano(&plano) {
+        return (StatusCode::NOT_FOUND, "plano não encontrado").into_response();
+    }
+    let root = state.lexicon.root().to_path_buf();
+    let pack = yggdrasil_core::comunicacao::pack_for_language(&plano, &root);
+    Json(pack).into_response()
+}
+
 // ─── Revisão ──────────────────────────────────────────────────────────────────
 
 /// `GET /api/v1/comunicacao/revisao` — fila completa + itens vencidos.
@@ -1375,6 +1388,7 @@ mod tests {
             .route("/api/v1/comunicacao/lexico/promover", post(promover_termo))
             .route("/api/v1/comunicacao/templates", get(list_templates))
             .route("/api/v1/comunicacao/packs", get(list_packs))
+            .route("/api/v1/comunicacao/packs/lang/{plano}", get(get_lang_pack))
             .route("/api/v1/comunicacao/packs/{id}", get(get_pack))
             .route("/api/v1/comunicacao/revisao", get(get_revisao))
             .route("/api/v1/comunicacao/revisao/nota", post(nota_revisao))
@@ -1503,6 +1517,138 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ── YG-169: pack projetado do léxico CO ───────────────────────────────────
+
+    #[tokio::test]
+    async fn lang_pack_projeta_lexico_co() {
+        let (app, _r, lex_dir) = app();
+        let terms_dir = lex_dir.path().join("yoruba/terms");
+        std::fs::create_dir_all(&terms_dir).unwrap();
+        std::fs::write(
+            terms_dir.join("ase.md"),
+            "---\ntype: term\nword: 'àṣẹ'\nlanguage_code: 'yo'\n\
+             pronunciation: '[à.ʃɛ]'\nseed_status: reviewed\n---\n\n\
+             # àṣẹ\n\nforça vital\n",
+        )
+        .unwrap();
+        std::fs::write(
+            terms_dir.join("ile.md"),
+            "---\ntype: term\nword: 'ilẹ̀'\nlanguage_code: 'yo'\n\
+             pronunciation: '[ì.lɛ̀]'\nparts:\n- '[[terms/ase.md]]'\n\
+             seed_status: reviewed\n---\n\n# ilẹ̀\n\nterra, chão\n",
+        )
+        .unwrap();
+        std::fs::write(
+            terms_dir.join("ina.md"),
+            "---\ntype: term\nword: 'iná'\nlanguage_code: 'yo'\n\
+             seed_status: reviewed\n---\n\n# iná\n\nfogo\n",
+        )
+        .unwrap();
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/packs/lang/yoruba")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["kind"], "language");
+        assert_eq!(v["notation"], "ipa");
+        assert!(v["id"].as_str().unwrap().starts_with("lang:"));
+        let entries = v["entries"].as_array().unwrap();
+        assert!(
+            entries.len() >= 3,
+            "ao menos 3 termos fixture (got {})",
+            entries.len()
+        );
+        // todas entradas têm Speech
+        assert!(
+            entries.iter().all(|e| e["audio"]["mode"] == "speech"),
+            "todas entradas devem ter mode=speech"
+        );
+        // entropy_stats presente e condizente com o nº de entradas
+        let symbols = v["entropy_stats"]["symbols"].as_u64().unwrap() as usize;
+        assert!(symbols >= 3, "ao menos 3 símbolos (got {symbols})");
+        assert_eq!(
+            symbols,
+            entries.len(),
+            "symbols deve igualar nº de entradas"
+        );
+        // relação wikilink ilẹ̀ → àṣẹ
+        let ile = entries.iter().find(|e| e["term"] == "ilẹ̀").unwrap();
+        let rels = ile["relations"].as_array().unwrap();
+        assert!(
+            rels.iter().any(|r| r["to"] == "àṣẹ"),
+            "relação wikilink ilẹ̀→àṣẹ ausente"
+        );
+    }
+
+    #[tokio::test]
+    async fn lang_pack_plano_desconhecido_404() {
+        let (app, _r, _l) = app();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/packs/lang/klingon")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn lang_pack_guarani_mbya_e_portuguese_servidos() {
+        let (app, _r, lex_dir) = app();
+        // guarani-mbya
+        let gn_dir = lex_dir.path().join("guarani-mbya/terms");
+        std::fs::create_dir_all(&gn_dir).unwrap();
+        std::fs::write(
+            gn_dir.join("nhe.md"),
+            "---\ntype: term\nword: \"nhe'ẽ\"\nlanguage_code: 'gn-mbya'\n\
+             pronunciation: \"ɲẽˈʔẽ\"\nseed_status: reviewed\n---\n\n\
+             # nhe'ẽ\n\npalavra; alma-linguagem\n",
+        )
+        .unwrap();
+
+        let resp_gn = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/packs/lang/guarani-mbya")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_gn.status(), StatusCode::OK);
+        let gn = body_json(resp_gn).await;
+        assert_eq!(gn["id"], "lang:guarani-mbya");
+        // audio lang deve ser gn-mbya
+        let e = &gn["entries"][0];
+        assert_eq!(e["audio"]["lang"], "gn-mbya");
+
+        // portuguese (sem arquivos → pack vazio mas 200)
+        let resp_pt = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/comunicacao/packs/lang/portuguese")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_pt.status(), StatusCode::OK);
+        let pt = body_json(resp_pt).await;
+        assert_eq!(pt["id"], "lang:portuguese");
+        assert_eq!(pt["kind"], "language");
     }
 
     #[tokio::test]

@@ -616,6 +616,11 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/comunicacao/packs",
             get(comunicacao_routes::list_packs),
         )
+        // YG-169: projeção CO-universe → pack de língua (somente leitura).
+        .route(
+            "/api/v1/comunicacao/packs/lang/{plano}",
+            get(comunicacao_routes::get_lang_pack),
+        )
         .route(
             "/api/v1/comunicacao/packs/{id}",
             get(comunicacao_routes::get_pack),

@@ -17,6 +17,7 @@ pub mod caderno;
 pub mod lexicon;
 pub mod pack;
 pub mod pack_file;
+pub mod pack_from_lexicon;
 pub mod public;
 pub mod review;
 pub mod room;
@@ -31,6 +32,7 @@ pub use pack::{
     Waveform, note_freq, seed_pack, seed_packs, seed_summaries,
 };
 pub use pack_file::{PackFileError, load_dir as load_packs_dir, load_file as load_pack_file};
+pub use pack_from_lexicon::{is_known_plano, pack_for_language};
 pub use public::{PUBLIC_MBYA, PUBLIC_YORUBA, SYSTEM_OWNER, ensure_public_rooms, is_public_id};
 pub use review::{ReviewItem, ReviewQueue};
 pub use room::{EditError, Element, LexiconLink, Link, Reference, Room, RoomEdit, Viewport};
