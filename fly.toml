@@ -20,6 +20,10 @@ primary_region = "gru"
   YGGDRASIL_COMUNICACAO_DIR = "/data/comunicacao"
   # YG-172: comprovantes de PIX no volume persistente (sobrevivem a deploy).
   YGGDRASIL_COMPROVANTES_DIR = "/data/comprovantes"
+  # YG-174: WebAuthn (passkeys) — rp_id/origin do domínio real (senão o origin
+  # não bate e o registro/login por passkey falha).
+  YGGDRASIL_RP_ID = "yggdrasil.artelonga.com.br"
+  YGGDRASIL_RP_ORIGIN = "https://yggdrasil.artelonga.com.br"
   # comunicacao: léxico curado — semente baked-in copiada para o volume no boot
   # (entrypoint). Writes de contribuições (_users/) ficam no volume gravável.
   COMUNICACAO_DIR = "/data/comunicacao-lexicon"

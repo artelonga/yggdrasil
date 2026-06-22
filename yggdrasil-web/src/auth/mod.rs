@@ -7,6 +7,7 @@
 
 pub mod jwt;
 pub mod magic_link;
+pub mod passkey;
 pub mod state;
 
 #[cfg(test)]
