@@ -6,6 +6,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/).
 > Histórico rastreável via git pathspec (`git log -- universes/universe-shandara/`),
 > jj-compatível. Ver `scripts/universe-changelog.sh` (YG-71).
 
+## [Unreleased] <!-- regenerated via git pathspec; jj log universes/universe-shandara/ also works -->
+
+### Other
+- chore(universes): per-universe changelog via git pathspec (YG-71)
+- feat(YG-162): Shandara — stubs navegáveis de povos, combate, magia e bestiário (#101)
+- feat(YG-68): catálogo expandido de universos — REGISTRY + filtros + Shandara (#39)
+
 ## [0.1.0] — 2026-06-08
 
 ### Added

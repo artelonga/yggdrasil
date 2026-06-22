@@ -106,8 +106,65 @@ git tag v2.5.1                # se o bump do core for consolidado agora
 git push origin HEAD --tags
 ```
 
+## Tooling — `scripts/universe-changelog.sh`
+
+Script shell para gerar ou atualizar o `CHANGELOG.md` de cada universo a partir do
+histórico filtrado do monorepo via `git log -- universes/universe-<slug>/`. Sem
+submodules. Compatível com jujutsu (`jj log <path>`).
+
+```bash
+# Gerar/atualizar [Unreleased] de um universo
+bash scripts/universe-changelog.sh shandara
+
+# Fazer para todos os universos rastreados (status: embedded + versions_tracked: true)
+bash scripts/universe-changelog.sh --all
+
+# Congelar [Unreleased] como versão X.Y.Z e bumpar Cargo.toml
+bash scripts/universe-changelog.sh shandara --bump minor
+
+# Verificar se algum CHANGELOG está atrás dos commits no path (CI / pre-commit)
+bash scripts/universe-changelog.sh --check
+```
+
+### Como funciona
+
+1. Lê `version` do `universes/universe-<slug>/Cargo.toml`.
+2. Acha a tag mais recente do universo: `git tag --list 'universe-<slug>-v*' | sort -V | tail -1`.
+3. Roda `git log <last-tag>..HEAD -- universes/universe-<slug>/`.
+4. Classifica commits por tipo Conventional (`feat`→Added, `fix`→Fixed,
+   `refactor`/`chore`/`docs`/`test`→Changed) com escopo `universe-<slug>`,
+   `<slug>`, ou qualquer combinação. Commits que tocaram o path mas sem escopo
+   explícito vão em "Other".
+5. Reescreve a seção `[Unreleased]` do CHANGELOG do universo (ou cria se não
+   existe).
+6. Com `--bump`: renomeia `[Unreleased]` → `[X.Y.Z] — <hoje>` e bumpa
+   `Cargo.toml`. Valida que o novo SemVer é maior que o atual.
+
+### Modo `--check` (CI / lefthook)
+
+`--check` retorna exit 1 se qualquer universo com `versions_tracked: true` no
+`REGISTRY.yaml` tem commits não refletidos em `[Unreleased]`. Não edita nada.
+
+Como hook `lefthook` opcional:
+
+```yaml
+pre-commit:
+  commands:
+    universe-changelog:
+      glob: "universes/universe-*/**/*"
+      run: bash scripts/universe-changelog.sh --check
+```
+
+### jj-compatible
+
+Nenhuma operação destrutiva. O script só lê o histórico git. Se `jj` estiver no
+`PATH`, um comentário HTML é adicionado ao cabeçalho `[Unreleased]` indicando o
+equivalente `jj log universes/universe-<slug>/`.
+
 ## Ver também
 
 - [`../universes/README.md`](../universes/README.md) — catálogo + build.
 - [`../CHANGELOG-PENDING/README.md`](../CHANGELOG-PENDING/README.md) — convenção
   de fragmentos de changelog para waves paralelas.
+- [`../scripts/universe-changelog.sh`](../scripts/universe-changelog.sh) — script
+  de tooling per-universe changelog (YG-71).
