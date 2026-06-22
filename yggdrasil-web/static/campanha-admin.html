@@ -28,6 +28,11 @@
     td button.conf { background: #1e4a32; color: #74e0a8; border: 1px solid #2c6a48; border-radius: 7px; padding: .3rem .6rem; cursor: pointer; font: inherit; font-size: .76rem; }
     td button.conf:hover { filter: brightness(1.15); }
     td button.conf:disabled { opacity: .5; cursor: default; }
+    .comp-yes { color: #74e0a8; font-size: .76rem; font-weight: 700; }
+    .comp-no { color: #5a554c; font-size: .76rem; }
+    .comp-nota { color: var(--dim); font-size: .74rem; font-style: italic; margin: .15rem 0; }
+    td button.dl { background: #1e3050; color: #8ab6ff; border: 1px solid #2c4a6a; border-radius: 7px; padding: .25rem .55rem; cursor: pointer; font: inherit; font-size: .74rem; margin-top: .2rem; }
+    td button.dl:hover { filter: brightness(1.15); }
     .val { font-variant-numeric: tabular-nums; }
   </style>
 </head>
@@ -42,7 +47,7 @@
     <div class="msg" id="msg"></div>
     <div class="sum" id="sum"></div>
     <table id="tbl" hidden>
-      <thead><tr><th>Quando</th><th>Tier</th><th class="val">Valor</th><th>Apoiador</th><th>Recado</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Quando</th><th>Tier</th><th class="val">Valor</th><th>Apoiador</th><th>Recado</th><th>Comprovante</th><th>Status</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </div>

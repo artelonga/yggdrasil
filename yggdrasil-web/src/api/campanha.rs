@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Multipart, Path, State},
+    http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,12 @@ use yggdrasil_core::sementes::Sementes;
 const NAME_MAX: usize = 120;
 const EMAIL_MAX: usize = 200;
 const MSG_MAX: usize = 500;
+/// YG-172: limite do arquivo de comprovante (5 MB) + tipos aceitos (imagem/PDF).
+const COMPROVANTE_MAX_BYTES: usize = 5 * 1024 * 1024;
+const COMPROVANTE_NOTA_MAX: usize = 500;
+fn comprovante_mime_ok(m: &str) -> bool {
+    m.starts_with("image/") || m == "application/pdf"
+}
 
 pub struct CampanhaState {
     pub jwt_secret: String,
@@ -36,6 +42,9 @@ pub struct CampanhaState {
     /// Meta de arrecadação em BRL (YG-164, `YGGDRASIL_CAMPANHA_META`). `0` =
     /// sem meta → a barra mostra só total + nº de apoiadores.
     pub meta: u32,
+    /// YG-172: diretório onde os arquivos de comprovante são gravados (um por
+    /// pledge, nomeado pelo id). Criado no boot.
+    pub comprovantes_dir: std::path::PathBuf,
 }
 
 #[derive(Serialize)]
@@ -335,6 +344,167 @@ pub async fn confirmar_pledge(
         .into_response()
 }
 
+/// `POST /api/v1/campanha/pledges/{id}/comprovante` — o **apoiador** anexa o
+/// comprovante do PIX (YG-172). **Público** (pelo id do pledge — não é admin):
+/// quem tem o id já registrou o apoio. Multipart com `nota` (texto, opcional) e
+/// `arquivo` (imagem/PDF, opcional) — ao menos um é obrigatório. Carimba o envio
+/// para o operador saber que há comprovante a conferir.
+pub async fn enviar_comprovante(
+    State(state): State<Arc<CampanhaState>>,
+    Path(id): Path<String>,
+    mut multipart: Multipart,
+) -> axum::response::Response {
+    // o pledge precisa existir (evita lixo de arquivo p/ ids inventados)
+    if !state.db.exists(&id) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorBody {
+                error: "nao_encontrado".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    let mut nota: Option<String> = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut file_mime: Option<String> = None;
+
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(f)) => f,
+            Ok(None) => break,
+            Err(_) => return bad("multipart_invalido"),
+        };
+        match field.name() {
+            Some("nota") => {
+                nota = field
+                    .text()
+                    .await
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+            }
+            Some("arquivo") => {
+                let mime = field
+                    .content_type()
+                    .unwrap_or("application/octet-stream")
+                    .to_string();
+                let bytes = match field.bytes().await {
+                    Ok(b) => b,
+                    Err(_) => return bad("leitura_falhou"),
+                };
+                if bytes.is_empty() {
+                    continue; // campo de arquivo vazio = sem arquivo
+                }
+                if !comprovante_mime_ok(&mime) {
+                    return (
+                        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                        Json(ErrorBody {
+                            error: "tipo_nao_suportado".to_string(),
+                        }),
+                    )
+                        .into_response();
+                }
+                if bytes.len() > COMPROVANTE_MAX_BYTES {
+                    return (
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        Json(ErrorBody {
+                            error: "arquivo_grande_demais".to_string(),
+                        }),
+                    )
+                        .into_response();
+                }
+                file_bytes = Some(bytes.to_vec());
+                file_mime = Some(mime);
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(ref mut n) = nota
+        && n.chars().count() > COMPROVANTE_NOTA_MAX
+    {
+        *n = n.chars().take(COMPROVANTE_NOTA_MAX).collect();
+    }
+    if nota.is_none() && file_bytes.is_none() {
+        return bad("comprovante_vazio");
+    }
+
+    // grava o arquivo (um por pledge, nomeado pelo id — re-envio sobrescreve)
+    let mut arquivo_nome: Option<String> = None;
+    if let Some(bytes) = file_bytes {
+        if let Err(e) = std::fs::create_dir_all(&state.comprovantes_dir) {
+            tracing::error!("comprovante dir: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorBody {
+                    error: "falha_ao_salvar".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        let path = state.comprovantes_dir.join(&id); // id é nanoid (seguro p/ filename)
+        if let Err(e) = std::fs::write(&path, &bytes) {
+            tracing::error!("comprovante write: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorBody {
+                    error: "falha_ao_salvar".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        arquivo_nome = Some(id.clone());
+    }
+
+    state.db.registrar_comprovante(
+        &id,
+        nota.as_deref(),
+        arquivo_nome.as_deref(),
+        file_mime.as_deref(),
+    );
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "ok": true, "id": id })),
+    )
+        .into_response()
+}
+
+/// `GET /api/v1/campanha/pledges/{id}/comprovante/arquivo` — serve o arquivo do
+/// comprovante (YG-172). **Admin-gated** (visão do operador). 404 se não há.
+pub async fn baixar_comprovante(
+    State(state): State<Arc<CampanhaState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    if let Some(r) = check_admin(&state, &headers) {
+        return r;
+    }
+    let (arquivo, mime) = match state.db.comprovante_arquivo(&id) {
+        Some(x) => x,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorBody {
+                    error: "sem_comprovante".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+    let path = state.comprovantes_dir.join(&arquivo);
+    match std::fs::read(&path) {
+        Ok(bytes) => ([(header::CONTENT_TYPE, mime)], bytes).into_response(),
+        Err(_) => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorBody {
+                error: "arquivo_ausente".to_string(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,6 +540,7 @@ mod tests {
             admin_token: Some("sekret".to_string()),
             pix,
             meta: 1000, // meta de teste p/ exercitar o percentual
+            comprovantes_dir: dir.path().join("comprovantes"),
         });
         let router = Router::new()
             .route("/api/v1/campanha/tiers", get(list_tiers))
@@ -380,6 +551,14 @@ mod tests {
             .route(
                 "/api/v1/campanha/pledges/{id}/confirmar",
                 post(confirmar_pledge),
+            )
+            .route(
+                "/api/v1/campanha/pledges/{id}/comprovante",
+                post(enviar_comprovante),
+            )
+            .route(
+                "/api/v1/campanha/pledges/{id}/comprovante/arquivo",
+                get(baixar_comprovante),
             )
             .with_state(state.clone());
         (router, state, dir)
@@ -421,6 +600,195 @@ mod tests {
             .await
             .unwrap();
         (status, String::from_utf8_lossy(&bytes).to_string())
+    }
+
+    // multipart/form-data body: campos de texto + arquivo opcional (YG-172).
+    fn multipart(
+        boundary: &str,
+        text: &[(&str, &str)],
+        file: Option<(&str, &str, &[u8])>,
+    ) -> Vec<u8> {
+        let mut b = Vec::new();
+        for (name, val) in text {
+            b.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            b.extend_from_slice(
+                format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
+            );
+            b.extend_from_slice(val.as_bytes());
+            b.extend_from_slice(b"\r\n");
+        }
+        if let Some((name, mime, bytes)) = file {
+            b.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            b.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"{name}\"; filename=\"c.bin\"\r\n\
+                     Content-Type: {mime}\r\n\r\n"
+                )
+                .as_bytes(),
+            );
+            b.extend_from_slice(bytes);
+            b.extend_from_slice(b"\r\n");
+        }
+        b.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+        b
+    }
+
+    async fn post_multipart(
+        app: &Router,
+        uri: &str,
+        text: &[(&str, &str)],
+        file: Option<(&str, &str, &[u8])>,
+    ) -> (StatusCode, String) {
+        let boundary = "X-YG-BOUNDARY";
+        let body = multipart(boundary, text, file);
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8_lossy(&bytes).to_string())
+    }
+
+    fn seed_pledge(state: &Arc<CampanhaState>) -> String {
+        state.db.apoiar(&NewPledge {
+            tier: "raiz",
+            valor: 60,
+            nome: Some("Ana"),
+            email: None,
+            user_sub: None,
+            mensagem: None,
+            mostrar_creditos: true,
+        })
+    }
+
+    #[tokio::test]
+    async fn comprovante_pledge_inexistente_404() {
+        let (app, _s, _dir) = app();
+        let (st, _) = post_multipart(
+            &app,
+            "/api/v1/campanha/pledges/nada/comprovante",
+            &[("nota", "paguei")],
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn comprovante_vazio_400() {
+        let (app, state, _dir) = app();
+        let id = seed_pledge(&state);
+        let (st, _) = post_multipart(
+            &app,
+            &format!("/api/v1/campanha/pledges/{id}/comprovante"),
+            &[],
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn comprovante_nota_marca_enviado_e_aparece_no_admin() {
+        let (app, state, _dir) = app();
+        let id = seed_pledge(&state);
+        let (st, _) = post_multipart(
+            &app,
+            &format!("/api/v1/campanha/pledges/{id}/comprovante"),
+            &[("nota", "E2E12345 pago")],
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+        // a visão admin mostra o comprovante (nota + timestamp)
+        let pledges = state.db.list_all();
+        let p = pledges.iter().find(|p| p.id == id).unwrap();
+        assert_eq!(p.comprovante_nota.as_deref(), Some("E2E12345 pago"));
+        assert!(p.comprovante_em.is_some(), "carimba envio");
+        assert!(!p.comprovante_arquivo, "sem arquivo neste caso");
+    }
+
+    #[tokio::test]
+    async fn comprovante_arquivo_salva_e_so_admin_baixa() {
+        let (app, state, _dir) = app();
+        let id = seed_pledge(&state);
+        let png = b"\x89PNG\r\n\x1a\nfake-bytes";
+        let (st, _) = post_multipart(
+            &app,
+            &format!("/api/v1/campanha/pledges/{id}/comprovante"),
+            &[],
+            Some(("arquivo", "image/png", png)),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+        assert!(
+            state
+                .db
+                .list_all()
+                .iter()
+                .find(|p| p.id == id)
+                .unwrap()
+                .comprovante_arquivo
+        );
+
+        // baixar sem admin → 401
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/campanha/pledges/{id}/comprovante/arquivo"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // com admin → 200 + bytes corretos
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/campanha/pledges/{id}/comprovante/arquivo"))
+                    .header("authorization", "Bearer sekret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], png);
+    }
+
+    #[tokio::test]
+    async fn comprovante_tipo_nao_suportado_415() {
+        let (app, state, _dir) = app();
+        let id = seed_pledge(&state);
+        let (st, _) = post_multipart(
+            &app,
+            &format!("/api/v1/campanha/pledges/{id}/comprovante"),
+            &[],
+            Some(("arquivo", "application/x-msdownload", b"MZ...")),
+        )
+        .await;
+        assert_eq!(st, StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 
     #[tokio::test]

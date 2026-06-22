@@ -18,6 +18,8 @@ primary_region = "gru"
   YGGDRASIL_INSTANCES_DIR = "/data/instances"
   # comunicacao: salas no volume persistente (mesmo motivo).
   YGGDRASIL_COMUNICACAO_DIR = "/data/comunicacao"
+  # YG-172: comprovantes de PIX no volume persistente (sobrevivem a deploy).
+  YGGDRASIL_COMPROVANTES_DIR = "/data/comprovantes"
   # comunicacao: léxico curado — semente baked-in copiada para o volume no boot
   # (entrypoint). Writes de contribuições (_users/) ficam no volume gravável.
   COMUNICACAO_DIR = "/data/comunicacao-lexicon"

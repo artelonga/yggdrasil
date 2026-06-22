@@ -50,7 +50,7 @@
     #ap { position: fixed; inset: 0; z-index: 999; display: none; align-items: center; justify-content: center;
       background: rgba(7,7,11,.72); backdrop-filter: blur(4px); padding: 1rem; }
     #ap.open { display: flex; }
-    #ap .box { width: min(28rem, 96vw); background: var(--bg2); border: 1px solid var(--gold); border-radius: 14px; padding: 1.6rem; }
+    #ap .box { width: min(28rem, 96vw); max-height: 92vh; overflow-y: auto; background: var(--bg2); border: 1px solid var(--gold); border-radius: 14px; padding: 1.6rem; }
     #ap h3 { font-family: Georgia, serif; font-style: italic; margin-bottom: .3rem; }
     #ap p { color: var(--dim); font-size: .85rem; margin-bottom: 1rem; }
     #ap input, #ap textarea { width: 100%; background: #07070b; color: var(--ink); border: 1px solid var(--line);
@@ -74,6 +74,11 @@
       border-radius: 8px; padding: .55rem .9rem; font: inherit; font-size: .82rem; }
     #ap-pix .copy:hover { filter: brightness(1.08); }
     #ap-pix .hint { color: var(--dim); font-size: .78rem; margin-top: .5rem; }
+    /* YG-172: form de comprovante */
+    #ap-comp { margin: .9rem 0 .2rem; border-top: 1px solid var(--line); padding-top: .8rem; }
+    #ap-comp .comp-h { font-size: .85rem; margin-bottom: .55rem; }
+    #ap-comp .comp-h small { color: var(--dim); }
+    #ap-comp .comp-msg { color: var(--rose); font-size: .78rem; min-height: 1em; margin-bottom: .4rem; }
   </style>
 </head>
 <body>
@@ -130,6 +135,15 @@
         <button class="copy" id="ap-copy" type="button">📋 Copiar código PIX</button>
         <div class="hint">Pague pelo app do banco (PIX copia-e-cola ou QR). Assim que confirmarmos, seu nome entra nos créditos.</div>
       </div>
+      <!-- YG-172: comprovante (opcional) — acelera a confirmação do time -->
+      <div id="ap-comp" hidden>
+        <div class="comp-h">📎 Já pagou? Envie o comprovante <small>(opcional — agiliza a confirmação)</small></div>
+        <input id="ap-comp-file" type="file" accept="image/*,application/pdf">
+        <input id="ap-comp-nota" type="text" placeholder="ou cole o ID da transação / observação">
+        <div class="comp-msg" id="ap-comp-msg"></div>
+        <button class="copy" id="ap-comp-send" type="button">Enviar comprovante</button>
+      </div>
+      <div class="ok" id="ap-comp-ok" hidden>✓ Comprovante recebido — vamos confirmar e seu nome entra nos créditos.</div>
       <div class="row">
         <button id="ap-cancel">Fechar</button>
         <button class="primary" id="ap-send">Registrar apoio</button>

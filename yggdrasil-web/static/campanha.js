@@ -79,12 +79,18 @@
 
   // ── modal de apoio → ledger independente (/api/v1/campanha/apoiar) ──
   var tierAtual = null;
+  var pledgeAtual = null; // YG-172: id do apoio recém-criado (p/ comprovante)
   function abrirApoio(slug, nome) {
     tierAtual = { slug: slug, nome: nome };
+    pledgeAtual = null;
     $('ap-title').textContent = 'Apoiar — tier ' + nome;
     $('ap-ok').hidden = true;
     $('ap-pix').hidden = true;            // reseta bloco PIX de um apoio anterior
     $('ap-copy').textContent = '📋 Copiar código PIX';
+    if ($('ap-comp')) $('ap-comp').hidden = true; // YG-172: reseta form de comprovante
+    if ($('ap-comp-ok')) $('ap-comp-ok').hidden = true;
+    if ($('ap-comp-file')) $('ap-comp-file').value = '';
+    if ($('ap-comp-nota')) $('ap-comp-nota').value = '';
     $('ap-send').hidden = false;
     $('ap-send').disabled = false;
     $('ap').classList.add('open');
@@ -112,9 +118,11 @@
       if (!resp.ok) { $('ap-send').disabled = false; return; }
       return resp.json().then(function (data) {
         $('ap-ok').hidden = false;
+        pledgeAtual = (data && data.id) || null; // YG-172: id p/ anexar comprovante
         if (window.yggTelemetria) window.yggTelemetria.track('campanha_apoio', { tier: tierAtual.slug });
         if (data && data.pix) {
           mostrarPix(data.pix);          // tem PIX → mostra QR/copia-e-cola, não fecha sozinho
+          if (pledgeAtual && $('ap-comp')) $('ap-comp').hidden = false; // form de comprovante
           $('ap-send').hidden = true;
         } else {
           setTimeout(fechar, 2200);      // sem PIX → mensagem + fecha
@@ -140,6 +148,34 @@
       try { document.execCommand('copy'); } catch (e) {}
       done();
     }
+  });
+
+  // ── YG-172: enviar comprovante (opcional) — anexa nota e/ou arquivo ao apoio ──
+  var compBtn = $('ap-comp-send');
+  if (compBtn) compBtn.addEventListener('click', function () {
+    if (!pledgeAtual) return;
+    var fd = new FormData();
+    var nota = ($('ap-comp-nota').value || '').trim();
+    var file = $('ap-comp-file').files && $('ap-comp-file').files[0];
+    if (nota) fd.append('nota', nota);
+    if (file) fd.append('arquivo', file);
+    if (!nota && !file) { $('ap-comp-msg').textContent = 'Anexe um arquivo ou escreva uma referência.'; return; }
+    compBtn.disabled = true;
+    $('ap-comp-msg').textContent = 'Enviando…';
+    fetch('/api/v1/campanha/pledges/' + encodeURIComponent(pledgeAtual) + '/comprovante', {
+      method: 'POST', body: fd, // multipart; o browser põe o boundary
+    }).then(function (r) {
+      if (r.ok) {
+        $('ap-comp').hidden = true;
+        $('ap-comp-ok').hidden = false;
+        if (window.yggTelemetria) window.yggTelemetria.track('campanha_comprovante', {});
+      } else {
+        compBtn.disabled = false;
+        $('ap-comp-msg').textContent = r.status === 413 ? 'Arquivo grande demais (máx 5 MB).'
+          : r.status === 415 ? 'Tipo não suportado (use imagem ou PDF).'
+          : 'Falha ao enviar — tente de novo.';
+      }
+    }).catch(function () { compBtn.disabled = false; $('ap-comp-msg').textContent = 'Falha de rede.'; });
   });
 
   renderTiers();
