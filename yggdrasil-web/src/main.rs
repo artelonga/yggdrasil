@@ -547,6 +547,11 @@ async fn main() -> anyhow::Result<()> {
         info!("co-bridge producer ativo — federando notas (P-A) + comunicação (YG-103) ao CO");
     }
 
+    // YG-168: ledger de bits por usuário (camada Shannon — score do ÑE'Ẽ).
+    let comunicacao_score = Arc::new(
+        yggdrasil_core::comunicacao::BitsLedgerStore::new(&comunicacao_rooms_dir)
+            .map_err(|e| anyhow::anyhow!("score store: {e}"))?,
+    );
     let comunicacao_state = Arc::new(
         comunicacao_routes::ComunicacaoState {
             jwt_secret: auth_state.jwt_secret.clone(),
@@ -563,6 +568,8 @@ async fn main() -> anyhow::Result<()> {
             // do Ayvu (YG-114).
             caderno: comunicacao_caderno,
             instance_store: instance_store_for_caderno,
+            // YG-168: ledger de bits por usuário.
+            score: comunicacao_score,
         }
         .with_bridge(co_bridge.sender(), co_bridge.obs_sender()),
     );
@@ -665,6 +672,23 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/comunicacao/corpus/{slug}/correcoes",
             get(comunicacao_routes::corpus_correcoes),
+        )
+        // YG-168: score / camada Shannon — ledger de bits por usuário.
+        .route(
+            "/api/v1/comunicacao/score",
+            get(comunicacao_routes::get_score),
+        )
+        .route(
+            "/api/v1/comunicacao/score/descobrir",
+            post(comunicacao_routes::score_descobrir),
+        )
+        .route(
+            "/api/v1/comunicacao/score/identificar",
+            post(comunicacao_routes::score_identificar),
+        )
+        .route(
+            "/api/v1/comunicacao/score/revelar",
+            post(comunicacao_routes::score_revelar),
         )
         .with_state(comunicacao_state);
 
