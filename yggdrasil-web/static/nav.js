@@ -46,21 +46,23 @@
   }
 
   // ── estilos ──────────────────────────────────────────────────────────────
+  // Igdrasil Core (YG-173): obsidiana + violeta elétrico, glass. Hex hardcoded —
+  // nav.js roda em páginas que podem não carregar igdrasil.css.
   var css =
     ".yg-nav{position:fixed;top:0;left:0;right:0;z-index:99997;display:flex;align-items:center;" +
-      "gap:.15rem;padding:.32rem .6rem;background:rgba(15,15,22,.92);backdrop-filter:blur(6px);" +
-      "border-bottom:1px solid #2a2a44;font:600 13px system-ui,sans-serif;" +
-      "box-shadow:0 2px 10px rgba(0,0,0,.3)}" +
-    ".yg-nav .yg-brand{color:#e9c349;font-weight:700;letter-spacing:.02em;margin-right:.55rem;" +
-      "text-decoration:none;font-size:13px;white-space:nowrap}" +
-    ".yg-nav a.yg-link{color:#c9c9d6;text-decoration:none;padding:.3rem .55rem;border-radius:7px;" +
+      "gap:.15rem;padding:.34rem .6rem;background:rgba(9,9,11,.82);backdrop-filter:blur(20px);" +
+      "-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.06);" +
+      "font:600 13px 'Geist',system-ui,sans-serif;box-shadow:0 2px 14px rgba(0,0,0,.4)}" +
+    ".yg-nav .yg-brand{color:#ecb2ff;font-weight:700;letter-spacing:.02em;margin-right:.55rem;" +
+      "text-decoration:none;font-size:13px;white-space:nowrap;text-shadow:0 0 12px rgba(189,0,255,.45)}" +
+    ".yg-nav a.yg-link{color:#a490a7;text-decoration:none;padding:.3rem .55rem;border-radius:8px;" +
       "display:flex;align-items:center;gap:.32rem;white-space:nowrap;transition:background .12s,color .12s}" +
-    ".yg-nav a.yg-link:hover{background:#1c1c28;color:#e5e2e1}" +
-    ".yg-nav a.yg-link.on{color:#e9c349;background:#1c1c12}" +
+    ".yg-nav a.yg-link:hover{background:rgba(255,255,255,.05);color:#e5e1e4}" +
+    ".yg-nav a.yg-link.on{color:#ecb2ff;background:rgba(189,0,255,.12)}" +
     ".yg-nav .yg-spacer{flex:1}" +
-    ".yg-nav a.yg-acct{color:#e9c349;text-decoration:none;border:1px solid #2a2a44;border-radius:999px;" +
-      "padding:.28rem .7rem;white-space:nowrap}" +
-    ".yg-nav a.yg-acct:hover{background:#1c1c12}" +
+    ".yg-nav a.yg-acct{color:#ecb2ff;text-decoration:none;border:1px solid #3f3244;border-radius:999px;" +
+      "padding:.28rem .8rem;white-space:nowrap;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px}" +
+    ".yg-nav a.yg-acct:hover{background:rgba(189,0,255,.12);box-shadow:0 0 12px rgba(189,0,255,.2)}" +
     ".yg-nav .yg-ico{font-size:14px;line-height:1}" +
     ".yg-nav .yg-txt{display:inline}" +
     "@media(max-width:560px){.yg-nav .yg-txt{display:none}.yg-nav{gap:.1rem}" +

@@ -1,0 +1,108 @@
+/* Igdrasil Core — sistema de design compartilhado (YG-173).
+ * Tokens + componentes do tema "command center": obsidiana + violeta elétrico,
+ * glassmorphism, tipografia Sora/Geist/JetBrains Mono. Derivado de
+ * stitch_yggdrasil_login_interface/DESIGN.md. Importável por qualquer página
+ * pública para um visual coeso. */
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Sora:wght@600;700&family=JetBrains+Mono:wght@500&display=swap');
+
+:root {
+  /* superfícies (tonal layering — "raízes e galhos") */
+  --bg: #09090b;
+  --surface: #131315;
+  --surface-low: #111113;
+  --surface-lowest: #050505;
+  --surface-container: #1c1b1d;
+  --surface-high: #201f21;
+  --line: rgba(255, 255, 255, 0.06);
+  --line-strong: #3f3244;
+  /* texto */
+  --ink: #e5e1e4;
+  --ink-dim: #a490a7;
+  --ink-mute: #7c6a7f;
+  /* acentos */
+  --primary: #ecb2ff;        /* violeta elétrico — ações, ativo, caminho crítico */
+  --primary-deep: #520071;   /* preenchimento de botão primário */
+  --primary-container: #bd00ff;
+  --on-primary: #ffffff;
+  --secondary: #00dbe9;      /* ciano neon — dados, status, destaques 2ºs */
+  --tertiary: #00e383;       /* esmeralda — sucesso, métricas regenerativas */
+  --error: #ffb4ab;
+  /* tipografia */
+  --font-display: 'Sora', system-ui, sans-serif;
+  --font-body: 'Geist', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* formas */
+  --r-sm: 0.25rem; --r: 0.5rem; --r-md: 0.75rem; --r-lg: 1rem; --r-xl: 1.5rem; --r-full: 9999px;
+}
+
+/* ── base ──────────────────────────────────────────────────────────────── */
+.ig, body.ig {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+}
+.ig h1, .ig h2, .ig h3, .ig .display { font-family: var(--font-display); letter-spacing: -0.01em; }
+.ig .mono, .ig .label { font-family: var(--font-mono); letter-spacing: 0.05em; }
+.ig .label { font-size: 14px; font-weight: 500; text-transform: uppercase; color: var(--ink-dim); }
+
+/* ── starfield + glow (atmosfera "command center") ─────────────────────── */
+.ig-stars { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.ig-stars i { position: absolute; background: #fff; border-radius: 50%; width: 2px; height: 2px; }
+.ig-glow {
+  position: fixed; border-radius: 50%; pointer-events: none; z-index: 0; filter: blur(8px);
+  background: radial-gradient(circle, rgba(189, 0, 255, 0.13) 0%, rgba(189, 0, 255, 0) 70%);
+}
+.ig-glow.cyan { background: radial-gradient(circle, rgba(0, 219, 233, 0.06) 0%, rgba(0, 219, 233, 0) 70%); }
+.ig-glow.green { background: radial-gradient(circle, rgba(0, 227, 131, 0.05) 0%, rgba(0, 227, 131, 0) 70%); }
+
+/* ── glassmorphism ─────────────────────────────────────────────────────── */
+.ig-glass {
+  background: rgba(12, 12, 14, 0.4);
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+/* ── botões ────────────────────────────────────────────────────────────── */
+.ig-btn {
+  font-family: var(--font-mono); font-size: 14px; letter-spacing: 0.05em;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  padding: 0.8rem 1.1rem; border-radius: var(--r); border: 1px solid transparent;
+  cursor: pointer; text-decoration: none; transition: filter .2s, background .2s, border-color .2s, box-shadow .2s;
+}
+.ig-btn-primary {
+  background: var(--primary-deep); color: var(--on-primary); border: none;
+  box-shadow: 0 10px 20px -5px rgba(82, 0, 113, 0.4);
+}
+.ig-btn-primary:hover { filter: brightness(1.18); }
+.ig-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+.ig-btn-ghost {
+  background: var(--surface-lowest); color: var(--ink); border: 1px solid var(--line-strong);
+}
+.ig-btn-ghost:hover { background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 12px rgba(189, 0, 255, 0.15); }
+
+/* ── inputs (foco = glow violeta) ──────────────────────────────────────── */
+.ig-input {
+  width: 100%; background: var(--surface-lowest); color: var(--ink);
+  border: 1px solid var(--line-strong); border-radius: var(--r);
+  padding: 0.8rem 1rem; font: inherit; font-size: 16px; outline: none;
+  transition: border-color .25s, box-shadow .25s;
+}
+.ig-input::placeholder { color: var(--ink-mute); }
+.ig-input:focus { border-color: var(--primary-deep); box-shadow: 0 0 15px rgba(82, 0, 113, 0.3); }
+
+/* ── chip (mono dentro de cápsula ciano) ───────────────────────────────── */
+.ig-chip {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.18rem 0.6rem; border-radius: var(--r-full);
+  border: 1px solid rgba(0, 219, 233, 0.4); color: var(--secondary);
+}
+
+/* ── pip de status (vivo) ──────────────────────────────────────────────── */
+.ig-pip { width: 8px; height: 8px; border-radius: 50%; background: var(--tertiary);
+  box-shadow: 0 0 8px rgba(0, 227, 131, 0.5); display: inline-block; animation: ig-pulse 2s infinite; }
+@keyframes ig-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
