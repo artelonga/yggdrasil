@@ -6,6 +6,20 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.40.0] — 2026-06-22 — ÑE'Ẽ lexicon worlds (Shannon/CO/música) + universo no CO
+
+Fecha a reconciliação do backlog: as últimas 4 tarefas que pós-datam a 2.39.0.
+
+### Added
+- **YG-138** — universo criado pelo usuário vira universo no CO + convidar /
+  público-subscribe (2ª metade; compõe sobre o "Criar no CO" da v2.29.0).
+- **YG-168** — camada Shannon: loop de bits/score no ÑE'Ẽ (ganhar bits
+  descobrindo símbolos, gastar para revelar glosa; entropy_stats).
+- **YG-169** — CO-universe → LexiconPack: projetar um universo de conteúdo do CO
+  (yoruba/guarani-mbyá/português) num mundo caminhável de léxico.
+- **YG-170** — música caminhável: sequencer espacial (compor andando, gravar
+  motivo, salvar). HUD de música em `#music-bits` (coexiste com o score `#bits-hud`).
+
 ## [2.39.0] — 2026-06-22 — Reconciliação do backlog: epics analytics/corpus/presença/mundo + ÑE'Ẽ + comprovante
 
 Consolida 9 tarefas reconciliadas do backlog de PRs paralelos.
