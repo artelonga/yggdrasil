@@ -6,6 +6,16 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.38.0] — 2026-06-22 — Igdrasil Core: design system + login glassmorphism
+
+### Added
+- **YG-173** — sistema de design "Igdrasil Core" (`igdrasil.css`: obsidiana +
+  violeta elétrico, glassmorphism, Sora/Geist/JetBrains Mono) + ícone da
+  árvore-mundo (favicon/logo). `/login` redesenhado ao tema mantendo o fluxo real
+  (código por e-mail + Google handover). `nav.js` global e o funil de campanha
+  (`/campanha`, `/creditos`, `/campanha/admin`) repaletados. Fatia 1 — corpo das
+  demais páginas públicas em fatias seguintes.
+
 ## [2.37.0] — 2026-06-21 — Campanha operável: meta/progresso + admin de apoios
 
 Fecha a operabilidade do crowdfunding próprio (sobre YG-161/163): a campanha
