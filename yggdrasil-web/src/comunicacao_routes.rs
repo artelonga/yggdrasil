@@ -819,20 +819,35 @@ pub async fn list_templates() -> impl IntoResponse {
     Json(template_summaries())
 }
 
-// ─── LexiconPack (YG-155) ─────────────────────────────────────────────────────
+// ─── LexiconPack (YG-155 + YG-166) ──────────────────────────────────────────
 
-/// `GET /api/v1/comunicacao/packs` — resumos leves dos pacotes-seed (música,
-/// idioma…). Sem auth — navegação pública. **Lazy-load**: só os resumos; as
-/// entradas (e seu áudio) vêm por `GET .../packs/{id}`.
-pub async fn list_packs() -> impl IntoResponse {
-    Json(yggdrasil_core::comunicacao::seed_summaries())
+/// Diretório de packs de arquivo (env `YGGDRASIL_PACKS_DIR`, default `data/packs`).
+fn packs_dir() -> std::path::PathBuf {
+    std::env::var("YGGDRASIL_PACKS_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("data/packs"))
 }
 
-/// `GET /api/v1/comunicacao/packs/{id}` — o pacote completo, sintetizado sob
-/// demanda (memory-light: sem samples; o áudio é só parâmetros de síntese). 404
-/// se o id não existe.
+/// Todos os packs disponíveis: seed embutidos + packs de arquivo.
+fn all_packs() -> Vec<yggdrasil_core::comunicacao::LexiconPack> {
+    let mut packs = yggdrasil_core::comunicacao::seed_packs();
+    packs.extend(yggdrasil_core::comunicacao::load_packs_dir(&packs_dir()));
+    packs
+}
+
+/// `GET /api/v1/comunicacao/packs` — resumos leves de todos os pacotes (seed +
+/// arquivo). Sem auth — navegação pública. **Lazy-load**: entradas chegam por
+/// `GET .../packs/{id}`.
+pub async fn list_packs() -> impl IntoResponse {
+    use yggdrasil_core::comunicacao::PackSummary;
+    let summaries: Vec<PackSummary> = all_packs().iter().map(PackSummary::of).collect();
+    Json(summaries)
+}
+
+/// `GET /api/v1/comunicacao/packs/{id}` — pacote completo (seed ou arquivo).
+/// 404 se o id não existe em nenhuma fonte.
 pub async fn get_pack(Path(id): Path<String>) -> impl IntoResponse {
-    match yggdrasil_core::comunicacao::seed_pack(&id) {
+    match all_packs().into_iter().find(|p| p.id == id) {
         Some(pack) => Json(pack).into_response(),
         None => (StatusCode::NOT_FOUND, "pacote não encontrado").into_response(),
     }
