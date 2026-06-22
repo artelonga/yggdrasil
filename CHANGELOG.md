@@ -6,6 +6,32 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.39.0] — 2026-06-22 — Reconciliação do backlog: epics analytics/corpus/presença/mundo + ÑE'Ẽ + comprovante
+
+Consolida 9 tarefas reconciliadas do backlog de PRs paralelos.
+
+### Added
+- **YG-127 (EPIC)** — analytics ao vivo: telemetria do Yggdrasil no hub do CO
+  (fase 1) + stream/painel próprio (fase 2).
+- **YG-139 (EPIC)** — framework NLP de corpus: documento como árvore, corpora
+  como álgebra (DuckDB).
+- **YG-145 (EPIC)** — presença/atividade: jogos como lugares vivos (telemetria
+  no modelo ArteLonga).
+- **YG-146 (EPIC)** — Mundo walkable: lobby/universo como jogo 2D (Tibia +
+  Gather), temas, NPC-LLM, edição por manipulação direta.
+- **YG-166** — LexiconPack authoring por arquivo (YAML/Markdown) + carregador +
+  pack-exemplo (autorar sem recompilar Rust).
+- **YG-171** — walkable pack render: pisar numa entrada toca o som e revela
+  glosa/relações; um LexiconPack vira sala caminhável (renumerado de YG-167,
+  que já era o hotfix de login enviado em 2.36.1).
+- **YG-113** — sugestões de corpus → curadoria na comunicação.
+- **YG-172** — comprovante de PIX: apoiador anexa (nota/arquivo); operador vê
+  "aguardando" vs "enviado" e baixa o arquivo (admin).
+
+### Changed
+- **YG-71** — changelog por universo via git pathspec (jj-compatible, sem
+  submodules).
+
 ## [2.38.0] — 2026-06-22 — Igdrasil Core: design system + login glassmorphism
 
 ### Added
