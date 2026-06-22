@@ -255,6 +255,11 @@ fn render_term_markdown(user: &str, el: &Element, parts: &[String]) -> String {
     if let Some(p) = &el.pronunciation {
         fm.push_str(&format!("pronunciation: {}\n", yaml_scalar(p)));
     }
+    if let Some(g) = &el.gloss
+        && !g.trim().is_empty()
+    {
+        fm.push_str(&format!("gloss: {}\n", yaml_scalar(g)));
+    }
     if let Some(c) = &el.concept {
         fm.push_str(&format!("concept: {}\n", yaml_scalar(c)));
     }
