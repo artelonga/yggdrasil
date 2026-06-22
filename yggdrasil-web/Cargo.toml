@@ -30,7 +30,7 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 nanoid = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v4", "v5"] }
 
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -70,6 +70,8 @@ sha2 = { workspace = true }
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 serde_yaml = { workspace = true }
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+webauthn-rs = "0.5.5"
+base64 = "0.22.1"
 
 [dev-dependencies]
 tempfile = { workspace = true }

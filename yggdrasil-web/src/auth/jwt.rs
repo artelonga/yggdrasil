@@ -73,6 +73,19 @@ pub fn verify_jwt(token: &str, secret: &str) -> Result<String, jsonwebtoken::err
     Ok(token_data.claims.sub)
 }
 
+/// Como [`verify_jwt`], mas devolve os claims completos (sub + email) — usado no
+/// registro de passkey (YG-174), que amarra a credencial ao e-mail do usuário.
+pub fn verify_jwt_full(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )?;
+    Ok(token_data.claims)
+}
+
 pub fn sign_jwt(user_id: &str, email: &str, secret: &str) -> anyhow::Result<String> {
     let now = Utc::now();
     let iat = now.timestamp() as usize;

@@ -151,6 +151,58 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/auth/verify", post(auth::verify_code))
         .with_state(auth_state.clone());
 
+    // YG-174: passkeys (WebAuthn) — login biométrico/security-key real. RP id +
+    // origin do ambiente (default localhost p/ dev). Yggdrasil emite o próprio JWT.
+    let rp_id = std::env::var("YGGDRASIL_RP_ID").unwrap_or_else(|_| "localhost".to_string());
+    let rp_origin = std::env::var("YGGDRASIL_RP_ORIGIN")
+        .unwrap_or_else(|_| "http://localhost:3030".to_string());
+    let passkey_router = match webauthn_rs::prelude::Url::parse(&rp_origin)
+        .map_err(|e| anyhow::anyhow!("rp_origin: {e}"))
+        .and_then(|o| {
+            webauthn_rs::WebauthnBuilder::new(&rp_id, &o)
+                .map_err(|e| anyhow::anyhow!("webauthn: {e}"))
+                .and_then(|b| {
+                    b.rp_name("Yggdrasil")
+                        .build()
+                        .map_err(|e| anyhow::anyhow!("webauthn build: {e}"))
+                })
+        }) {
+        Ok(webauthn) => {
+            let passkey_state = Arc::new(api::passkey::PasskeyState {
+                webauthn: Arc::new(webauthn),
+                db: Arc::new(
+                    auth::passkey::PasskeyDb::open(&db_path)
+                        .map_err(|e| anyhow::anyhow!("passkey db: {e}"))?,
+                ),
+                jwt_secret: auth_state.jwt_secret.clone(),
+                reg: std::sync::Mutex::new(std::collections::HashMap::new()),
+                auth: std::sync::Mutex::new(std::collections::HashMap::new()),
+            });
+            Router::new()
+                .route(
+                    "/api/v1/auth/passkey/register/start",
+                    post(api::passkey::register_start),
+                )
+                .route(
+                    "/api/v1/auth/passkey/register/finish",
+                    post(api::passkey::register_finish),
+                )
+                .route(
+                    "/api/v1/auth/passkey/login/start",
+                    post(api::passkey::login_start),
+                )
+                .route(
+                    "/api/v1/auth/passkey/login/finish",
+                    post(api::passkey::login_finish),
+                )
+                .with_state(passkey_state)
+        }
+        Err(e) => {
+            tracing::error!("passkeys desligados (config inválida): {e}");
+            Router::new()
+        }
+    };
+
     let snake_router = Router::new()
         .route("/api/v1/games/snake/start", get(snake_start))
         .route("/api/v1/games/snake/{id}/input", post(snake_input))
@@ -743,6 +795,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/version", get(version))
         .merge(auth_router)
+        .merge(passkey_router)
         .merge(co_handover_router)
         .merge(me_router)
         .merge(scores_router)
