@@ -182,6 +182,41 @@ const JORNADAS = {
     await page.waitForSelector('#toast.show', { timeout: 4000 }).catch(() => {});
     await sleep(900);
   },
+
+  // 5. Tutorial missões: overlay 2 páginas (1ª visita — localStorage vazio).
+  async tutorial_missoes(page) {
+    // O tutorial dispara 800ms após o boot; a 1ª visita sempre mostra.
+    await page.waitForSelector('#missao.open', { timeout: 5000 });
+    await sleep(900); // página 1 visível
+    await page.locator('#ms-next').click(); // Próximo →
+    await sleep(1800); // página 2 com animação de drag-drop
+    await page.locator('#ms-next').click(); // Começar!
+    await sleep(500);
+  },
+
+  // 6. NPC: abrir painel, escolher tópico, enviar pergunta livre.
+  async npc(page) {
+    // Dispensar o tutorial (pode estar visível na 1ª visita do contexto).
+    await page.waitForSelector('#missao.open', { timeout: 2500 }).catch(() => {});
+    const skip = page.locator('#ms-skip');
+    if (await skip.isVisible().catch(() => false)) {
+      await skip.click();
+      await sleep(300);
+    }
+    // Abrir NPC pelo ícone da toolbar (4º botão — 🧙 Guia).
+    await page.locator('#ferramentas .tool').nth(3).click();
+    await page.waitForSelector('#panel.open', { timeout: 4000 });
+    await sleep(600);
+    // Clicar no 1º tópico → resposta determinística imediata.
+    await page.locator('.topic').first().click();
+    await sleep(1000);
+    // Digitar pergunta livre e enviar.
+    await page.locator('#npc-q').click();
+    await page.keyboard.type('como entro numa sala?', { delay: 45 });
+    await sleep(400);
+    await page.locator('#npc-send').click();
+    await sleep(1200); // fallback determinístico (sem backend)
+  },
 };
 
 async function main() {
@@ -200,6 +235,13 @@ async function main() {
         recordVideo: { dir: videoDir, size: { width: 1280, height: 800 } },
       });
       const page = await ctx.newPage();
+      // Para todas as jornadas exceto tutorial_missoes, pular o overlay de
+      // missão (tutorial dispara 800ms após boot; interferiria nos cliques).
+      if (nome !== 'tutorial_missoes') {
+        await page.addInitScript(() => {
+          localStorage.setItem('mundo_missao_v1', '1');
+        });
+      }
       await page.goto(base + '/mundo', { waitUntil: 'networkidle' });
       await page.waitForSelector('#cv', { timeout: 8000 });
       await sleep(600); // primeira pintura do canvas
