@@ -6,6 +6,16 @@ Todas as mudanças relevantes ao projeto Yggdrasil. Formato: [Keep a Changelog](
 > `Cargo.toml`); um commit `chore(release): X.Y.Z` consolida tudo aqui e corta a
 > versão. Convenção (já adotada na YG-94, espelha o `co`): ver `docs/RELEASE.md`.
 
+## [2.41.0] — 2026-06-22 — Passkeys (WebAuthn) + login com funcionalidade real do mock
+
+### Added
+- **YG-174 — Passkeys (WebAuthn)**: login biométrico/security-key real e
+  self-contained (`webauthn-rs`). Registrar (logado) amarra a credencial ao
+  `sub`+`email`; entrar com Face ID/digital/chave → o Yggdrasil emite o próprio
+  JWT (sem round-trip ao CO). `/login` redesenhado (Google · código · passkey ·
+  registrar neste dispositivo). "SSO corporativo" vira inquérito honesto (canal
+  de feedback), não login fake. Config `YGGDRASIL_RP_ID`/`_RP_ORIGIN` (fly.toml).
+
 ## [2.40.0] — 2026-06-22 — ÑE'Ẽ lexicon worlds (Shannon/CO/música) + universo no CO
 
 Fecha a reconciliação do backlog: as últimas 4 tarefas que pós-datam a 2.39.0.
