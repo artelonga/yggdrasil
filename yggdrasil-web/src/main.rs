@@ -682,6 +682,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/universos/vim", get(serve_vim))
         .route("/universos/comunicacao", get(serve_comunicacao))
         .route("/universos/nee", get(serve_nee))
+        .route("/universos/nee/world", get(serve_nee_world))
         .route("/universos/corpus", get(serve_corpus))
         .route("/universos/corpus-lab", get(serve_corpus_lab))
         // Fallback: o catálogo (YG-68) lista 41 universos mas só os embedded
@@ -906,6 +907,11 @@ async fn serve_comunicacao() -> impl IntoResponse {
 /// YG-155: ÑE'Ẽ — pacotes de léxico que **soam** (música/idioma via Web Audio).
 async fn serve_nee() -> impl IntoResponse {
     Html(include_str!("../static/universos/nee.html"))
+}
+
+/// YG-167: sala caminhável de um LexiconPack — pisar numa entrada toca o som.
+async fn serve_nee_world() -> impl IntoResponse {
+    Html(include_str!("../static/universos/nee-world.html"))
 }
 
 /// Superfície de exploração do **Ayvu Rapyta** — leitura verso a verso, capítulo
