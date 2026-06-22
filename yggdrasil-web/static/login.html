@@ -1,139 +1,125 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="ig">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Entrar — Yggdrasil</title>
+  <link rel="icon" type="image/png" href="/static/brand/yggdrasil-tree.png">
+  <link rel="stylesheet" href="/static/igdrasil.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: #1c1b1b;
-      color: #e5e2e1;
-      font-family: system-ui, monospace;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      padding: 2rem 1rem;
-    }
-    h1 { font-weight: 300; letter-spacing: 0.2em; font-size: 1.8rem; margin-bottom: 0.4rem; }
-    .subtitulo { opacity: 0.5; font-size: 0.9rem; margin-bottom: 2.5rem; }
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      width: 100%;
-      max-width: 22rem;
-    }
-    label { font-size: 0.85rem; opacity: 0.7; letter-spacing: 0.1em; }
-    input {
-      background: #201f1f;
-      border: 1px solid #2a2a3e;
-      color: #e5e2e1;
-      padding: 0.8rem 1rem;
-      font-size: 1rem;
-      font-family: inherit;
-      outline: none;
-      letter-spacing: 0.05em;
-    }
-    input:focus { border-color: #e9c349; }
-    button {
-      background: #e9c349;
-      border: none;
-      color: #1c1b1b;
-      padding: 0.8rem 1rem;
-      font-size: 0.95rem;
-      font-family: inherit;
-      letter-spacing: 0.1em;
-      cursor: pointer;
-      margin-top: 0.5rem;
-    }
-    button:hover { opacity: 0.85; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .erro {
-      color: #ff6b6b;
-      font-size: 0.85rem;
-      min-height: 1.2em;
-      margin-top: -0.5rem;
-    }
-    .info {
-      color: #e9c349;
-      font-size: 0.85rem;
-      margin-top: -0.5rem;
-      opacity: 0.8;
-    }
-    .btn-co {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.6rem;
-      width: 100%;
-      max-width: 22rem;
-      background: #ffffff;
-      color: #201f1f;
-      padding: 0.7rem 1rem;
-      text-align: center;
-      text-decoration: none;
-      font-size: 0.95rem;
-      font-weight: 500;
-      border: 1px solid #2a2a3e;
-      margin-bottom: 1.2rem;
-      transition: box-shadow 0.15s;
-    }
-    .btn-co:hover { box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.4); }
-    .btn-co svg { flex-shrink: 0; }
-    .separator {
-      font-size: 0.75rem;
-      opacity: 0.4;
-      letter-spacing: 0.2em;
-      margin-bottom: 1.2rem;
-    }
-    .link-volta {
-      margin-top: 2rem;
-      font-size: 0.85rem;
-    }
-    .link-volta a { color: #e9c349; text-decoration: none; border-bottom: 1px solid currentColor; }
+    body { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      position: relative; overflow-x: hidden; padding: 2rem 1rem 6rem; }
+    main { width: 100%; max-width: 27rem; position: relative; z-index: 10; }
+    .panel { padding: 2.4rem 2rem; position: relative; overflow: hidden;
+      box-shadow: 0 35px 60px -15px rgba(0,0,0,.8); }
+    /* acento de topo violeta */
+    .panel::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--primary-container), transparent); opacity: .5; }
+    .brand { display: flex; flex-direction: column; align-items: center; margin-bottom: 2rem; }
+    .brand img { width: 78px; height: 78px; border-radius: var(--r-md);
+      box-shadow: 0 0 30px rgba(189,0,255,.28); }
+    .brand h1 { font-size: 24px; font-weight: 600; margin-top: 1rem; }
+    .brand p { color: var(--ink-dim); font-size: 13px; margin-top: .35rem; text-align: center; }
+    form { display: flex; flex-direction: column; gap: .7rem; }
+    .field-label { display: block; margin-bottom: .35rem; }
+    .erro { color: var(--error); font-size: 13px; min-height: 1.1em; }
+    .info { color: var(--secondary); font-size: 13px; margin-bottom: .3rem; }
+    .info span { color: var(--ink); font-family: var(--font-mono); }
+    .btn-full { width: 100%; padding: .9rem 1rem; margin-top: .3rem; }
+    .sso { width: 100%; margin-bottom: 1.2rem; gap: .6rem; }
+    .divider { display: flex; align-items: center; gap: .8rem; color: var(--ink-mute);
+      font-size: 12px; margin: 1.3rem 0; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+    .voltar { margin-top: 1.6rem; text-align: center; font-size: 13px; color: var(--ink-dim); }
+    .voltar a { color: var(--primary); text-decoration: none; border-bottom: 1px solid rgba(236,178,255,.25); }
+    .voltar a:hover { border-color: var(--primary); }
     .hidden { display: none; }
+    footer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem;
+      padding: 1.1rem 1.5rem; border-top: 1px solid var(--line);
+      color: var(--ink-mute); font-size: 12px; }
+    footer a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: .4rem; }
+    footer a:hover { color: var(--primary); }
   </style>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/ui/relic.css">
-<style>/* relic theme normalization */
-body{font-family:'Manrope',system-ui,sans-serif}
-h1,h2,h3{font-family:'Newsreader',Georgia,serif}</style>
 </head>
-<body>
-  <h1>YGGDRASIL</h1>
-  <p class="subtitulo">Conectando ideias. Construindo universos.</p>
+<body class="ig" data-yg-nav-skip>
+  <!-- atmosfera: starfield + glows (preenchido por JS p/ não inflar o HTML) -->
+  <div class="ig-stars" id="stars" aria-hidden="true"></div>
+  <div class="ig-glow" style="width:600px;height:600px;top:-200px;left:-200px"></div>
+  <div class="ig-glow green" style="width:760px;height:760px;bottom:-300px;right:-200px"></div>
 
-  <a id="btn-co-login" class="btn-co" href="/auth/co-login">
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-    </svg>
-    Continuar com Google
-  </a>
-  <p class="separator">— ou —</p>
+  <main>
+    <div class="ig-glass panel">
+      <div class="brand">
+        <img src="/static/brand/yggdrasil-tree.png" alt="Yggdrasil">
+        <h1>Entrar</h1>
+        <p>Conectando ideias. Construindo universos.</p>
+      </div>
 
-  <form id="form-email">
-    <label for="email">EMAIL</label>
-    <input type="email" id="email" name="email" required autocomplete="email" placeholder="você@exemplo.com">
-    <button type="submit" id="btn-email">Enviar código</button>
-    <p class="erro" id="erro-email"></p>
-  </form>
+      <!-- SSO real: handover do CO (Google / sessão artelonga) -->
+      <a id="btn-co-login" class="ig-btn ig-btn-ghost sso" href="/auth/co-login">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        Continuar com Google
+      </a>
 
-  <form id="form-codigo" class="hidden">
-    <p class="info">Enviamos um código de 6 dígitos para <span id="email-confirmado"></span></p>
-    <label for="codigo">CÓDIGO</label>
-    <input type="text" id="codigo" name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="000000">
-    <button type="submit" id="btn-codigo">Entrar</button>
-    <p class="erro" id="erro-codigo"></p>
-  </form>
+      <div class="divider">ou com seu e-mail</div>
 
-  <p class="link-volta"><a href="/lobby">← Voltar ao lobby</a></p>
+      <!-- fluxo real: código por e-mail (sem senha) -->
+      <form id="form-email">
+        <div>
+          <label class="label field-label" for="email">Identidade</label>
+          <input class="ig-input" type="email" id="email" name="email" required
+                 autocomplete="email" placeholder="você@exemplo.com">
+        </div>
+        <button type="submit" id="btn-email" class="ig-btn ig-btn-primary btn-full">Enviar código →</button>
+        <p class="erro" id="erro-email"></p>
+      </form>
 
+      <form id="form-codigo" class="hidden">
+        <p class="info">Código de 6 dígitos enviado para <span id="email-confirmado"></span></p>
+        <div>
+          <label class="label field-label" for="codigo">Código</label>
+          <input class="ig-input mono" type="text" id="codigo" name="codigo" inputmode="numeric"
+                 pattern="[0-9]{6}" maxlength="6" required placeholder="000000"
+                 style="letter-spacing:.4em;text-align:center;font-size:1.3rem">
+        </div>
+        <button type="submit" id="btn-codigo" class="ig-btn ig-btn-primary btn-full">Entrar →</button>
+        <p class="erro" id="erro-codigo"></p>
+      </form>
+
+      <p class="voltar"><a href="/lobby">← Voltar ao lobby</a></p>
+    </div>
+  </main>
+
+  <footer>
+    <div>© Projeto Yggdrasil · artelonga</div>
+    <div style="display:flex;gap:1.2rem">
+      <a href="/universos">Universos</a>
+      <a href="/campanha">Apoie</a>
+      <a href="/analytics"><span class="ig-pip"></span> Ao vivo</a>
+    </div>
+  </footer>
+
+  <script>
+    // starfield leve: pontos aleatórios fixos (sem libs)
+    (function () {
+      var s = document.getElementById('stars'); if (!s) return;
+      var n = 26, h = '';
+      for (var i = 0; i < n; i++) {
+        var op = (Math.random() * 0.5 + 0.1).toFixed(2);
+        var sz = Math.random() < 0.5 ? 1 : 2;
+        h += '<i style="top:' + (Math.random()*100).toFixed(1) + '%;left:' + (Math.random()*100).toFixed(1) +
+             '%;opacity:' + op + ';width:' + sz + 'px;height:' + sz + 'px"></i>';
+      }
+      s.innerHTML = h;
+    })();
+  </script>
   <script src="/static/login.js"></script>
   <script defer src="/static/telemetria.js"></script>
 </body>
