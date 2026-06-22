@@ -92,6 +92,17 @@
       cursor: pointer; font-size: .85rem; width: 100%;
     }
     #quiz-close:hover { border-color: var(--gold); color: var(--gold); }
+
+    /* ── YG-170: compor andando ────────────────────────────────────────── */
+    #compose h2 { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+    .compose-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+    .compose-controls label { color: var(--dim); font-size: .85rem; display: flex; align-items: center; gap: 6px; }
+    .compose-controls input[type=number] { width: 64px; background: var(--panel); color: var(--ink);
+      border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: .85rem; }
+    .bits-hud { color: var(--gold); font-size: .85rem; margin-left: auto; letter-spacing: .5px; }
+    .compose-status { margin-top: 8px; font-size: .78rem; color: var(--dim);
+      font-family: ui-monospace, monospace; min-height: 1.4em; }
+    button.recording { border-color: #e55 !important; color: #e55 !important; }
   </style>
 </head>
 <body>
@@ -119,6 +130,19 @@
     <section id="language">
       <h2>🗣️ Idioma <span class="meta" id="language-meta"></span></h2>
       <div class="grid" id="language-grid"></div>
+    </section>
+    <!-- YG-170: sequencer espacial — compor andando -->
+    <section id="compose">
+      <h2>🎹 Compor andando <span class="meta" id="compose-meta"></span></h2>
+      <div class="compose-controls">
+        <label>BPM: <input type="number" id="bpm" value="120" min="40" max="240" step="5" /></label>
+        <button id="btn-record" class="entry">⏺ Gravar</button>
+        <button id="btn-stop" class="entry" disabled>⏹ Parar</button>
+        <button id="btn-replay" class="entry" disabled>▶ Reproduzir</button>
+        <button id="btn-save" class="entry" disabled>💾 Salvar motivo</button>
+        <span id="music-bits" class="bits-hud">⚡ 0 bits</span>
+      </div>
+      <div id="compose-status" class="compose-status"></div>
     </section>
     <div id="log"></div>
   </main>

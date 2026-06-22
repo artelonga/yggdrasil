@@ -575,6 +575,20 @@ async fn main() -> anyhow::Result<()> {
     );
     // Rede de segurança periódica (no-op se o write-back estiver desligado).
     comunicacao_routes::spawn_writeback_sweeper(comunicacao_state.clone());
+
+    // YG-170: sequencer espacial — salvar motivos gravados pelo front.
+    // Subdiretório do mesmo comunicacao_rooms_dir (policy consistente).
+    let motivos_dir = std::path::Path::new(&comunicacao_rooms_dir).join("motivos");
+    let motivos_router = Router::new()
+        .route(
+            "/api/v1/comunicacao/motivos",
+            post(api::motivos::save_motivo),
+        )
+        .with_state(Arc::new(api::motivos::MotivosState {
+            jwt_secret: auth_state.jwt_secret.clone(),
+            motivos_dir,
+        }));
+
     let comunicacao_router = Router::new()
         .route(
             "/api/v1/comunicacao/salas",
@@ -744,6 +758,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(feedback_router)
         .merge(campanha_router)
         .merge(comunicacao_router)
+        .merge(motivos_router)
         .merge(stream_router)
         .merge(atividade_router)
         .merge(corpus_router)
