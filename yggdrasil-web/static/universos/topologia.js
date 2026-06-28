@@ -164,6 +164,7 @@
     });
     // nós — com culling de viewport + LOD nos rótulos (4837 nós).
     var neigh = focusNeighborIds();
+    var fewNodes = Object.keys(nodes).length <= 60; // modo sentença: rotula tudo
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     Object.keys(nodes).forEach(function (id) {
       var n = nodes[id], p = toScreen(n);
@@ -177,8 +178,8 @@
       }
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
       ctx.fillStyle = packColor(n.pack); ctx.fill();
-      // LOD: rótulo só quando ampliado, ou p/ termos populares, foco e vizinhos.
-      if (focused || neigh[id] || view.k > 1.5 || (view.k > 0.7 && (n.pop || 0) >= 8)) {
+      // LOD: poucos nós (modo sentença) → sempre rotula; senão, só ampliado/populares.
+      if (fewNodes || focused || neigh[id] || view.k > 1.5 || (view.k > 0.7 && (n.pop || 0) >= 8)) {
         ctx.fillStyle = focused ? '#fff' : '#d8d6d4';
         ctx.font = 'italic ' + (focused ? 17 : 13) + 'px Newsreader, Georgia, serif';
         ctx.fillText(n.term, p.x, p.y + r + 2);
@@ -368,33 +369,60 @@
   }
 
   // ── paleta (catálogo de nós) + busca ────────────────────────────────────────
-  var catalog = [];
-  var PAL_MAX = 150; // léxico tem milhares — paleta mostra os top por pop / matches
-  function renderPalette(filter) {
+  // catálogo = LOOKUP só (id→nó); NÃO se renderiza tudo (era a lag). O grafo
+  // começa vazio e se filtra às palavras de UMA sentença ("ler primeiro").
+  var byId = {};       // id → nó (term/gloss/x/y/pop)
+  var sentList = [];   // sentenças carregadas (/sentencas)
+  var PAL_MAX = 120;
+
+  function renderSentences(filter) {
     var f = (filter || '').toLowerCase();
-    var items = catalog.filter(function (n) {
-      return !f || n.term.toLowerCase().indexOf(f) >= 0 || (n.gloss || '').toLowerCase().indexOf(f) >= 0;
-    });
-    var shown = items.slice(0, PAL_MAX);
-    var byPack = {};
-    shown.forEach(function (n) { (byPack[n.pack] = byPack[n.pack] || []).push(n); });
-    var html = Object.keys(byPack).map(function (pack) {
-      return '<div class="pal-group">' + esc(pack) + '</div>' + byPack[pack].map(function (n) {
-        return '<div class="pal-item" data-go="' + esc(n.id) + '">' +
-          '<span class="dot" style="width:9px;height:9px;border-radius:50%;background:' + packColor(n.pack) + '"></span>' +
-          '<span class="term">' + esc(n.term) + '</span>' +
-          '<span class="gl">' + esc(n.gloss || '') + '</span></div>';
-      }).join('');
-    }).join('') || '<div class="hint">nada encontrado.</div>';
-    if (items.length > shown.length) html += '<div class="hint">+' + (items.length - shown.length) + ' mais — refine a busca.</div>';
+    var items = sentList.filter(function (s) {
+      return !f || s.text.toLowerCase().indexOf(f) >= 0 || s.loc.toLowerCase().indexOf(f) >= 0;
+    }).slice(0, PAL_MAX);
+    var html = items.map(function (s) {
+      return '<div class="pal-item sent" data-sent="' + esc(s.id) + '">' +
+        '<div><span class="loc" style="font-size:.62rem;letter-spacing:.1em;color:var(--secondary)">' + esc(s.loc) +
+        '</span> <span class="gl">' + s.terms.length + ' palavras</span></div>' +
+        '<div class="vt" style="font-family:var(--head);font-style:italic">' + esc(s.text) + '</div></div>';
+    }).join('') || '<div class="hint">nenhuma sentença.</div>';
     $('#pal-list').innerHTML = html;
-    $('#pal-list').querySelectorAll('.pal-item[data-go]').forEach(function (el) {
+    $('#pal-list').querySelectorAll('.pal-item[data-sent]').forEach(function (el) {
       el.addEventListener('click', function () {
-        var n = catalog.find(function (c) { return c.id === el.dataset.go; });
-        if (n) ensureNode(n);
-        focus(el.dataset.go);
+        var s = sentList.find(function (x) { return x.id === el.dataset.sent; });
+        if (s) loadSentence(s);
         if (window.innerWidth < 720) $('#palette').classList.remove('open');
       });
+    });
+  }
+
+  // Renderiza SÓ as palavras desta sentença (nas posições reais do léxico) +
+  // suas conexões internas. Nada de 8 mil nós. O texto fica no banner (ler).
+  function loadSentence(s) {
+    nodes = {}; edges = []; focusId = null; prevFocus = null;
+    s.terms.forEach(function (id) { if (byId[id]) ensureNode(byId[id]); });
+    $('#sent-banner').innerHTML = '<span class="loc">' + esc(s.loc) + '</span> ' + esc(s.text);
+    $('#sent-banner').classList.add('show');
+    fitView();
+    loadSentenceEdges();
+    toast(s.terms.length + ' palavras desta sentença — clique uma para explorar');
+  }
+
+  // Arestas INTRA-sentença (entre as palavras carregadas), p/ os overlays ativos.
+  function loadSentenceEdges() {
+    if (!anyOverlay()) return;
+    var set = {}; Object.keys(nodes).forEach(function (id) { set[id] = true; });
+    var ov = activeOverlays().join(',');
+    Object.keys(nodes).forEach(function (id) {
+      J(API + '/grafo?around=' + encodeURIComponent(id) + '&depth=1&semantica=true&overlay=' + ov)
+        .then(function (g) {
+          if (!g) return;
+          (g.edges || []).forEach(function (e) {
+            if (set[e.a] && set[e.b] &&
+                !edges.find(function (x) { return x.a === e.a && x.b === e.b && x.source === e.source && x.method === e.method; }))
+              edges.push(e);
+          });
+        });
     });
   }
   $('#pal-toggle').addEventListener('click', function () { $('#palette').classList.toggle('open'); });
@@ -404,14 +432,15 @@
     // purga arestas semânticas do overlay desligado; mantém o outro
     edges = edges.filter(function (e) { return e.source !== 'semantic' || overlays[e.method]; });
     if (focusId) focus(focusId);
-    else toast(anyOverlay() ? 'overlay ligado — foque um termo' : 'overlays desligados');
+    else if (Object.keys(nodes).length) loadSentenceEdges();
+    else toast(anyOverlay() ? 'overlay ligado — escolha uma sentença' : 'overlays desligados');
   }
   $('#sem-corpus').addEventListener('click', function () { toggleOverlay('corpus', '#sem-corpus'); });
   $('#sem-lexico').addEventListener('click', function () { toggleOverlay('lexico', '#sem-lexico'); });
   $('#sem-neural').addEventListener('click', function () { toggleOverlay('neural', '#sem-neural'); });
   $('#search').addEventListener('input', function (e) {
-    renderPalette(e.target.value);
-    if (e.target.value && !$('#palette').classList.contains('open')) $('#palette').classList.add('open');
+    renderSentences(e.target.value);
+    if (!$('#palette').classList.contains('open')) $('#palette').classList.add('open');
   });
 
   // ── toast ────────────────────────────────────────────────────────────────────
@@ -429,15 +458,16 @@
       $('#loginlink').hidden = true;
       var who = $('#whoami'); who.hidden = false; who.textContent = '● conectado';
     }
+    // LOOKUP só (não renderiza): id→nó, p/ resolver as palavras de uma sentença.
     J(API + '/nos').then(function (cat) {
-      catalog = cat || [];
-      // léxico real → ordena por popularidade (paleta) e planta nas posições do
-      // servidor (espiral de phyllotaxis por rank). Sem dado fabricado, sem força.
-      catalog.sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); });
-      renderPalette('');
-      catalog.forEach(ensureNode);
-      fitView();
-      if (catalog.length) toast(catalog.length + ' termos reais (Mbyá + Iorubá · Ayvu Rapytã) — clique para explorar');
+      (cat || []).forEach(function (n) { byId[n.id] = n; });
+    });
+    // entrada "ler primeiro": lista de sentenças (versos do Ayvu Rapytã).
+    J(API + '/sentencas?lang=gn-mbya&limit=300').then(function (ss) {
+      sentList = ss || [];
+      renderSentences('');
+      $('#palette').classList.add('open');
+      toast(sentList.length + ' sentenças (Ayvu Rapytã) — escolha uma para ler e ver suas palavras');
     });
     loop();
   }

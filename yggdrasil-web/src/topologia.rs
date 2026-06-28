@@ -78,6 +78,18 @@ pub struct ExampleRef {
     pub pt: String,
 }
 
+/// Uma sentença (verso do Ayvu Rapytã) com seus termos resolvidos — o ponto de
+/// entrada "ler primeiro": o grafo se filtra às PALAVRAS desta sentença, não a
+/// tudo (YG-177). `terms` em ordem de leitura, ids resolvíveis no léxico.
+#[derive(Debug, Clone, Serialize)]
+pub struct SentenceRow {
+    pub id: String,
+    pub lang: String,
+    pub loc: String,
+    pub text: String,
+    pub terms: Vec<String>,
+}
+
 struct Catalog {
     nodes: Vec<ResolvedNode>,
     by_id: HashMap<String, usize>,
@@ -90,6 +102,8 @@ struct Catalog {
     verses: HashMap<String, Vec<VerseRef>>,
     /// Exemplos do dicionário (referências por termo).
     examples: HashMap<String, Vec<ExampleRef>>,
+    /// Sentenças (versos do Ayvu Rapytã) com seus termos — entrada "ler primeiro".
+    sentences: Vec<SentenceRow>,
 }
 
 static CATALOG: OnceLock<Catalog> = OnceLock::new();
@@ -153,12 +167,14 @@ fn load_catalog() -> Catalog {
     let mut corpus_ctx: HashMap<String, String> = HashMap::new();
     let mut verses: HashMap<String, Vec<VerseRef>> = HashMap::new();
     let mut examples: HashMap<String, Vec<ExampleRef>> = HashMap::new();
+    let mut sentences: Vec<SentenceRow> = Vec::new();
     read_db_sources(
         &mbya_db_path(),
         &mut lexico_ctx,
         &mut corpus_ctx,
         &mut verses,
         &mut examples,
+        &mut sentences,
     );
 
     Catalog {
@@ -168,6 +184,7 @@ fn load_catalog() -> Catalog {
         corpus_ctx,
         verses,
         examples,
+        sentences,
     }
 }
 
@@ -184,6 +201,7 @@ fn read_db_sources(
     corpus_ctx: &mut HashMap<String, String>,
     verses: &mut HashMap<String, Vec<VerseRef>>,
     examples: &mut HashMap<String, Vec<ExampleRef>>,
+    sentences: &mut Vec<SentenceRow>,
 ) {
     const MAX_REF: usize = 8; // limita só as REFERÊNCIAS exibidas (não o contexto)
     let Ok(conn) = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
@@ -252,12 +270,26 @@ fn read_db_sources(
             r.get::<_, Option<String>>(4)?.unwrap_or_default(),
         ))
     }) {
+        // sentença → termos (ordem de leitura), p/ a entrada "ler primeiro".
+        let mut sent_map: std::collections::BTreeMap<i64, SentenceRow> =
+            std::collections::BTreeMap::new();
         for (eid, sid, vnum, text, chapter) in rows.flatten() {
             let Some(id) = head.get(&eid) else { continue };
             // co-ocorrência: cada ocorrência num verso é um token `v{sid}`
             let c = corpus_ctx.entry(id.clone()).or_default();
             c.push_str(" v");
             c.push_str(&sid.to_string());
+            // sentença: acumula o verso + seus termos (dedup, ordem de chegada)
+            let s = sent_map.entry(sid).or_insert_with(|| SentenceRow {
+                id: format!("gn-mbya#{sid}"),
+                lang: "gn-mbya".to_string(),
+                loc: format!("{chapter} · v{vnum}"),
+                text: text.clone(),
+                terms: Vec::new(),
+            });
+            if !s.terms.contains(id) {
+                s.terms.push(id.clone());
+            }
             // referência: o verso (dedup por sentence id, com hierarquia)
             let v = verses.entry(id.clone()).or_default();
             if !v.iter().any(|x| x.verse == vnum && x.text == text) && v.len() < MAX_REF {
@@ -268,6 +300,8 @@ fn read_db_sources(
                 });
             }
         }
+        // só sentenças com ≥2 termos resolvidos valem como grafo de palavras
+        sentences.extend(sent_map.into_values().filter(|s| s.terms.len() >= 2));
     }
 }
 
@@ -298,6 +332,23 @@ pub fn verses_for(id: &str) -> Vec<VerseRef> {
 /// Exemplos do dicionário para o termo.
 pub fn examples_for(id: &str) -> Vec<ExampleRef> {
     catalog().examples.get(id).cloned().unwrap_or_default()
+}
+
+/// Sentenças (entrada "ler primeiro"): versos do Ayvu Rapytã com seus termos.
+/// Filtra por `lang` e por busca `q` (no texto), limitado a `limit`.
+pub fn sentences(lang: Option<&str>, q: Option<&str>, limit: usize) -> Vec<SentenceRow> {
+    let ql = q.map(|s| s.to_lowercase());
+    catalog()
+        .sentences
+        .iter()
+        .filter(|s| lang.is_none_or(|l| s.lang == l))
+        .filter(|s| {
+            ql.as_deref()
+                .is_none_or(|q| s.text.to_lowercase().contains(q))
+        })
+        .take(limit)
+        .cloned()
+        .collect()
 }
 
 /// Documentos de contexto por overlay: `"lexico"` (gloss+def+exemplos) ou

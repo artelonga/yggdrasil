@@ -43,6 +43,16 @@
       transform: translateX(-100%); transition: transform .22s ease; display: flex; flex-direction: column; }
     #palette.open { transform: none; }
     #palette h3 { font-family: var(--head); font-style: italic; margin: 1rem 1.1rem .4rem 3.4rem; font-weight: 500; }
+    .pal-item.sent { display: block; }
+    .pal-item.sent .vt { color: var(--on); font-size: .9rem; margin-top: .15rem; }
+    #sent-banner { position: fixed; top: 76px; left: 50%; transform: translateX(-50%) translateY(-8px);
+      z-index: 30; max-width: min(60rem, 72vw); padding: .6rem 1.1rem; border-radius: var(--r-lg);
+      background: rgba(19,19,19,.82); backdrop-filter: blur(14px); box-shadow: var(--shadow);
+      font-family: var(--head); font-style: italic; font-size: 1.05rem; color: var(--on);
+      text-align: center; opacity: 0; transition: all .25s ease; pointer-events: none; }
+    #sent-banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #sent-banner .loc { font-family: var(--body); font-style: normal; font-size: .62rem;
+      text-transform: uppercase; letter-spacing: .14em; color: var(--secondary); margin-right: .6rem; }
     #palette .hint { color: var(--on-var); font-size: .72rem; margin: 0 1.1rem .7rem; }
     #pal-list { overflow-y: auto; padding: 0 .6rem 1rem; }
     .pal-group { font-size: .62rem; text-transform: uppercase; letter-spacing: .14em; color: var(--secondary);
@@ -106,10 +116,13 @@
 
   <canvas id="graph"></canvas>
 
-  <button id="pal-toggle" class="r-ghost">☰ termos</button>
+  <!-- banner de leitura: o texto da sentença escolhida (ler primeiro) -->
+  <div id="sent-banner"></div>
+
+  <button id="pal-toggle" class="r-ghost">☰ sentenças</button>
   <aside id="palette" class="r-scroll">
-    <h3>Léxico</h3>
-    <p class="hint">Todos os símbolos de todas as linguagens. Clique para trazer ao grafo e focar.</p>
+    <h3>Ler · Ayvu Rapytã</h3>
+    <p class="hint">Escolha uma sentença (verso). O grafo se filtra às PALAVRAS dela — não a tudo. Clique uma palavra para explorar.</p>
     <div id="pal-list" class="r-scroll"></div>
   </aside>
 

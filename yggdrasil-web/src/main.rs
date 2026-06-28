@@ -548,6 +548,10 @@ async fn main() -> anyhow::Result<()> {
     });
     let topologia_router = Router::new()
         .route("/api/v1/topologia/nos", get(api::topologia::get_nos))
+        .route(
+            "/api/v1/topologia/sentencas",
+            get(api::topologia::get_sentencas),
+        )
         .route("/api/v1/topologia/no/{id}", get(api::topologia::get_no))
         .route("/api/v1/topologia/grafo", get(api::topologia::get_grafo))
         .route("/api/v1/topologia/explorar", post(api::topologia::explorar))

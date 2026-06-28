@@ -124,6 +124,33 @@ pub async fn get_nos(
     Json(crate::topologia::all_nodes(q.pack.as_deref())).into_response()
 }
 
+// ─── GET /sentencas?lang=&q=&limit= ───────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct SentencasQuery {
+    #[serde(default)]
+    lang: Option<String>,
+    #[serde(default)]
+    q: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// Sentenças (versos do Ayvu Rapytã) com seus termos — a entrada "ler primeiro"
+/// (YG-177): o front escolhe uma sentença e o grafo se filtra às palavras dela.
+pub async fn get_sentencas(
+    State(_state): ApiState,
+    Query(q): Query<SentencasQuery>,
+) -> axum::response::Response {
+    let limit = q.limit.unwrap_or(200).min(1000);
+    Json(crate::topologia::sentences(
+        q.lang.as_deref(),
+        q.q.as_deref(),
+        limit,
+    ))
+    .into_response()
+}
+
 // ─── GET /grafo?around=&depth= ────────────────────────────────────────────────
 
 #[derive(Deserialize)]
