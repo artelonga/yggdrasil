@@ -303,6 +303,48 @@ pub async fn anexar_ref(
     }
 }
 
+// ─── camada PESSOAL (YG-178): minhas palavras ─────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct VisitarBody {
+    node: String,
+}
+
+/// Reivindica/aprende um termo (clicar = vira "minha"; rever avança o status).
+/// Exige login; o termo precisa existir no léxico (`resolve_node`).
+pub async fn visitar(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<VisitarBody>,
+) -> axum::response::Response {
+    let Some(sub) = caller(&state, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "nao_autenticado");
+    };
+    if resolve_node(&body.node).is_none() {
+        return err(StatusCode::NOT_FOUND, "no_inexistente");
+    }
+    match state.db.visit(&sub, &body.node) {
+        Ok(w) => Json(w).into_response(),
+        Err(e) => map_write_err(e),
+    }
+}
+
+#[derive(Serialize)]
+struct MyView {
+    words: Vec<crate::topologia::WordRow>,
+}
+
+/// O subconjunto pessoal do usuário (minhas palavras + status). Exige login.
+pub async fn my_topologia(State(state): ApiState, headers: HeaderMap) -> axum::response::Response {
+    let Some(sub) = caller(&state, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "nao_autenticado");
+    };
+    Json(MyView {
+        words: state.db.my_words(&sub),
+    })
+    .into_response()
+}
+
 // ─── POST /semantica/recomputar ───────────────────────────────────────────────
 
 /// Recalcula o overlay semântico (cosseno de sentido por contexto). Admin-gated

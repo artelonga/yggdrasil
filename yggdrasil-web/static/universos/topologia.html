@@ -36,6 +36,7 @@
     #sem-corpus.on { border-color: rgba(170,150,255,.7); color: #c9bcff; }
     #sem-lexico.on { border-color: rgba(111,208,192,.7); color: #9fe3d8; }
     #sem-neural.on { border-color: rgba(255,155,210,.7); color: #ffc4e3; }
+    #only-mine.on { border-color: rgba(233,195,73,.8); color: var(--secondary); }
 
     /* palette drawer (left) */
     #palette { position: fixed; top: 64px; left: 0; bottom: 0; width: 17rem; z-index: 25;
@@ -109,6 +110,7 @@
       <button id="sem-corpus" class="r-ghost" title="cosseno por co-ocorrência nos versos do Ayvu Rapytã">✧ corpus</button>
       <button id="sem-lexico" class="r-ghost" title="cosseno pela definição + exemplos do dicionário">✧ léxico</button>
       <button id="sem-neural" class="r-ghost" title="cosseno por embedding neural LOCAL (Ollama)">✧ neural</button>
+      <button id="only-mine" class="r-ghost gated" title="filtrar só as palavras que são minhas">★ só minhas</button>
       <a id="loginlink" class="r-ghost" href="/login">entrar</a>
       <span id="whoami" class="r-chip" hidden></span>
     </div>
@@ -140,6 +142,8 @@
     <div class="row"><span class="ln sem"></span> sentido · corpus (Ayvu Rapytã)</div>
     <div class="row"><span class="ln sem-lex"></span> sentido · léxico (definição)</div>
     <div class="row"><span class="ln sem-neu"></span> sentido · neural (embedding local)</div>
+    <div class="row"><span class="dot" style="background:#e9c349"></span> minha palavra (clicar reivindica · visited→learning→known)</div>
+    <div class="row"><span class="dot" style="width:11px;height:11px;border:1.5px solid #86c98e;background:transparent"></span> léxico (ainda não minha)</div>
   </div>
 
   <div id="toast"></div>

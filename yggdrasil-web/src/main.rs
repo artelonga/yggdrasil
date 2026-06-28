@@ -567,6 +567,12 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/topologia/semantica/recomputar",
             post(api::topologia::recomputar_semantica),
         )
+        // YG-178: camada pessoal — minhas palavras (auth por sub do JWT)
+        .route("/api/v1/me/topologia", get(api::topologia::my_topologia))
+        .route(
+            "/api/v1/me/topologia/visitar",
+            post(api::topologia::visitar),
+        )
         .with_state(topologia_state);
 
     // Universo `comunicacao` — salas interativas de léxico cross-linguístico

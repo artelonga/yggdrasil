@@ -440,8 +440,37 @@ pub fn init_topologia_db(conn: &Connection) -> rusqlite::Result<()> {
             PRIMARY KEY (a, b)
         );
         CREATE INDEX IF NOT EXISTS idx_topo_sem_a ON topo_semantic(a);
-        CREATE INDEX IF NOT EXISTS idx_topo_sem_b ON topo_semantic(b);",
+        CREATE INDEX IF NOT EXISTS idx_topo_sem_b ON topo_semantic(b);
+        -- YG-178: camada PESSOAL — 'minhas palavras' por usuário (sub do JWT).
+        -- O léxico é compartilhado; reivindicar/aprender é privado.
+        CREATE TABLE IF NOT EXISTS user_words (
+            sub        TEXT NOT NULL,
+            node_id    TEXT NOT NULL,
+            status     TEXT NOT NULL DEFAULT 'visited',  -- visited|learning|known
+            seen_count INTEGER NOT NULL DEFAULT 1,
+            first_seen INTEGER NOT NULL,
+            last_seen  INTEGER NOT NULL,
+            PRIMARY KEY (sub, node_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_words_sub ON user_words(sub);",
     )
+}
+
+/// Uma palavra reivindicada por um usuário (camada pessoal, YG-178).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WordRow {
+    pub node_id: String,
+    pub status: String,
+    pub seen_count: i64,
+}
+
+/// Progressão Duolingo-like: cada visita avança um nível (cap em `known`).
+fn next_status(cur: &str) -> &'static str {
+    match cur {
+        "visited" => "learning",
+        "learning" => "known",
+        _ => "known",
+    }
 }
 
 pub struct TopologiaDb {
@@ -554,6 +583,68 @@ impl TopologiaDb {
             frontier = next;
         }
         (visited, edges)
+    }
+
+    /// YG-178: reivindica/aprende um termo para um usuário. 1ª vez → `visited`;
+    /// cada visita seguinte avança o status (visited→learning→known) e `seen_count`.
+    /// Idempotente por (sub, node). Devolve a linha atualizada.
+    pub fn visit(&self, sub: &str, node: &str) -> Result<WordRow, TopoError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let conn = self.db.lock().unwrap();
+        let cur: Option<String> = conn
+            .query_row(
+                "SELECT status FROM user_words WHERE sub = ?1 AND node_id = ?2",
+                params![sub, node],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match cur {
+            None => {
+                conn.execute(
+                    "INSERT INTO user_words (sub, node_id, status, seen_count, first_seen, last_seen)
+                     VALUES (?1, ?2, 'visited', 1, ?3, ?3)",
+                    params![sub, node, now],
+                )?;
+            }
+            Some(s) => {
+                conn.execute(
+                    "UPDATE user_words SET status = ?3, seen_count = seen_count + 1, last_seen = ?4
+                     WHERE sub = ?1 AND node_id = ?2",
+                    params![sub, node, next_status(&s), now],
+                )?;
+            }
+        }
+        conn.query_row(
+            "SELECT node_id, status, seen_count FROM user_words WHERE sub = ?1 AND node_id = ?2",
+            params![sub, node],
+            |r| {
+                Ok(WordRow {
+                    node_id: r.get(0)?,
+                    status: r.get(1)?,
+                    seen_count: r.get(2)?,
+                })
+            },
+        )
+        .map_err(TopoError::from)
+    }
+
+    /// Todas as palavras reivindicadas por um usuário (o subconjunto pessoal).
+    pub fn my_words(&self, sub: &str) -> Vec<WordRow> {
+        let conn = self.db.lock().unwrap();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT node_id, status, seen_count FROM user_words WHERE sub = ?1 ORDER BY last_seen DESC",
+        ) else {
+            return vec![];
+        };
+        stmt.query_map(params![sub], |r| {
+            Ok(WordRow {
+                node_id: r.get(0)?,
+                status: r.get(1)?,
+                seen_count: r.get(2)?,
+            })
+        })
+        .and_then(|m| m.collect::<Result<Vec<_>, _>>())
+        .unwrap_or_default()
     }
 
     /// Anexa uma referência (link) a um nó. Devolve a linha criada.
@@ -855,6 +946,23 @@ mod tests {
                 .iter()
                 .all(|e| e.source == EdgeSource::Semantic && e.score.is_some())
         );
+    }
+
+    #[test]
+    fn visit_reivindica_e_avanca_status() {
+        let db = TopologiaDb::in_memory().unwrap();
+        let w1 = db.visit("alice", NEE).unwrap();
+        assert_eq!(w1.status, "visited");
+        assert_eq!(w1.seen_count, 1);
+        let w2 = db.visit("alice", NEE).unwrap(); // 2ª visita → learning
+        assert_eq!(w2.status, "learning");
+        assert_eq!(w2.seen_count, 2);
+        let w3 = db.visit("alice", NEE).unwrap(); // 3ª → known (cap)
+        assert_eq!(w3.status, "known");
+        assert_eq!(db.visit("alice", NEE).unwrap().status, "known");
+        // subconjunto pessoal de alice tem NEE; bob não vê o de alice
+        assert!(db.my_words("alice").iter().any(|w| w.node_id == NEE));
+        assert!(db.my_words("bob").is_empty());
     }
 
     #[test]

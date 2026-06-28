@@ -41,6 +41,8 @@
   var edges = [];         // {a,b,weight,relation,source}
   var focusId = null, prevFocus = null;
   var overlays = { corpus: false, lexico: false, neural: false }; // overlays de sentido (cosseno)
+  var myWords = {};      // YG-178: id → {status, seen_count} (camada pessoal)
+  var onlyMine = false;  // filtro "só minhas"
   function activeOverlays() { return Object.keys(overlays).filter(function (k) { return overlays[k]; }); }
   function anyOverlay() { return overlays.corpus || overlays.lexico; }
   var view = { x: 0, y: 0, k: 1 };   // pan (x,y) + zoom (k)
@@ -167,6 +169,7 @@
     var fewNodes = Object.keys(nodes).length <= 60; // modo sentença: rotula tudo
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     Object.keys(nodes).forEach(function (id) {
+      if (onlyMine && !myWords[id]) return; // filtro "só minhas"
       var n = nodes[id], p = toScreen(n);
       if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) return; // cull
       var r = nodeRadius(n) * Math.min(1.6, Math.max(0.5, view.k));
@@ -176,8 +179,16 @@
         ctx.strokeStyle = focused ? 'rgba(233,195,73,.95)' : 'rgba(170,150,255,.6)';
         ctx.lineWidth = 2; ctx.stroke();
       }
+      // YG-178: léxico-não-meu = oco/apagado; MINHA = preenchida por status + anel.
+      var mine = myWords[id];
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
-      ctx.fillStyle = packColor(n.pack); ctx.fill();
+      if (mine) {
+        if (mine.status === 'known') { ctx.fillStyle = '#e9c349'; ctx.fill(); }
+        else { ctx.globalAlpha = mine.status === 'learning' ? 0.85 : 0.5; ctx.fillStyle = packColor(n.pack); ctx.fill(); ctx.globalAlpha = 1; }
+        ctx.beginPath(); ctx.arc(p.x, p.y, r + 2.5, 0, 7); ctx.strokeStyle = 'rgba(233,195,73,.85)'; ctx.lineWidth = 1.5; ctx.stroke();
+      } else {
+        ctx.globalAlpha = 0.4; ctx.strokeStyle = packColor(n.pack); ctx.lineWidth = 1.5; ctx.stroke(); ctx.globalAlpha = 1;
+      }
       // LOD: poucos nós (modo sentença) → sempre rotula; senão, só ampliado/populares.
       if (fewNodes || focused || neigh[id] || view.k > 1.5 || (view.k > 0.7 && (n.pop || 0) >= 8)) {
         ctx.fillStyle = focused ? '#fff' : '#d8d6d4';
@@ -220,7 +231,7 @@
   window.addEventListener('mouseup', function (e) {
     // clique = movimento < 5px (tolera o micro-drag do clique sintético)
     var click = downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 5;
-    if (drag && click) focus(drag.id);
+    if (drag && click) { claim(drag.id); focus(drag.id); }
     if (drag) drag.pinned = (drag.id === focusId); // mantém só o focado fixo
     drag = null; panning = null; downAt = null;
   });
@@ -260,6 +271,19 @@
       .then(renderInspector);
   }
   function short(id) { var n = nodes[id]; return n ? n.term : id.split(':')[1] || id; }
+
+  // YG-178: reivindicar/aprender — clicar uma palavra a torna MINHA (e avança status).
+  function claim(id) {
+    if (!authed() || !id || !nodes[id]) return; // só nós reais do léxico
+    J('/api/v1/me/topologia/visitar', { method: 'POST', headers: headers(true), body: JSON.stringify({ node: id }) })
+      .then(function (w) {
+        if (w && w.status) { myWords[id] = { status: w.status, seen_count: w.seen_count }; updateMineCount(); toast(short(id) + ' → ' + w.status + (w.status === 'known' ? ' ✦' : '')); }
+      });
+  }
+  function updateMineCount() {
+    var who = $('#whoami'); if (!who) return;
+    who.hidden = false; who.textContent = '● ' + Object.keys(myWords).length + ' minhas';
+  }
 
   // ── inspector ───────────────────────────────────────────────────────────────
   function renderInspector(data) {
@@ -327,7 +351,7 @@
       '</div>';
     $('#inspector').classList.add('open');
     $('#insp-body').querySelectorAll('.nb[data-go]').forEach(function (el) {
-      el.addEventListener('click', function () { focus(el.dataset.go); });
+      el.addEventListener('click', function () { claim(el.dataset.go); focus(el.dataset.go); });
     });
     // promover sugestão semântica → aresta user (✦ dentro do item; não navega)
     $('#insp-body').querySelectorAll('.prom[data-prom]').forEach(function (el) {
@@ -438,6 +462,11 @@
   $('#sem-corpus').addEventListener('click', function () { toggleOverlay('corpus', '#sem-corpus'); });
   $('#sem-lexico').addEventListener('click', function () { toggleOverlay('lexico', '#sem-lexico'); });
   $('#sem-neural').addEventListener('click', function () { toggleOverlay('neural', '#sem-neural'); });
+  $('#only-mine').addEventListener('click', function () {
+    onlyMine = !onlyMine;
+    $('#only-mine').classList.toggle('on', onlyMine);
+    toast(onlyMine ? 'só minhas palavras' : 'léxico completo');
+  });
   $('#search').addEventListener('input', function (e) {
     renderSentences(e.target.value);
     if (!$('#palette').classList.contains('open')) $('#palette').classList.add('open');
@@ -456,7 +485,11 @@
     if (authed()) {
       document.body.classList.add('authed');
       $('#loginlink').hidden = true;
-      var who = $('#whoami'); who.hidden = false; who.textContent = '● conectado';
+      // YG-178: carrega minhas palavras (camada pessoal) p/ colorir o que é meu.
+      J('/api/v1/me/topologia').then(function (m) {
+        if (m && m.words) { m.words.forEach(function (w) { myWords[w.node_id] = { status: w.status, seen_count: w.seen_count }; }); }
+        updateMineCount();
+      });
     }
     // LOOKUP só (não renderiza): id→nó, p/ resolver as palavras de uma sentença.
     J(API + '/nos').then(function (cat) {

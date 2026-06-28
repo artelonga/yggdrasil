@@ -165,7 +165,13 @@ pub fn top_pairs_indexed(
         }
         let mut neigh: Vec<(usize, f64)> =
             acc.into_iter().filter(|&(_, s)| s >= threshold).collect();
-        neigh.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // ordena por score desc, com desempate DETERMINÍSTICO pelo índice (a ordem
+        // do HashMap é aleatória; sem isto o top-k varia entre execuções).
+        neigh.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.0.cmp(&b.0))
+        });
         neigh.truncate(k_per_node);
         for (j, s) in neigh {
             let id_j = &vecs[j].0;
