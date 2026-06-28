@@ -342,8 +342,10 @@
     }
   }
   function updateMineCount() {
-    var who = $('#whoami'); if (!who) return;
-    who.hidden = false; who.textContent = '● ' + Object.keys(myWords).length + ' minhas';
+    var n = Object.keys(myWords).length;
+    var who = $('#whoami'); if (who) { who.style.display = n ? '' : 'none'; who.textContent = '● ' + n + ' minhas'; }
+    // "só minhas" só aparece quando há ao menos 1 (senão confunde quem chega novo)
+    var sm = $('#only-mine'); if (sm) sm.style.display = n ? '' : 'none';
   }
 
   // ── inspector ───────────────────────────────────────────────────────────────
@@ -353,13 +355,6 @@
     var chips = '<span class="r-chip">' + esc(n.pack) + '</span>' +
       '<span class="r-chip">' + esc(n.kind) + '</span>' +
       (n.role ? '<span class="r-chip">' + esc(n.role) + '</span>' : '');
-    var nbs = (data.neighbors || []).map(function (nb) {
-      return '<div class="nb" data-go="' + esc(nb.node) + '">' +
-        '<span class="t">' + esc(short(nb.node)) + '</span>' +
-        '<span>' + (nb.relation ? '<span class="rel">' + esc(nb.relation) + '</span> · ' : '') +
-        '<span class="w">peso ' + nb.weight + (nb.source === 'user' ? ' ✦' : '') + '</span></span>' +
-      '</div>';
-    }).join('') || '<div class="empty">Sem conexões ainda. Caminhe até outro termo para criar uma.</div>';
     var refs = (data.refs || []).map(function (r) {
       return '<a class="ref" href="' + esc(r.href) + '" target="_blank" rel="noopener">↗ ' +
         esc(r.label || r.kind) + ' <span style="color:var(--on-var)">(' + esc(r.kind) + ')</span></a>';
@@ -384,27 +379,35 @@
                   semSection('lexico', 'Por sentido · léxico (definição)', '#9fe3d8') +
                   semSection('neural', 'Por sentido · neural (embedding local)', '#ffc4e3');
 
-    // Instâncias REAIS em sentenças (YG-177): versos do Ayvu Rapytã (hierárquicos)
-    // + exemplos do dicionário — "olhar as instâncias da palavra em frases".
+    // Instâncias REAIS em sentenças (YG-177): versos do Ayvu Rapytã + exemplos do
+    // dicionário. Cada verso traz toggles de TRADUÇÃO (lentes): ES de Cadogan
+    // disponível; demais = "propor tradução" (YG-179). Mídia (áudio…) virá depois.
     var versos = (data.versos || []).map(function (v) {
+      var tr = v.tr || {};
+      var chips = Object.keys(tr).map(function (l) {
+        return '<button class="tr-chip" data-tr="' + esc(tr[l]) + '" data-l="' + esc(l) + '">' + l.toUpperCase() + '</button>';
+      }).join('');
       return '<div class="inst"><span class="loc">' + esc(v.chapter) + ' · v' + v.verse + '</span>' +
-        '<div class="vt">' + esc(v.text) + '</div></div>';
+        '<div class="vt">' + esc(v.text) + '</div>' +
+        '<div class="tr-row">' + chips + '<span class="tr-propose" title="propor uma tradução / anexar mídia (em breve)">+ tradução</span></div>' +
+        '<div class="vp tr-text" hidden></div></div>';
     }).join('');
     var exs = (data.exemplos || []).map(function (x) {
       return '<div class="inst"><div class="vt">' + esc(x.gn) + '</div>' +
         '<div class="vp">' + esc(x.pt) + '</div></div>';
     }).join('');
     var instBlock =
-      (versos ? '<h4>Instâncias no Ayvu Rapytã</h4>' + versos : '') +
+      (versos ? '<h4>Instâncias no Ayvu Rapytã <span class="hint-i">(traduções: clique ES)</span></h4>' + versos : '') +
       (exs ? '<h4>Exemplos (dicionário)</h4>' + exs : '');
 
+    // Card: termo → glosa → INSTÂNCIAS (com tradução) → sentido (só se overlay on)
+    // → referências → ações. Conexões NÃO em lista — aparecem no grafo (caminhe).
     $('#insp-body').innerHTML =
       '<div class="r-display term">' + esc(n.term) + '</div>' +
       '<div class="meta">' + chips + '</div>' +
       (n.gloss ? '<div class="gloss">' + esc(n.gloss) + '</div>' : '') +
-      '<h4>Conexões (caminhe)</h4>' + nbs +
-      semList +
       instBlock +
+      semList +
       '<h4>Referências (links)</h4>' + refs +
       '<div class="row-actions">' +
         '<button class="r-ghost" id="act-vocab" title="adiciona ao seu vocabulário — revise depois">＋ vocabulário</button>' +
@@ -412,6 +415,14 @@
         '<button class="r-ghost gated" id="act-ref">＋ referência</button>' +
       '</div>';
     $('#inspector').classList.add('open');
+    // toggle de tradução por verso (lente): clicar ES mostra o texto de Cadogan.
+    $('#insp-body').querySelectorAll('.tr-chip').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var box = el.closest('.inst').querySelector('.tr-text');
+        if (box.dataset.l === el.dataset.l && !box.hidden) { box.hidden = true; box.dataset.l = ''; return; }
+        box.textContent = '[' + el.dataset.l + '] ' + el.dataset.tr; box.dataset.l = el.dataset.l; box.hidden = false;
+      });
+    });
     $('#insp-body').querySelectorAll('.nb[data-go]').forEach(function (el) {
       el.addEventListener('click', function () { claim(el.dataset.go); focus(el.dataset.go); });
     });
@@ -505,8 +516,21 @@
   function loadSentence(s) {
     nodes = {}; edges = []; focusId = null; prevFocus = null;
     s.terms.forEach(function (id) { if (byId[id]) ensureNode(byId[id]); });
-    $('#sent-banner').innerHTML = '<span class="loc">' + esc(s.loc) + '</span> ' + esc(s.text);
+    var tr = s.tr || {};
+    var trChips = Object.keys(tr).map(function (l) {
+      return '<button class="tr-chip" data-tr="' + esc(tr[l]) + '" data-l="' + esc(l) + '">' + l.toUpperCase() + '</button>';
+    }).join('');
+    $('#sent-banner').innerHTML = '<span class="loc">' + esc(s.loc) + '</span> ' + esc(s.text) +
+      (trChips || s.lang === 'gn-mbya' ? '<div class="b-tr">' + trChips + '<span class="tr-propose" title="propor tradução / mídia (em breve)">+ idioma</span></div>' : '') +
+      '<div class="b-trtext tr-text" hidden></div>';
     $('#sent-banner').classList.add('show');
+    $('#sent-banner').querySelectorAll('.tr-chip').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var box = $('#sent-banner').querySelector('.b-trtext');
+        if (box.dataset.l === el.dataset.l && !box.hidden) { box.hidden = true; box.dataset.l = ''; return; }
+        box.textContent = '[' + el.dataset.l + '] ' + el.dataset.tr; box.dataset.l = el.dataset.l; box.hidden = false;
+      });
+    });
     fitView();
     loadSentenceEdges();
     toast(s.terms.length + ' palavras desta sentença — clique uma para explorar');
@@ -530,6 +554,13 @@
     });
   }
   $('#pal-toggle').addEventListener('click', function () { $('#palette').classList.toggle('open'); });
+  // guia / onboarding (aprender explorando): abre no 1º acesso, reabre pelo "? guia".
+  function openHelp() { $('#help-ov').classList.add('show'); }
+  function closeHelp() { $('#help-ov').classList.remove('show'); localStorage.setItem('ygg-help-seen', '1'); }
+  $('#help-btn').addEventListener('click', openHelp);
+  $('#help-x').addEventListener('click', closeHelp);
+  $('#help-go').addEventListener('click', closeHelp);
+  $('#help-ov').addEventListener('click', function (e) { if (e.target === $('#help-ov')) closeHelp(); });
   function toggleOverlay(which, btn) {
     overlays[which] = !overlays[which];
     $(btn).classList.toggle('on', overlays[which]);
@@ -627,6 +658,8 @@
       $('#palette').classList.add('open');
       toast(sentList.length + ' sentenças (Ayvu Rapytã) — escolha uma para ler e ver suas palavras');
     });
+    updateMineCount(); // estado vazio: esconde "minhas"/"só minhas" até a 1ª reivindicação
+    if (!localStorage.getItem('ygg-help-seen')) openHelp(); // guia no 1º acesso
     loop();
   }
 

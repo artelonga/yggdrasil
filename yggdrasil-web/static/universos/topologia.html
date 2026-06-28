@@ -30,6 +30,8 @@
     #legend .dot { width: 11px; height: 11px; border-radius: 50%; }
     #legend .ln { width: 22px; height: 0; border-top: 2px solid var(--secondary); }
     #legend .ln.exp { border-top: 2px dashed var(--on-var); }
+    #legend .lg-h { font-size: .6rem; text-transform: uppercase; letter-spacing: .14em; color: var(--secondary); margin-top: .5rem; }
+    #legend b { color: var(--on); }
     #legend .ln.sem { border-top: 2px dotted #aa96ff; }
     #legend .ln.sem-lex { border-top: 2px dotted #6fd0c0; }
     #legend .ln.sem-neu { border-top: 2px dotted #ff9bd2; }
@@ -107,6 +109,26 @@
     #cta b { color: var(--secondary); }
     #cta .r-cta { margin-top: .6rem; }
     #cta #cta-x { position: absolute; top: .5rem; right: .7rem; cursor: pointer; color: var(--on-var); font-size: .9rem; }
+
+    /* traduções (lentes) — chips + texto revelado */
+    .tr-row, .b-tr { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; align-items: center; }
+    .tr-chip { cursor: pointer; border: 0; background: var(--sc-high); color: var(--on); border-radius: 999px;
+      font: inherit; font-size: .6rem; font-weight: 700; letter-spacing: .08em; padding: .12rem .5rem; }
+    .tr-chip:hover { background: var(--secondary); color: #3c2f00; }
+    .tr-propose { font-size: .66rem; color: var(--on-var); cursor: default; opacity: .7; }
+    .tr-text { font-size: .82rem; color: var(--on-var); margin-top: .3rem; font-style: italic; }
+    #sent-banner .b-tr { justify-content: center; margin-top: .5rem; }
+    #sent-banner .b-trtext { font-style: italic; color: var(--on-var); font-family: var(--body); font-size: .9rem; margin-top: .4rem; }
+    #inspector h4 .hint-i { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--on-var); font-size: .9em; }
+
+    /* guia / onboarding */
+    #help-ov { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+      background: rgba(7,7,11,.7); backdrop-filter: blur(6px); padding: 1.2rem; }
+    #help-ov.show { display: flex; }
+    #help-card { width: min(40rem, 96vw); max-height: 88vh; overflow-y: auto; position: relative; }
+    #help-x { position: absolute; top: .8rem; right: 1.1rem; cursor: pointer; color: var(--on-var); font-size: 1.2rem; }
+    .help-g { font-size: .9rem; line-height: 1.55; padding: .6rem 0; border-top: 1px solid rgba(69,71,76,.25); }
+    .help-g b { color: var(--secondary); }
   </style>
 </head>
 <body class="relic">
@@ -116,6 +138,7 @@
       <span class="sub">topologia · sentido cross-linguístico</span>
     </div>
     <div class="right">
+      <button id="help-btn" class="r-ghost" title="o que é tudo isto? (aprenda explorando)">? guia</button>
       <input id="search" class="r-input" type="search" placeholder="buscar termo…" autocomplete="off">
       <button id="sem-corpus" class="r-ghost" title="cosseno por co-ocorrência nos versos do Ayvu Rapytã">✧ corpus</button>
       <button id="sem-lexico" class="r-ghost" title="cosseno pela definição + exemplos do dicionário">✧ léxico</button>
@@ -146,22 +169,34 @@
   </aside>
 
   <div id="legend">
-    <div class="row"><span class="dot" style="background:#86c98e"></span> Mbyá Guaraní</div>
-    <div class="row"><span class="dot" style="background:#e9c349"></span> Iorubá</div>
-    <div class="row"><span class="dot" style="width:7px;height:7px;background:#9aa">·</span> tamanho = frequência no corpus</div>
-    <div class="row"><span class="ln"></span> relação nomeada (user)</div>
-    <div class="row"><span class="ln exp"></span> exploração (peso = co-visitas)</div>
-    <div class="row"><span class="ln sem"></span> sentido · corpus (Ayvu Rapytã)</div>
-    <div class="row"><span class="ln sem-lex"></span> sentido · léxico (definição)</div>
-    <div class="row"><span class="ln sem-neu"></span> sentido · neural (embedding local)</div>
-    <div class="row"><span class="dot" style="background:#e9c349"></span> minha palavra (clicar reivindica · visited→learning→known)</div>
-    <div class="row"><span class="dot" style="width:11px;height:11px;border:1.5px solid #86c98e;background:transparent"></span> léxico (ainda não minha)</div>
+    <div class="lg-h">palavras</div>
+    <div class="row"><span class="dot" style="width:11px;height:11px;border:1.5px solid #86c98e;background:transparent"></span> léxico (clique p/ reivindicar)</div>
+    <div class="row"><span class="dot" style="background:#e9c349"></span> <b>minha</b> · visita→aprendendo→sabida</div>
+    <div class="row"><span class="dot" style="background:#86c98e"></span> Mbyá &nbsp;<span class="dot" style="background:#e9c349"></span> Iorubá &nbsp;<span class="dot" style="background:#ffb3b5"></span> minha</div>
+    <div class="lg-h">ligações (só com toggle/uso)</div>
+    <div class="row"><span class="ln sem"></span> sentido · corpus &nbsp;<span class="ln sem-lex"></span> léxico &nbsp;<span class="ln sem-neu"></span> neural</div>
+    <div class="row"><span class="ln"></span> conexão minha &nbsp;<span class="ln exp"></span> exploração</div>
+    <div class="lg-h">tradução: clique <b>ES</b> num verso (Cadogan) · ? guia</div>
   </div>
 
   <div id="toast"></div>
 
   <!-- CTA do tier grátis: aparece quando o anônimo já cultivou algumas palavras -->
   <div id="cta"></div>
+
+  <!-- guia / onboarding: aprender explorando (o que cada coisa significa) -->
+  <div id="help-ov"><div id="help-card" class="r-card r-scroll">
+    <span id="help-x">✕</span>
+    <h2 class="r-display" style="font-size:1.6rem;margin-bottom:.2rem">Como explorar</h2>
+    <p class="hint" style="margin-bottom:1rem">Uma topologia de <b>sentido</b>: cada palavra de um léxico real é um ponto; você lê, conecta e cultiva. Aprenda mexendo.</p>
+    <div class="help-g"><b>📖 Ler</b> — escolha um <b>verso</b> (Ayvu Rapytã) no painel à esquerda. O grafo mostra só as <b>palavras daquele verso</b> — não tudo. Clique <b>ES</b> para ver a tradução de Cadogan (cada língua é uma <i>lente</i> do mesmo texto).</div>
+    <div class="help-g"><b>🟢 Pontos</b> — cada ponto é uma palavra do léxico. Verde = Mbyá, âmbar = Iorubá. Tamanho = frequência no corpus. <b>Ocos</b> = ainda não são suas.</div>
+    <div class="help-g"><b>★ minhas</b> — <b>clique numa palavra para reivindicá-la</b>: vira sua (anel dourado) e avança <i>visita → aprendendo → sabida</i> ao revê-la. <b>★ só minhas</b> filtra ao seu subconjunto. (Cresce sem conta; depois você salva.)</div>
+    <div class="help-g"><b>✧ sentido (cosseno)</b> — ligações por <b>significado</b>, não navegação. <b>corpus</b>: palavras que co-ocorrem nos versos. <b>léxico</b>: definições parecidas. <b>neural</b>: embedding local — liga <i>entre línguas</i> (água ↔ Yemọja). Ligue um toggle e foque um termo.</div>
+    <div class="help-g"><b>＋ palavra / ＋ texto</b> — <b>expressão</b>: adicione uma palavra sua (fora do léxico) ou escreva seu próprio texto → vira seu corpus pessoal.</div>
+    <div class="help-g"><b>🌐 línguas como lentes</b> — o corpus é um só; Mbyá (original) e Espanhol (Cadogan) já existem; Português e Iorubá entram como <i>traduções propostas</i>. Em breve: escolher suas línguas e percorrer o corpus por qualquer perspectiva (como trilhas do Duolingo).</div>
+    <button id="help-go" class="r-cta" style="margin-top:.8rem">começar a explorar</button>
+  </div></div>
 
   <script src="/static/universos/topologia.js"></script>
   <script defer src="/static/telemetria.js"></script>

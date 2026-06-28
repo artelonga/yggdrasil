@@ -69,6 +69,11 @@ pub struct VerseRef {
     pub chapter: String,
     pub verse: i64,
     pub text: String,
+    /// Traduções disponíveis por língua (ex.: `es` = Cadogan). YG-179: cada língua
+    /// é uma LENTE sobre o mesmo corpus. Vazio = só o original; o front oferece
+    /// "propor tradução" para as ausentes.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub tr: std::collections::BTreeMap<String, String>,
 }
 
 /// Um exemplo ilustrativo do dicionário (sentença bilíngue).
@@ -88,6 +93,9 @@ pub struct SentenceRow {
     pub loc: String,
     pub text: String,
     pub terms: Vec<String>,
+    /// Traduções disponíveis (lang → texto) — as lentes do verso (YG-179).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub tr: std::collections::BTreeMap<String, String>,
 }
 
 struct Catalog {
@@ -270,6 +278,24 @@ fn read_db_sources(
             r.get::<_, Option<String>>(4)?.unwrap_or_default(),
         ))
     }) {
+        // traduções por verso (alignments): src=gn → tgt (es de Cadogan). Cada
+        // língua-alvo vira uma LENTE do verso (YG-179).
+        let mut tr_by_sid: HashMap<i64, std::collections::BTreeMap<String, String>> =
+            HashMap::new();
+        if let Ok(mut al) = conn.prepare(
+            "SELECT a.src_sentence_id, t.lang, t.text FROM alignments a
+             JOIN corpus_sentences t ON t.id = a.tgt_sentence_id",
+        ) && let Ok(arows) = al.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        }) {
+            for (sid, lang, text) in arows.flatten() {
+                tr_by_sid.entry(sid).or_default().insert(lang, text);
+            }
+        }
         // sentença → termos (ordem de leitura), p/ a entrada "ler primeiro".
         let mut sent_map: std::collections::BTreeMap<i64, SentenceRow> =
             std::collections::BTreeMap::new();
@@ -286,6 +312,7 @@ fn read_db_sources(
                 loc: format!("{chapter} · v{vnum}"),
                 text: text.clone(),
                 terms: Vec::new(),
+                tr: tr_by_sid.get(&sid).cloned().unwrap_or_default(),
             });
             if !s.terms.contains(id) {
                 s.terms.push(id.clone());
@@ -297,6 +324,7 @@ fn read_db_sources(
                     chapter,
                     verse: vnum,
                     text,
+                    tr: tr_by_sid.get(&sid).cloned().unwrap_or_default(),
                 });
             }
         }
