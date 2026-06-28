@@ -1,0 +1,459 @@
+/* topologia.js — visualização do universo centralizado (YG-175, slice 2).
+ *
+ * Grafo de sentido cross-linguístico: cada termo de qualquer LexiconPack é um
+ * nó; arestas ligam linguagens. Força-dirigido em <canvas> (vanilla, sem libs).
+ * Caminhar = focar um nó: expande o grafo em volta (/grafo?around=) e, se você
+ * estiver logado, registra a co-visitação a partir do nó anterior (POST
+ * /explorar → weight++). É a "linkagem por exploração" da visão: a telemetria
+ * de andar entre símbolos materializa as arestas. Inspector mostra glosa,
+ * vizinhos (clique = caminhar) e referências (links). Logado pode nomear a
+ * relação (/aresta) e anexar referência (/no/{id}/ref). */
+(function () {
+  'use strict';
+  var API = '/api/v1/topologia';
+  var $ = function (s) { return document.querySelector(s); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  function token() { try { return localStorage.getItem('yggdrasil-jwt'); } catch (e) { return null; } }
+  function authed() { return !!token(); }
+  function headers(json) {
+    var h = json ? { 'Content-Type': 'application/json' } : {};
+    var t = token(); if (t) h.Authorization = 'Bearer ' + t;
+    return h;
+  }
+  function J(u, opt) { return fetch(u, opt).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
+
+  var canvas = $('#graph'), ctx = canvas.getContext('2d');
+  var DPR = Math.max(1, window.devicePixelRatio || 1);
+  var W = 0, H = 0;
+  function resize() {
+    // viewport direto: o canvas é fixed/inset:0, e clientWidth pode ser 0 antes
+    // do primeiro layout (gravidade iria pro canto (0,0)).
+    W = window.innerWidth || canvas.clientWidth;
+    H = window.innerHeight || canvas.clientHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+
+  // ── estado do grafo ──────────────────────────────────────────────────────
+  var nodes = {};         // id → {id,x,y,vx,vy,pack,kind,term,gloss,role,pinned}
+  var edges = [];         // {a,b,weight,relation,source}
+  var focusId = null, prevFocus = null;
+  var overlays = { corpus: false, lexico: false }; // overlays de sentido (cosseno)
+  function activeOverlays() { return Object.keys(overlays).filter(function (k) { return overlays[k]; }); }
+  function anyOverlay() { return overlays.corpus || overlays.lexico; }
+  var view = { x: 0, y: 0, k: 1 };   // pan (x,y) + zoom (k)
+
+  // cor por língua (dados reais: gn-mbya, yo). Verde-floresta p/ Mbyá, âmbar p/
+  // Iorubá; outras línguas por hash de matiz. (Sem 'música' — era conceito.)
+  function packColor(pack) {
+    if (pack === 'gn-mbya') return '#86c98e';
+    if (pack === 'yo') return '#e9c349';
+    var h = 0; for (var i = 0; i < pack.length; i++) h = (h * 31 + pack.charCodeAt(i)) % 360;
+    return 'hsl(' + h + ',55%,68%)';
+  }
+
+  // Layout fixo: posições vêm do servidor (espiral de phyllotaxis por rank de
+  // popularidade). Sem força global — 4837 nós exigem posições determinísticas.
+  function ensureNode(rn) {
+    var n = nodes[rn.id];
+    if (!n) {
+      n = nodes[rn.id] = { id: rn.id, x: rn.x || 0, y: rn.y || 0, vx: 0, vy: 0, pinned: true };
+    }
+    if (typeof rn.x === 'number') { n.x = rn.x; n.y = rn.y; }
+    n.pack = rn.pack; n.kind = rn.kind; n.term = rn.term; n.gloss = rn.gloss;
+    n.role = rn.role; n.pop = rn.pop || 0;
+    return n;
+  }
+
+  // mescla um subgrafo no estado (preserva posições dos nós já presentes)
+  function mergeGraph(g) {
+    if (!g) return;
+    (g.nodes || []).forEach(ensureNode);
+    (g.edges || []).forEach(function (e) {
+      // chaveia por par + source: uma aresta semântica e uma de exploração entre
+      // o mesmo par coexistem (overlay vs grafo humano).
+      var found = edges.find(function (x) { return x.a === e.a && x.b === e.b && x.source === e.source && x.method === e.method; });
+      if (found) { found.weight = e.weight; found.relation = e.relation; found.score = e.score; }
+      else edges.push({ a: e.a, b: e.b, weight: e.weight, relation: e.relation, source: e.source, score: e.score, method: e.method });
+    });
+  }
+
+  // ── física força-dirigida ──────────────────────────────────────────────────
+  function step() {
+    var ids = Object.keys(nodes);
+    // repulsão entre todos os pares
+    for (var i = 0; i < ids.length; i++) {
+      var a = nodes[ids[i]];
+      for (var j = i + 1; j < ids.length; j++) {
+        var b = nodes[ids[j]];
+        var dx = a.x - b.x, dy = a.y - b.y;
+        var d2 = Math.max(dx * dx + dy * dy, 600); // piso evita "explosão" no seed
+        var f = Math.min(3.0, 4200 / d2);          // repulsão capada
+        var d = Math.sqrt(d2);
+        var fx = (dx / d) * f, fy = (dy / d) * f;
+        a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+      }
+    }
+    // molas nas arestas (mais peso → mais curta/firme)
+    edges.forEach(function (e) {
+      var a = nodes[e.a], b = nodes[e.b]; if (!a || !b) return;
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      var rest = 120 - Math.min(40, e.weight * 8);
+      var f = (d - rest) * 0.012;
+      var fx = (dx / d) * f, fy = (dy / d) * f;
+      a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+    });
+    // gravidade ao centro + integração + damping
+    ids.forEach(function (id) {
+      var n = nodes[id];
+      if (n.pinned) { n.vx = 0; n.vy = 0; return; }
+      n.vx += (W / 2 - n.x) * 0.004;
+      n.vy += (H / 2 - n.y) * 0.004;
+      n.vx *= 0.85; n.vy *= 0.85;
+      n.x += n.vx; n.y += n.vy;
+    });
+  }
+
+  // raio por popularidade (nº de exemplos no corpus); foco maior.
+  function nodeRadius(n) {
+    if (n.id === focusId) return 16;
+    return 4 + Math.min(9, Math.log2((n.pop || 0) + 1) * 1.6);
+  }
+
+  // ── render ─────────────────────────────────────────────────────────────────
+  function toScreen(p) { return { x: p.x * view.k + view.x, y: p.y * view.k + view.y }; }
+  // ids vizinhos do nó focado (p/ realce + LOD de rótulo)
+  function focusNeighborIds() {
+    var s = {};
+    if (!focusId) return s;
+    edges.forEach(function (e) {
+      if (e.a === focusId) s[e.b] = true; else if (e.b === focusId) s[e.a] = true;
+    });
+    return s;
+  }
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // arestas
+    edges.forEach(function (e) {
+      var a = nodes[e.a], b = nodes[e.b]; if (!a || !b) return;
+      var pa = toScreen(a), pb = toScreen(b);
+      ctx.beginPath();
+      ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+      if (e.source === 'user') {
+        ctx.strokeStyle = 'rgba(233,195,73,.8)'; ctx.setLineDash([]);
+        ctx.lineWidth = Math.min(5, 1 + e.weight * 0.7);
+      } else if (e.source === 'semantic') {
+        ctx.strokeStyle = e.method === 'lexico' ? 'rgba(111,208,192,.5)' : 'rgba(170,150,255,.5)';
+        ctx.setLineDash([2, 4]);
+        ctx.lineWidth = 1 + (e.score || 0) * 2.2;
+      } else {
+        ctx.strokeStyle = 'rgba(197,198,204,.32)'; ctx.setLineDash([5, 5]);
+        ctx.lineWidth = Math.min(5, 1 + e.weight * 0.7);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+      var lbl = e.relation || (e.source === 'semantic' && view.k > 0.8 ? (e.score || 0).toFixed(2) : '');
+      if (lbl) {
+        ctx.fillStyle = e.source !== 'semantic' ? 'rgba(233,195,73,.85)' : (e.method === 'lexico' ? 'rgba(111,208,192,.85)' : 'rgba(170,150,255,.85)');
+        ctx.font = '11px Manrope, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(lbl, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2 - 4);
+      }
+    });
+    // nós — com culling de viewport + LOD nos rótulos (4837 nós).
+    var neigh = focusNeighborIds();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    Object.keys(nodes).forEach(function (id) {
+      var n = nodes[id], p = toScreen(n);
+      if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) return; // cull
+      var r = nodeRadius(n) * Math.min(1.6, Math.max(0.5, view.k));
+      var focused = id === focusId;
+      if (focused || neigh[id]) {
+        ctx.beginPath(); ctx.arc(p.x, p.y, r + 4, 0, 7);
+        ctx.strokeStyle = focused ? 'rgba(233,195,73,.95)' : 'rgba(170,150,255,.6)';
+        ctx.lineWidth = 2; ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
+      ctx.fillStyle = packColor(n.pack); ctx.fill();
+      // LOD: rótulo só quando ampliado, ou p/ termos populares, foco e vizinhos.
+      if (focused || neigh[id] || view.k > 1.5 || (view.k > 0.7 && (n.pop || 0) >= 8)) {
+        ctx.fillStyle = focused ? '#fff' : '#d8d6d4';
+        ctx.font = 'italic ' + (focused ? 17 : 13) + 'px Newsreader, Georgia, serif';
+        ctx.fillText(n.term, p.x, p.y + r + 2);
+      }
+    });
+  }
+
+  // Layout fixo (posições do servidor) → sem física global; só desenha.
+  function loop() { draw(); requestAnimationFrame(loop); }
+
+  // ── interação: pan / zoom / drag / clique ──────────────────────────────────
+  function nodeAt(sx, sy) {
+    var hit = null, best = 1e9;
+    Object.keys(nodes).forEach(function (id) {
+      var n = nodes[id], p = toScreen(n), r = nodeRadius(n) * view.k + 6;
+      var dx = sx - p.x, dy = sy - p.y, d = dx * dx + dy * dy;
+      if (d < r * r && d < best) { best = d; hit = n; }
+    });
+    return hit;
+  }
+  var drag = null, panning = null, downAt = null;
+  canvas.addEventListener('mousedown', function (e) {
+    downAt = { x: e.clientX, y: e.clientY };
+    var n = nodeAt(e.offsetX, e.offsetY);
+    if (n) { drag = n; n.pinned = true; }
+    else panning = { x: e.offsetX, y: e.offsetY, vx: view.x, vy: view.y };
+  });
+  window.addEventListener('mousemove', function (e) {
+    if (drag) {
+      var rect = canvas.getBoundingClientRect();
+      drag.x = (e.clientX - rect.left - view.x) / view.k;
+      drag.y = (e.clientY - rect.top - view.y) / view.k;
+    } else if (panning) {
+      view.x = panning.vx + (e.offsetX - panning.x);
+      view.y = panning.vy + (e.offsetY - panning.y);
+    }
+  });
+  window.addEventListener('mouseup', function (e) {
+    // clique = movimento < 5px (tolera o micro-drag do clique sintético)
+    var click = downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 5;
+    if (drag && click) focus(drag.id);
+    if (drag) drag.pinned = (drag.id === focusId); // mantém só o focado fixo
+    drag = null; panning = null; downAt = null;
+  });
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var f = e.deltaY < 0 ? 1.1 : 0.9;
+    var nk = Math.max(0.3, Math.min(3, view.k * f));
+    // zoom centrado no cursor
+    view.x = e.offsetX - (e.offsetX - view.x) * (nk / view.k);
+    view.y = e.offsetY - (e.offsetY - view.y) * (nk / view.k);
+    view.k = nk;
+  }, { passive: false });
+
+  // ── caminhar / focar ───────────────────────────────────────────────────────
+  function focus(id) {
+    if (!id) return;
+    // exploração: caminhar de prevFocus → id registra co-visitação (logado)
+    if (authed() && focusId && focusId !== id) {
+      var from = focusId;
+      J(API + '/explorar', { method: 'POST', headers: headers(true), body: JSON.stringify({ from: from, to: id }) })
+        .then(function (edge) {
+          if (edge) {
+            mergeGraph({ nodes: [], edges: [{ a: edge.a, b: edge.b, weight: edge.weight, relation: edge.relation, source: edge.source }] });
+            toast('explorado: ' + short(from) + ' ⇄ ' + short(id) + ' (peso ' + edge.weight + ')');
+          }
+        });
+    }
+    prevFocus = focusId; focusId = id;
+    Object.keys(nodes).forEach(function (k) { if (nodes[k].pinned && k !== id) nodes[k].pinned = false; });
+    if (nodes[id]) nodes[id].pinned = false;
+    // grafo primeiro (popula arestas, incl. semânticas) → depois o inspector,
+    // que lê as arestas semânticas incidentes do estado em memória.
+    var sem = anyOverlay() ? '&semantica=true&overlay=' + activeOverlays().join(',') : '';
+    J(API + '/grafo?around=' + encodeURIComponent(id) + '&depth=2' + sem)
+      .then(mergeGraph)
+      .then(function () { return J(API + '/no/' + encodeURIComponent(id)); })
+      .then(renderInspector);
+  }
+  function short(id) { var n = nodes[id]; return n ? n.term : id.split(':')[1] || id; }
+
+  // ── inspector ───────────────────────────────────────────────────────────────
+  function renderInspector(data) {
+    if (!data) return;
+    var n = data.node;
+    var chips = '<span class="r-chip">' + esc(n.pack) + '</span>' +
+      '<span class="r-chip">' + esc(n.kind) + '</span>' +
+      (n.role ? '<span class="r-chip">' + esc(n.role) + '</span>' : '');
+    var nbs = (data.neighbors || []).map(function (nb) {
+      return '<div class="nb" data-go="' + esc(nb.node) + '">' +
+        '<span class="t">' + esc(short(nb.node)) + '</span>' +
+        '<span>' + (nb.relation ? '<span class="rel">' + esc(nb.relation) + '</span> · ' : '') +
+        '<span class="w">peso ' + nb.weight + (nb.source === 'user' ? ' ✦' : '') + '</span></span>' +
+      '</div>';
+    }).join('') || '<div class="empty">Sem conexões ainda. Caminhe até outro termo para criar uma.</div>';
+    var refs = (data.refs || []).map(function (r) {
+      return '<a class="ref" href="' + esc(r.href) + '" target="_blank" rel="noopener">↗ ' +
+        esc(r.label || r.kind) + ' <span style="color:var(--on-var)">(' + esc(r.kind) + ')</span></a>';
+    }).join('') || '<div class="empty">Nenhuma referência. ' + (authed() ? 'Anexe uma por link.' : 'Entre para anexar.') + '</div>';
+
+    // Próximos por SENTIDO (cosseno) — uma seção por overlay ativo, lidas do
+    // estado em memória; cor por método (corpus violeta / léxico teal).
+    function semSection(method, label, color) {
+      if (!overlays[method]) return '';
+      var sem = edges.filter(function (x) { return x.source === 'semantic' && x.method === method && (x.a === n.id || x.b === n.id); })
+        .map(function (x) { return { node: x.a === n.id ? x.b : x.a, score: x.score || 0 }; })
+        .sort(function (p, q) { return q.score - p.score; });
+      return '<h4>' + label + '</h4>' + (sem.map(function (s) {
+        return '<div class="nb" data-go="' + esc(s.node) + '">' +
+          '<span class="t">' + esc(short(s.node)) + '</span>' +
+          '<span class="w" style="color:' + color + '">' + s.score.toFixed(2) +
+          (authed() ? ' <span class="prom" data-prom="' + esc(s.node) + '" title="promover a relação">✦</span>' : '') +
+          '</span></div>';
+      }).join('') || '<div class="empty">Sem vizinhos acima do limiar.</div>');
+    }
+    var semList = semSection('corpus', 'Por sentido · corpus (Ayvu Rapytã)', '#c9bcff') +
+                  semSection('lexico', 'Por sentido · léxico (definição)', '#9fe3d8');
+
+    // Instâncias REAIS em sentenças (YG-177): versos do Ayvu Rapytã (hierárquicos)
+    // + exemplos do dicionário — "olhar as instâncias da palavra em frases".
+    var versos = (data.versos || []).map(function (v) {
+      return '<div class="inst"><span class="loc">' + esc(v.chapter) + ' · v' + v.verse + '</span>' +
+        '<div class="vt">' + esc(v.text) + '</div></div>';
+    }).join('');
+    var exs = (data.exemplos || []).map(function (x) {
+      return '<div class="inst"><div class="vt">' + esc(x.gn) + '</div>' +
+        '<div class="vp">' + esc(x.pt) + '</div></div>';
+    }).join('');
+    var instBlock =
+      (versos ? '<h4>Instâncias no Ayvu Rapytã</h4>' + versos : '') +
+      (exs ? '<h4>Exemplos (dicionário)</h4>' + exs : '');
+
+    $('#insp-body').innerHTML =
+      '<div class="r-display term">' + esc(n.term) + '</div>' +
+      '<div class="meta">' + chips + '</div>' +
+      (n.gloss ? '<div class="gloss">' + esc(n.gloss) + '</div>' : '') +
+      '<h4>Conexões (caminhe)</h4>' + nbs +
+      semList +
+      instBlock +
+      '<h4>Referências (links)</h4>' + refs +
+      '<div class="row-actions">' +
+        '<button class="r-ghost gated" id="act-rel">✎ nomear relação</button>' +
+        '<button class="r-ghost gated" id="act-ref">+ referência</button>' +
+      '</div>';
+    $('#inspector').classList.add('open');
+    $('#insp-body').querySelectorAll('.nb[data-go]').forEach(function (el) {
+      el.addEventListener('click', function () { focus(el.dataset.go); });
+    });
+    // promover sugestão semântica → aresta user (✦ dentro do item; não navega)
+    $('#insp-body').querySelectorAll('.prom[data-prom]').forEach(function (el) {
+      el.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var alvo = el.dataset.prom;
+        var rel = prompt('Confirmar relação entre "' + short(n.id) + '" e "' + short(alvo) + '" — nome (ex.: mesmo conceito):', 'mesmo conceito');
+        if (rel == null) return;
+        J(API + '/aresta', { method: 'POST', headers: headers(true), body: JSON.stringify({ a: n.id, b: alvo, relation: rel || null }) })
+          .then(function (edge) { if (edge) { mergeGraph({ nodes: [], edges: [edge] }); toast('promovido a relação ✦'); focus(n.id); } else toast('falhou'); });
+      });
+    });
+    var ar = $('#act-rel'); if (ar) ar.addEventListener('click', function () { nomearRelacao(n.id, data.neighbors || []); });
+    var af = $('#act-ref'); if (af) af.addEventListener('click', function () { anexarRef(n.id); });
+  }
+  $('#insp-close').addEventListener('click', function () { $('#inspector').classList.remove('open'); });
+
+  function nomearRelacao(id, neighbors) {
+    if (!neighbors.length) { toast('caminhe até um vizinho primeiro'); return; }
+    var alvo = prompt('Qual termo (id) ligar a "' + short(id) + '"?\n' +
+      neighbors.map(function (nb) { return '• ' + nb.node; }).join('\n'), neighbors[0].node);
+    if (!alvo) return;
+    var rel = prompt('Nome da relação (ex.: cognato, mesmo conceito, rima sonora):', '');
+    if (rel == null) return;
+    J(API + '/aresta', { method: 'POST', headers: headers(true), body: JSON.stringify({ a: id, b: alvo, relation: rel || null }) })
+      .then(function (edge) {
+        if (edge) { mergeGraph({ nodes: [], edges: [edge] }); toast('relação nomeada ✦'); focus(id); }
+        else toast('falhou (nó válido? logado?)');
+      });
+  }
+  function anexarRef(id) {
+    var kind = prompt('Tipo da referência: sentence | etymology | audio | link', 'link');
+    if (!kind) return;
+    var href = prompt('Link (href) — frase/etimologia/áudio/URL:', '');
+    if (!href) return;
+    var label = prompt('Rótulo (opcional):', '') || null;
+    J(API + '/no/' + encodeURIComponent(id) + '/ref', { method: 'POST', headers: headers(true), body: JSON.stringify({ kind: kind, href: href, label: label }) })
+      .then(function (r) { if (r) { toast('referência anexada'); focus(id); } else toast('falhou (tipo válido? logado?)'); });
+  }
+
+  // ── paleta (catálogo de nós) + busca ────────────────────────────────────────
+  var catalog = [];
+  var PAL_MAX = 150; // léxico tem milhares — paleta mostra os top por pop / matches
+  function renderPalette(filter) {
+    var f = (filter || '').toLowerCase();
+    var items = catalog.filter(function (n) {
+      return !f || n.term.toLowerCase().indexOf(f) >= 0 || (n.gloss || '').toLowerCase().indexOf(f) >= 0;
+    });
+    var shown = items.slice(0, PAL_MAX);
+    var byPack = {};
+    shown.forEach(function (n) { (byPack[n.pack] = byPack[n.pack] || []).push(n); });
+    var html = Object.keys(byPack).map(function (pack) {
+      return '<div class="pal-group">' + esc(pack) + '</div>' + byPack[pack].map(function (n) {
+        return '<div class="pal-item" data-go="' + esc(n.id) + '">' +
+          '<span class="dot" style="width:9px;height:9px;border-radius:50%;background:' + packColor(n.pack) + '"></span>' +
+          '<span class="term">' + esc(n.term) + '</span>' +
+          '<span class="gl">' + esc(n.gloss || '') + '</span></div>';
+      }).join('');
+    }).join('') || '<div class="hint">nada encontrado.</div>';
+    if (items.length > shown.length) html += '<div class="hint">+' + (items.length - shown.length) + ' mais — refine a busca.</div>';
+    $('#pal-list').innerHTML = html;
+    $('#pal-list').querySelectorAll('.pal-item[data-go]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var n = catalog.find(function (c) { return c.id === el.dataset.go; });
+        if (n) ensureNode(n);
+        focus(el.dataset.go);
+        if (window.innerWidth < 720) $('#palette').classList.remove('open');
+      });
+    });
+  }
+  $('#pal-toggle').addEventListener('click', function () { $('#palette').classList.toggle('open'); });
+  function toggleOverlay(which, btn) {
+    overlays[which] = !overlays[which];
+    $(btn).classList.toggle('on', overlays[which]);
+    // purga arestas semânticas do overlay desligado; mantém o outro
+    edges = edges.filter(function (e) { return e.source !== 'semantic' || overlays[e.method]; });
+    if (focusId) focus(focusId);
+    else toast(anyOverlay() ? 'overlay ligado — foque um termo' : 'overlays desligados');
+  }
+  $('#sem-corpus').addEventListener('click', function () { toggleOverlay('corpus', '#sem-corpus'); });
+  $('#sem-lexico').addEventListener('click', function () { toggleOverlay('lexico', '#sem-lexico'); });
+  $('#search').addEventListener('input', function (e) {
+    renderPalette(e.target.value);
+    if (e.target.value && !$('#palette').classList.contains('open')) $('#palette').classList.add('open');
+  });
+
+  // ── toast ────────────────────────────────────────────────────────────────────
+  var toTimer = null;
+  function toast(msg) {
+    var t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toTimer); toTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+  }
+
+  // ── boot ───────────────────────────────────────────────────────────────────
+  function boot() {
+    resize();
+    if (authed()) {
+      document.body.classList.add('authed');
+      $('#loginlink').hidden = true;
+      var who = $('#whoami'); who.hidden = false; who.textContent = '● conectado';
+    }
+    J(API + '/nos').then(function (cat) {
+      catalog = cat || [];
+      // léxico real → ordena por popularidade (paleta) e planta nas posições do
+      // servidor (espiral de phyllotaxis por rank). Sem dado fabricado, sem força.
+      catalog.sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); });
+      renderPalette('');
+      catalog.forEach(ensureNode);
+      fitView();
+      if (catalog.length) toast(catalog.length + ' termos reais (Mbyá + Iorubá · Ayvu Rapytã) — clique para explorar');
+    });
+    loop();
+  }
+
+  // Enquadra todos os nós no viewport (margem 12%).
+  function fitView() {
+    var ids = Object.keys(nodes);
+    if (!ids.length) return;
+    var minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    ids.forEach(function (id) {
+      var n = nodes[id];
+      if (n.x < minx) minx = n.x; if (n.x > maxx) maxx = n.x;
+      if (n.y < miny) miny = n.y; if (n.y > maxy) maxy = n.y;
+    });
+    var w = Math.max(1, maxx - minx), h = Math.max(1, maxy - miny);
+    view.k = Math.min(W / w, H / h) * 0.88;
+    view.x = W / 2 - ((minx + maxx) / 2) * view.k;
+    view.y = H / 2 - ((miny + maxy) / 2) * view.k;
+  }
+  boot();
+})();

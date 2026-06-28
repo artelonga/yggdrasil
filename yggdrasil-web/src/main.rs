@@ -21,6 +21,7 @@ pub mod presenca;
 mod scores_store;
 pub mod shandara;
 pub mod telemetria;
+pub mod topologia;
 pub mod universos_routes;
 pub mod wasm_runtime;
 
@@ -534,6 +535,36 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(campanha_state);
 
+    // YG-175/176/177: universo centralizado — topologia de sentido cross-linguística
+    // (grafo do léxico real + cosseno por contexto). Mesma SQLite. Anônimo lê; logado
+    // escreve; recomputar overlay semântico é admin-gated.
+    let topologia_state = Arc::new(api::topologia::TopologiaState {
+        jwt_secret: auth_state.jwt_secret.clone(),
+        db: Arc::new(
+            topologia::TopologiaDb::open(&db_path)
+                .map_err(|e| anyhow::anyhow!("topologia db: {e}"))?,
+        ),
+        admin_token: std::env::var("YGGDRASIL_ADMIN_TOKEN").ok(),
+    });
+    let topologia_router = Router::new()
+        .route("/api/v1/topologia/nos", get(api::topologia::get_nos))
+        .route("/api/v1/topologia/no/{id}", get(api::topologia::get_no))
+        .route("/api/v1/topologia/grafo", get(api::topologia::get_grafo))
+        .route("/api/v1/topologia/explorar", post(api::topologia::explorar))
+        .route(
+            "/api/v1/topologia/aresta",
+            post(api::topologia::promover_aresta),
+        )
+        .route(
+            "/api/v1/topologia/no/{id}/ref",
+            post(api::topologia::anexar_ref),
+        )
+        .route(
+            "/api/v1/topologia/semantica/recomputar",
+            post(api::topologia::recomputar_semantica),
+        )
+        .with_state(topologia_state);
+
     // Universo `comunicacao` — salas interativas de léxico cross-linguístico
     // (Mbyá Guaraní × Iorubá). Auto-contido: salas em disco + write-back de
     // termos novos no repo `comunicacao` (markdown) + fila de revisão.
@@ -810,6 +841,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(profile_router)
         .merge(feedback_router)
         .merge(campanha_router)
+        .merge(topologia_router)
         .merge(comunicacao_router)
         .merge(motivos_router)
         .merge(stream_router)
@@ -830,6 +862,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/analytics", get(serve_analytics))
         // YG-143: landing de campanha (tiers de REWARDS.md + stats ao vivo)
         .route("/campanha", get(serve_campanha))
+        .route("/universos/topologia", get(serve_topologia))
         // YG-161: créditos — apoiadores que optaram por aparecer (público)
         .route("/creditos", get(serve_creditos))
         // YG-165: admin de apoios (a página pede o admin token; API é gated)
@@ -866,7 +899,13 @@ async fn main() -> anyhow::Result<()> {
                 .service(ServeDir::new("yggdrasil-web/static")),
         );
 
-    let addr: SocketAddr = "0.0.0.0:3030".parse()?;
+    // Porta configurável (`PORT`, fallback 3030) — permite rodar vários
+    // deployments localhost lado a lado (um por PR/branch; ver scripts/pr-localhost.sh).
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.trim().parse::<u16>().ok())
+        .unwrap_or(3030);
+    let addr: SocketAddr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("yggdrasil-web ouvindo em http://{}", addr);
     axum::serve(listener, app).await?;
@@ -909,6 +948,11 @@ async fn serve_neuro() -> impl IntoResponse {
 /// YG-143: landing de campanha (da semente ao topo) — tiers + stats ao vivo.
 async fn serve_campanha() -> impl IntoResponse {
     Html(include_str!("../static/campanha.html"))
+}
+
+/// YG-175: visualização do universo centralizado (grafo de sentido).
+async fn serve_topologia() -> impl IntoResponse {
+    Html(include_str!("../static/universos/topologia.html"))
 }
 
 /// YG-161: créditos — rol de apoiadores (lê `GET /api/v1/creditos`, sem e-mail).

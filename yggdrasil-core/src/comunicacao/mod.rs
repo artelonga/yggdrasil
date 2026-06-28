@@ -22,8 +22,10 @@ pub mod public;
 pub mod review;
 pub mod room;
 pub mod score;
+pub mod semantica;
 pub mod store;
 pub mod templates;
+pub mod topologia;
 pub mod writeback;
 
 pub use caderno::{Caderno, CadernoNote, CadernoStore};
@@ -40,4 +42,5 @@ pub use room::{EditError, Element, LexiconLink, Link, Reference, Room, RoomEdit,
 pub use score::{BitsLedger, BitsLedgerStore, pack_bits_per_symbol};
 pub use store::{RoomStore, StoreError};
 pub use templates::{TemplateSummary, instantiate as template_instantiate, template_summaries};
+pub use topologia::{EdgeSource, RefKind, canonical_pair, node_id, split_node_id};
 pub use writeback::{Writeback, WritebackConfig, WritebackError, WritebackOutcome};

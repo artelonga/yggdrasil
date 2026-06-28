@@ -7,4 +7,5 @@ pub mod npc;
 pub mod passkey;
 pub mod profile;
 pub mod scores;
+pub mod topologia;
 pub mod universes;
