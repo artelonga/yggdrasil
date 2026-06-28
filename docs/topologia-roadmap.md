@@ -75,8 +75,8 @@ Trocar o vetorizador TF-IDF por embeddings de um modelo **local**:
   `Embedder { fn embed(&self, text: &str) -> Vec<f32> }` com backends plugáveis —
   (a) Ollama (`nomic-embed`/`mxbai`), (b) modelos Yoruba/africanos abertos
   (**AfroXLM-R / AfriBERTa / AfroLM / YorùbáBERT**, via runner local), (c) um
-  **modelo fine-tuned próprio** (treinado no corpus Mbyá/Yoruba com MENYO-20k +
-  Bíblia + léxicos). Trocar de modelo **não toca** o modelo de aresta nem o viz —
+  **modelo fine-tuned próprio** (treinado nos córpora reais: Ayvu Rapytã + Odù Ifá
+  quando consentido + léxicos). Trocar de modelo **não toca** o modelo de aresta nem o viz —
   só re-gera os vetores no artefato. O `method` da aresta passa a carregar o
   modelo usado (proveniência).
 - **DoD**: overlay neural; `va'e~va'ekue` mais limpo; partículas deixam de dominar;
@@ -108,13 +108,14 @@ Fonte: deep-research 2026-06-27 (relatório citado).
 - **Léxico (fallback rico, NÃO-aberto):** LDC2008L03 *Global Yoruba Lexical Database*
   (450k palavras, Toolbox/XML, **decomposição morfêmica** como nosso `decomp`) —
   licença paga LDC. Só se houver orçamento.
-- **Corpus canônico — Ifá Odù (256 odù → versos):** o gêmeo estrutural do Ayvu
-  Rapytã, MAS (1) a edição de referência (Abimbola 1976) está **sob copyright** e
-  (2) **é conhecimento sagrado vivo** → **GATE de soberania** abaixo. Não ingerir
-  sem governança das custódias.
-- **Corpus aberto p/ ficar de pé agora:** **Bíblia Yorùbá** (sem copyright,
-  massivamente paralela; base do Yorùbá UD Treebank, glosas no campo MISC do
-  CoNLL-U) — substrato real de alinhamento token↔léxico enquanto o Ifá é gated.
+- **Corpus canônico — Odù Ifá (256 odù = 16 Olódù 16×16; ẹsẹ Ifá):** o gêmeo
+  estrutural do Ayvu Rapytã, e o cânone Yoruba (**não a Bíblia** — texto colonial,
+  não iorubá). MAS (1) as edições de referência (Abimbola 1976/1977; Bascom 1969)
+  estão **sob copyright** e (2) **é conhecimento sagrado vivo** → **GATE de
+  soberania** abaixo. Não ingerir sem governança das custódias + edição licenciável.
+  Bibliografia em `docs/architecture/yoruba-ifa-references.md`.
+- **Enquanto o Ifá é gated:** a lane Yoruba roda **só com o léxico** (kaikki); sem
+  corpus substituto — não se troca o cânone sagrado por um texto colonial.
 - **Tom/diacrítico:** normalização de tom é de primeira ordem; texto
   normalizado **melhora** scores intrínsecos de embedding → valida nosso `slugify`
   (dobra de tom/diacrítico).
@@ -127,7 +128,7 @@ Responsibility, Ethics; Carroll 2020): as **custódias** — não nós — defin
 licença e protocolo. IP convencional é encaixe imperfeito (precisa proteção
 *sui generis*). **Começar pela necessidade da comunidade e por relação de longo
 prazo, não pelo dataset.** O Ifá entra no grafo **só com consentimento das custódias**;
-até lá, a lane Yoruba roda no par **kaikki + Bíblia Yorùbá**.
+até lá, a lane Yoruba roda **só com o léxico (kaikki)** — sem corpus substituto.
 
 ## Trilhas paralelas (independentes das fases)
 - **Telemetria de co-visitação → `/explorar`** (ponte YG-145 → aresta): wiring do

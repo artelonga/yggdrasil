@@ -53,18 +53,16 @@ normalização de **tom** (mesma dobra do `slugify`). ~4.865 termos, CC-BY-SA.
 Estende os 16 stubs já em `comunicacao/yoruba/terms/`.
 - **DoD**: `lexicon.yo.json` real no universo; nós Yoruba reais no grafo.
 
-### Fase D — **Yoruba: corpus aberto (Bíblia Yorùbá)** *(alinhamento token↔termo)*
-Adaptador: Bíblia Yorùbá (sem copyright; base do UD Treebank) → `corpus/yoruba-bible.json`
-no esquema work→livros→versículos; tokeniza e liga ao `lexicon.yo.json`. Substrato de
-co-ocorrência p/ o overlay `corpus` em Yoruba.
-- **DoD**: versos Yoruba como instâncias reais por termo; overlay corpus Yoruba.
-
-### Fase E — **Ifá Odù — GATED** *(só com custódias)*
-O gêmeo do Ayvu Rapytã (256 odù → versos). Adaptador idêntico em forma, MAS
-**bloqueado** até consentimento das custódias (CARE; edição Abimbola é copyright +
-sagrada). Documentar o caminho; **não** ingerir ainda.
-- **DoD**: manifesto Ifá com `consentimento_custodia: nao` → build pula; trilha de
-  relação/consentimento aberta.
+### Fase D — **Yoruba: corpus = ODÙ IFÁ** *(o cânone — GATED)*
+O corpus canônico Yoruba é o **Odù Ifá** (256 odù = 16 Olódù 16×16; ẹsẹ Ifá), o gêmeo
+estrutural do Ayvu Rapytã. **NÃO a Bíblia** (texto colonial/cristão, não o cânone
+iorubá). Adaptador idêntico em forma (work→odù→ẹsẹ; tokeniza e liga ao
+`lexicon.yo.json`), MAS **bloqueado** pelo gate de soberania: conhecimento sagrado vivo
+(Òrúnmìlà/babaláwo), edições de referência (Abimbola 1976/1977; Bascom 1969) são
+copyright + tradição = proteção *sui generis*. **Não ingerir sem consentimento das
+custódias.** Bibliografia/fontes em `docs/architecture/yoruba-ifa-references.md`.
+- **DoD**: manifesto `ifa-odu` com `custodian_consent: no` → build pula (gate ativo);
+  trilha de relação/consentimento + busca por edição abertamente licenciada aberta.
 
 ### Fase F — **Reuso recursivo** *(qualquer língua/corpus)*
 Novo texto = novo manifesto + adaptador que emite o esquema canônico. O grafo, o
@@ -73,9 +71,9 @@ artefato.
 
 ## Prioridade p/ revisão
 1. **A+B** (contrato + manifest/gate) — barato, destrava o resto com governança.
-2. **C** (kaikki Yoruba) — abre o 2º universo de língua com dado real, já.
-3. **D** (Bíblia Yorùbá) — dá contexto/alinhamento real ao Yoruba.
-4. **E** (Ifá) — só atrás do gate de soberania.
+2. **C** (kaikki Yoruba) — abre o 2º universo de língua com dado real, já (léxico).
+3. **D** (Odù Ifá) — o corpus canônico Yoruba, **só atrás do gate de soberania**
+   (consentimento das custódias + edição licenciável). Sem Bíblia.
 
 ## Invariantes
 Sem dado fabricado · esquema canônico único · texto sagrado só com consentimento ·
