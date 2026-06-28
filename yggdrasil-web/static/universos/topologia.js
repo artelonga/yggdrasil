@@ -40,7 +40,7 @@
   var nodes = {};         // id → {id,x,y,vx,vy,pack,kind,term,gloss,role,pinned}
   var edges = [];         // {a,b,weight,relation,source}
   var focusId = null, prevFocus = null;
-  var overlays = { corpus: false, lexico: false }; // overlays de sentido (cosseno)
+  var overlays = { corpus: false, lexico: false, neural: false }; // overlays de sentido (cosseno)
   function activeOverlays() { return Object.keys(overlays).filter(function (k) { return overlays[k]; }); }
   function anyOverlay() { return overlays.corpus || overlays.lexico; }
   var view = { x: 0, y: 0, k: 1 };   // pan (x,y) + zoom (k)
@@ -146,7 +146,7 @@
         ctx.strokeStyle = 'rgba(233,195,73,.8)'; ctx.setLineDash([]);
         ctx.lineWidth = Math.min(5, 1 + e.weight * 0.7);
       } else if (e.source === 'semantic') {
-        ctx.strokeStyle = e.method === 'lexico' ? 'rgba(111,208,192,.5)' : 'rgba(170,150,255,.5)';
+        ctx.strokeStyle = e.method === 'lexico' ? 'rgba(111,208,192,.5)' : e.method === 'neural' ? 'rgba(255,155,210,.55)' : 'rgba(170,150,255,.5)';
         ctx.setLineDash([2, 4]);
         ctx.lineWidth = 1 + (e.score || 0) * 2.2;
       } else {
@@ -156,7 +156,7 @@
       ctx.stroke(); ctx.setLineDash([]);
       var lbl = e.relation || (e.source === 'semantic' && view.k > 0.8 ? (e.score || 0).toFixed(2) : '');
       if (lbl) {
-        ctx.fillStyle = e.source !== 'semantic' ? 'rgba(233,195,73,.85)' : (e.method === 'lexico' ? 'rgba(111,208,192,.85)' : 'rgba(170,150,255,.85)');
+        ctx.fillStyle = e.source !== 'semantic' ? 'rgba(233,195,73,.85)' : (e.method === 'lexico' ? 'rgba(111,208,192,.85)' : e.method === 'neural' ? 'rgba(255,155,210,.9)' : 'rgba(170,150,255,.85)');
         ctx.font = '11px Manrope, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(lbl, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2 - 4);
@@ -295,7 +295,8 @@
       }).join('') || '<div class="empty">Sem vizinhos acima do limiar.</div>');
     }
     var semList = semSection('corpus', 'Por sentido · corpus (Ayvu Rapytã)', '#c9bcff') +
-                  semSection('lexico', 'Por sentido · léxico (definição)', '#9fe3d8');
+                  semSection('lexico', 'Por sentido · léxico (definição)', '#9fe3d8') +
+                  semSection('neural', 'Por sentido · neural (embedding local)', '#ffc4e3');
 
     // Instâncias REAIS em sentenças (YG-177): versos do Ayvu Rapytã (hierárquicos)
     // + exemplos do dicionário — "olhar as instâncias da palavra em frases".
@@ -407,6 +408,7 @@
   }
   $('#sem-corpus').addEventListener('click', function () { toggleOverlay('corpus', '#sem-corpus'); });
   $('#sem-lexico').addEventListener('click', function () { toggleOverlay('lexico', '#sem-lexico'); });
+  $('#sem-neural').addEventListener('click', function () { toggleOverlay('neural', '#sem-neural'); });
   $('#search').addEventListener('input', function (e) {
     renderPalette(e.target.value);
     if (e.target.value && !$('#palette').classList.contains('open')) $('#palette').classList.add('open');

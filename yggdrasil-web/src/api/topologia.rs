@@ -165,7 +165,7 @@ pub async fn get_grafo(
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
         {
-            if method != "lexico" && method != "corpus" {
+            if !matches!(method, "lexico" | "corpus" | "neural") {
                 continue;
             }
             let sem = state.db.semantic_incident(&node_ids, method);

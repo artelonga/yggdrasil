@@ -60,7 +60,7 @@ Hoje o contexto vem do `mbya_lexicon.db` em `../mbya` — fora do deploy. Gerar 
 - Nós continuam vindo de `lexicon.mbya.json` (já versionado no universo).
 - **DoD**: topologia roda **sem `../mbya`**, só com o artefato — pré-requisito de prod.
 
-### Fase 3 — Embeddings **neurais locais** (Ollama)  *(o salto de qualidade)*
+### Fase 3 — Embeddings **neurais locais** (Ollama)  *(INICIADO — overlay `neural` no ar)*
 Trocar o vetorizador TF-IDF por embeddings de um modelo **local**:
 - `ollama pull nomic-embed-text` (ou `mxbai-embed-large`); servir via
   `tools/local-inference/server.sh` (`/api/embeddings`, `localhost:11434`,
