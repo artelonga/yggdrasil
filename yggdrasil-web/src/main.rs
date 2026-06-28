@@ -586,6 +586,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/me/topologia/textos",
             get(api::topologia::meus_textos),
         )
+        .route(
+            "/api/v1/me/topologia/importar",
+            post(api::topologia::importar),
+        )
         .with_state(topologia_state);
 
     // Universo `comunicacao` — salas interativas de léxico cross-linguístico

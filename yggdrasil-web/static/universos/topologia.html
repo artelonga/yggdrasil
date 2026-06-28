@@ -97,6 +97,16 @@
       z-index: 40; background: var(--sc-high); color: var(--on); padding: .6rem 1rem; border-radius: 999px;
       font-size: .82rem; opacity: 0; transition: all .25s ease; pointer-events: none; box-shadow: var(--shadow); }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* CTA tier grátis */
+    #cta { position: fixed; right: 1.2rem; bottom: 1.2rem; z-index: 45; display: none;
+      max-width: 22rem; padding: .9rem 1.1rem; border-radius: var(--r-xl);
+      background: rgba(28,27,27,.95); backdrop-filter: blur(18px); box-shadow: var(--shadow);
+      color: var(--on); font-size: .86rem; line-height: 1.5; }
+    #cta.show { display: block; }
+    #cta b { color: var(--secondary); }
+    #cta .r-cta { margin-top: .6rem; }
+    #cta #cta-x { position: absolute; top: .5rem; right: .7rem; cursor: pointer; color: var(--on-var); font-size: .9rem; }
   </style>
 </head>
 <body class="relic">
@@ -110,9 +120,9 @@
       <button id="sem-corpus" class="r-ghost" title="cosseno por co-ocorrência nos versos do Ayvu Rapytã">✧ corpus</button>
       <button id="sem-lexico" class="r-ghost" title="cosseno pela definição + exemplos do dicionário">✧ léxico</button>
       <button id="sem-neural" class="r-ghost" title="cosseno por embedding neural LOCAL (Ollama)">✧ neural</button>
-      <button id="only-mine" class="r-ghost gated" title="filtrar só as palavras que são minhas">★ só minhas</button>
-      <button id="add-word" class="r-ghost gated" title="adiciona uma palavra sua (fora do léxico) ao seu vocabulário — revise depois">＋ palavra</button>
-      <button id="add-text" class="r-ghost gated" title="escreva seu próprio texto — vira seu corpus pessoal (linguagem pela expressão)">＋ texto</button>
+      <button id="only-mine" class="r-ghost" title="filtrar só as palavras que são minhas">★ só minhas</button>
+      <button id="add-word" class="r-ghost" title="adiciona uma palavra sua (fora do léxico) ao seu vocabulário — revise depois">＋ palavra</button>
+      <button id="add-text" class="r-ghost" title="escreva seu próprio texto — vira seu corpus pessoal (linguagem pela expressão)">＋ texto</button>
       <a id="loginlink" class="r-ghost" href="/login">entrar</a>
       <span id="whoami" class="r-chip" hidden></span>
     </div>
@@ -149,6 +159,9 @@
   </div>
 
   <div id="toast"></div>
+
+  <!-- CTA do tier grátis: aparece quando o anônimo já cultivou algumas palavras -->
+  <div id="cta"></div>
 
   <script src="/static/universos/topologia.js"></script>
   <script defer src="/static/telemetria.js"></script>

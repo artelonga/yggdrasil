@@ -42,7 +42,59 @@
   var focusId = null, prevFocus = null;
   var overlays = { corpus: false, lexico: false, neural: false }; // overlays de sentido (cosseno)
   var myWords = {};      // YG-178: id → {status, seen_count} (camada pessoal)
+  var myNodeList = [];   // nós próprios (p/ persistência local + migração)
+  var myEdgeList = [];   // arestas próprias (idem)
   var onlyMine = false;  // filtro "só minhas"
+
+  // ── tier grátis: memória LOCAL (cache) p/ anônimos crescerem antes do signup ──
+  var LOCAL_KEY = 'ygg-topo-local';
+  function loadLocal() {
+    try { return JSON.parse(localStorage.getItem(LOCAL_KEY)); } catch (e) { return null; }
+  }
+  function persistLocal() {
+    if (authed()) return; // logado → servidor é a fonte
+    try { localStorage.setItem(LOCAL_KEY, JSON.stringify({ words: myWords, nodes: myNodeList, edges: myEdgeList, texts: myTexts })); } catch (e) {}
+  }
+  var nextStatus = { visited: 'learning', learning: 'known', known: 'known' };
+  // índice termo(lower) → id, p/ casar palavras de textos sem slugify no cliente.
+  function termIndex() {
+    if (termIndex._c) return termIndex._c;
+    var idx = {}; for (var id in byId) { idx[(byId[id].term || '').toLowerCase()] = id; }
+    termIndex._c = idx; return idx;
+  }
+  function matchClient(text) {
+    var idx = termIndex(), seen = {}, out = [];
+    text.split(/[^\p{L}\p{N}'’]+/u).forEach(function (w) {
+      var id = idx[w.toLowerCase()];
+      if (id && !seen[id]) { seen[id] = 1; out.push(id); }
+    });
+    return out;
+  }
+  // CTA: depois de cultivar algumas palavras, convida a salvar/criar conta.
+  function maybeCTA() {
+    if (authed() || localStorage.getItem('ygg-cta-dismissed')) return;
+    if (Object.keys(myWords).length < 3) return;
+    var c = $('#cta'); if (!c || c.classList.contains('show')) return;
+    c.innerHTML = '🌱 Você já cultivou <b>' + Object.keys(myWords).length +
+      ' palavras</b> — crie uma conta para salvá-las e sincronizar. ' +
+      '<a class="r-cta" href="/login">criar conta / entrar</a> ' +
+      '<span id="cta-x" title="agora não">✕</span>';
+    c.classList.add('show');
+    $('#cta-x').addEventListener('click', function () { c.classList.remove('show'); localStorage.setItem('ygg-cta-dismissed', '1'); });
+  }
+  // Migra o cache local para a conta após login (o tier grátis não se perde).
+  function migrateLocal() {
+    var l = loadLocal();
+    if (!l || !(Object.keys(l.words || {}).length || (l.nodes || []).length || (l.texts || []).length)) return Promise.resolve();
+    var payload = {
+      words: Object.keys(l.words || {}),
+      nodes: (l.nodes || []).map(function (n) { return { term: n.term, gloss: n.gloss || null }; }),
+      edges: (l.edges || []).map(function (e) { return { a: e.a, b: e.b, relation: e.relation || null }; }),
+      texts: (l.texts || []).map(function (t) { return { title: t.loc, text: t.text }; }),
+    };
+    return J('/api/v1/me/topologia/importar', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) })
+      .then(function (r) { localStorage.removeItem(LOCAL_KEY); if (r) toast('progresso salvo na sua conta ✦'); });
+  }
   function activeOverlays() { return Object.keys(overlays).filter(function (k) { return overlays[k]; }); }
   function anyOverlay() { return overlays.corpus || overlays.lexico; }
   var view = { x: 0, y: 0, k: 1 };   // pan (x,y) + zoom (k)
@@ -275,11 +327,19 @@
 
   // YG-178: reivindicar/aprender — clicar uma palavra a torna MINHA (e avança status).
   function claim(id) {
-    if (!authed() || !id || !nodes[id]) return; // só nós reais do léxico
-    J('/api/v1/me/topologia/visitar', { method: 'POST', headers: headers(true), body: JSON.stringify({ node: id }) })
-      .then(function (w) {
-        if (w && w.status) { myWords[id] = { status: w.status, seen_count: w.seen_count }; updateMineCount(); toast(short(id) + ' → ' + w.status + (w.status === 'known' ? ' ✦' : '')); }
-      });
+    if (!id || !nodes[id]) return;
+    if (authed()) {
+      J('/api/v1/me/topologia/visitar', { method: 'POST', headers: headers(true), body: JSON.stringify({ node: id }) })
+        .then(function (w) {
+          if (w && w.status) { myWords[id] = { status: w.status, seen_count: w.seen_count }; updateMineCount(); toast(short(id) + ' → ' + w.status + (w.status === 'known' ? ' ✦' : '')); }
+        });
+    } else {
+      // tier grátis: cresce no cache local; avança o status localmente.
+      var cur = myWords[id];
+      myWords[id] = cur ? { status: nextStatus[cur.status] || 'known', seen_count: cur.seen_count + 1 } : { status: 'visited', seen_count: 1 };
+      persistLocal(); updateMineCount(); maybeCTA();
+      toast(short(id) + ' → ' + myWords[id].status + ' (local)');
+    }
   }
   function updateMineCount() {
     var who = $('#whoami'); if (!who) return;
@@ -347,8 +407,8 @@
       instBlock +
       '<h4>Referências (links)</h4>' + refs +
       '<div class="row-actions">' +
-        '<button class="r-ghost gated" id="act-vocab" title="adiciona ao seu vocabulário — revise depois">＋ vocabulário</button>' +
-        '<button class="r-ghost gated" id="act-conn" title="conecte esta palavra a outra que é sua (conexão pessoal)">＋ conexão</button>' +
+        '<button class="r-ghost" id="act-vocab" title="adiciona ao seu vocabulário — revise depois">＋ vocabulário</button>' +
+        '<button class="r-ghost" id="act-conn" title="conecte esta palavra a outra que é sua (conexão pessoal)">＋ conexão</button>' +
         '<button class="r-ghost gated" id="act-ref">＋ referência</button>' +
       '</div>';
     $('#inspector').classList.add('open');
@@ -393,8 +453,13 @@
     if (!tid) { for (var k in byId) { if (byId[k].term === q) { tid = k; break; } } }
     if (!tid) { toast('palavra não encontrada no léxico/seus nós'); return; }
     var rel = prompt('Nome da conexão (opcional):') || null;
-    J('/api/v1/me/topologia/aresta', { method: 'POST', headers: headers(true), body: JSON.stringify({ a: id, b: tid, relation: rel }) })
-      .then(function (e) { if (e && e.a) { if (byId[tid]) ensureNode(byId[tid]); edges.push(e); toast('conexão sua criada'); focus(id); } else toast('falhou'); });
+    if (authed()) {
+      J('/api/v1/me/topologia/aresta', { method: 'POST', headers: headers(true), body: JSON.stringify({ a: id, b: tid, relation: rel }) })
+        .then(function (e) { if (e && e.a) { if (byId[tid]) ensureNode(byId[tid]); edges.push(e); toast('conexão sua criada'); focus(id); } else toast('falhou'); });
+    } else {
+      var e = { a: id, b: tid, weight: 1, relation: rel, source: 'user' };
+      edges.push(e); myEdgeList.push(e); if (byId[tid]) ensureNode(byId[tid]); persistLocal(); toast('conexão sua (local)'); focus(id);
+    }
   }
   function anexarRef(id) {
     var kind = prompt('Tipo da referência: sentence | etymology | audio | link', 'link');
@@ -483,23 +548,30 @@
     toast(onlyMine ? 'só minhas palavras' : 'léxico completo');
   });
   // YG-178 slice 2: EXPRESSÃO — adicionar palavra própria / escrever texto.
+  function addLocalNode(term, gloss) {
+    var slug = term.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'x';
+    var n = { id: 'local:' + slug, pack: 'meu', kind: 'user', term: term, gloss: gloss || undefined, x: -3000 - (myNodeList.length * 60), y: -400 + (myNodeList.length * 50) % 900, pop: 0 };
+    byId[n.id] = n; myNodeList.push(n); ensureNode(n); myWords[n.id] = { status: 'visited', seen_count: 1 };
+    termIndex._c = null; updateMineCount(); persistLocal(); maybeCTA(); focus(n.id); toast('palavra sua adicionada (local)');
+  }
   $('#add-word').addEventListener('click', function () {
     var term = prompt('Nova palavra sua (fora do léxico):'); if (!term) return;
     var gloss = prompt('Significado (opcional):') || null;
-    J('/api/v1/me/topologia/no', { method: 'POST', headers: headers(true), body: JSON.stringify({ term: term, gloss: gloss }) })
-      .then(function (n) {
-        if (n && n.id) { byId[n.id] = n; ensureNode(n); myWords[n.id] = { status: 'visited', seen_count: 1 }; updateMineCount(); focus(n.id); toast('palavra sua adicionada'); }
-        else toast('falhou');
-      });
+    if (authed()) {
+      J('/api/v1/me/topologia/no', { method: 'POST', headers: headers(true), body: JSON.stringify({ term: term, gloss: gloss }) })
+        .then(function (n) { if (n && n.id) { byId[n.id] = n; ensureNode(n); myWords[n.id] = { status: 'visited', seen_count: 1 }; termIndex._c = null; updateMineCount(); focus(n.id); toast('palavra sua adicionada'); } else toast('falhou'); });
+    } else addLocalNode(term, gloss);
   });
   $('#add-text').addEventListener('click', function () {
     var text = prompt('Escreva seu texto (vira seu corpus pessoal):'); if (!text) return;
     var title = prompt('Título (opcional):') || null;
-    J('/api/v1/me/topologia/texto', { method: 'POST', headers: headers(true), body: JSON.stringify({ title: title, text: text }) })
-      .then(function (r) {
-        if (r) { J('/api/v1/me/topologia/textos').then(function (ts) { myTexts = ts || []; renderSentences(''); $('#palette').classList.add('open'); toast('texto adicionado ao seu corpus'); }); }
-        else toast('falhou');
-      });
+    if (authed()) {
+      J('/api/v1/me/topologia/texto', { method: 'POST', headers: headers(true), body: JSON.stringify({ title: title, text: text }) })
+        .then(function (r) { if (r) { J('/api/v1/me/topologia/textos', { headers: headers() }).then(function (ts) { myTexts = ts || []; renderSentences(''); $('#palette').classList.add('open'); toast('texto adicionado ao seu corpus'); }); } else toast('falhou'); });
+    } else {
+      myTexts.unshift({ id: 'localtext:' + myTexts.length, lang: 'meu', loc: title || 'meu texto', text: text, terms: matchClient(text) });
+      renderSentences(''); $('#palette').classList.add('open'); persistLocal(); maybeCTA(); toast('texto no seu corpus (local)');
+    }
   });
   $('#search').addEventListener('input', function (e) {
     renderSentences(e.target.value);
@@ -516,21 +588,33 @@
   // ── boot ───────────────────────────────────────────────────────────────────
   function boot() {
     resize();
-    if (authed()) {
-      document.body.classList.add('authed');
-      $('#loginlink').hidden = true;
-      // YG-178: carrega minhas palavras (camada pessoal) p/ colorir o que é meu.
+    function loadServerPersonal() {
       J('/api/v1/me/topologia', { headers: headers() }).then(function (m) {
         if (!m) return;
         (m.words || []).forEach(function (w) { myWords[w.node_id] = { status: w.status, seen_count: w.seen_count }; });
-        (m.nodes || []).forEach(function (n) { byId[n.id] = n; ensureNode(n); });          // meus nós próprios
-        (m.edges || []).forEach(function (e) { edges.push(e); });                            // minhas arestas
+        (m.nodes || []).forEach(function (n) { byId[n.id] = n; ensureNode(n); termIndex._c = null; });
+        (m.edges || []).forEach(function (e) { edges.push(e); });
         updateMineCount();
       });
-      // meus textos (corpus pessoal) entram no "Ler"
       J('/api/v1/me/topologia/textos', { headers: headers() }).then(function (ts) {
         myTexts = ts || []; renderSentences($('#search').value || '');
       });
+    }
+    if (authed()) {
+      document.body.classList.add('authed');
+      $('#loginlink').hidden = true;
+      // migra o cache do tier grátis (se houver) → conta, depois carrega do servidor.
+      migrateLocal().then(loadServerPersonal);
+    } else {
+      // tier grátis: cresce SEM conta, no cache local do navegador.
+      var l = loadLocal();
+      if (l) {
+        myWords = l.words || {};
+        (l.nodes || []).forEach(function (n) { byId[n.id] = n; myNodeList.push(n); ensureNode(n); });
+        (l.edges || []).forEach(function (e) { myEdgeList.push(e); edges.push(e); });
+        myTexts = l.texts || [];
+        termIndex._c = null; updateMineCount(); maybeCTA();
+      }
     }
     // LOOKUP só (não renderiza): id→nó, p/ resolver as palavras de uma sentença.
     J(API + '/nos').then(function (cat) {

@@ -479,6 +479,87 @@ fn match_term(state: &TopologiaState, sub: &str, word: &str) -> Option<String> {
     state.db.owns_node(sub, &uid).then_some(uid)
 }
 
+// ─── POST /me/topologia/importar — migra o cache anônimo p/ a conta (YG-178) ───
+
+#[derive(Deserialize)]
+pub struct ImportBody {
+    #[serde(default)]
+    words: Vec<String>,
+    #[serde(default)]
+    nodes: Vec<NoBody>,
+    #[serde(default)]
+    edges: Vec<MeuArestaBody>,
+    #[serde(default)]
+    texts: Vec<TextoBody>,
+}
+
+/// Importa o progresso do **cache local (anônimo)** para a conta após o
+/// login/signup — assim o que o usuário cultivou no tier grátis não se perde.
+/// Idempotente. Remapeia ids `local:{slug}` → `user:{sub}:{slug}`.
+pub async fn importar(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<ImportBody>,
+) -> axum::response::Response {
+    let Some(sub) = caller(&state, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "nao_autenticado");
+    };
+    let remap = |id: &str| -> String {
+        match id.strip_prefix("local:") {
+            Some(slug) => format!("user:{sub}:{slug}"),
+            None => id.to_string(),
+        }
+    };
+    // 1) nós próprios primeiro (p/ as arestas/textos resolverem)
+    let mut nodes = 0;
+    for n in &body.nodes {
+        if let Some(term) = clean(Some(n.term.clone()), 120) {
+            state
+                .db
+                .add_user_node(&sub, &term, clean(n.gloss.clone(), 500).as_deref());
+            nodes += 1;
+        }
+    }
+    // 2) palavras do léxico reivindicadas
+    let mut words = 0;
+    for w in &body.words {
+        if resolve_node(w).is_some() && state.db.visit(&sub, w).is_ok() {
+            words += 1;
+        }
+    }
+    // 3) arestas (remapeando ids locais)
+    let mut edges = 0;
+    for e in &body.edges {
+        let (a, b) = (remap(&e.a), remap(&e.b));
+        if mine_or_lexico(&state, &sub, &a)
+            && mine_or_lexico(&state, &sub, &b)
+            && state
+                .db
+                .add_user_edge(
+                    &sub,
+                    &a,
+                    &b,
+                    clean(e.relation.clone(), RELATION_MAX).as_deref(),
+                )
+                .is_ok()
+        {
+            edges += 1;
+        }
+    }
+    // 4) textos (corpus pessoal)
+    let mut texts = 0;
+    for t in &body.texts {
+        if let Some(text) = clean(Some(t.text.clone()), 4000) {
+            state
+                .db
+                .add_user_text(&sub, clean(t.title.clone(), 200).as_deref(), &text);
+            texts += 1;
+        }
+    }
+    Json(serde_json::json!({ "words": words, "nodes": nodes, "edges": edges, "texts": texts }))
+        .into_response()
+}
+
 // ─── POST /semantica/recomputar ───────────────────────────────────────────────
 
 /// Recalcula o overlay semântico (cosseno de sentido por contexto). Admin-gated
