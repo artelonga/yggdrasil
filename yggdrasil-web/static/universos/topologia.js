@@ -46,6 +46,42 @@
   var myEdgeList = [];   // arestas próprias (idem)
   var onlyMine = false;  // filtro "só minhas"
 
+  // ── YG-179: línguas como LENTES (Duolingo paths). O corpus é um; cada língua
+  // ── é uma perspectiva. Só listamos lentes COM conteúdo (hide until they exist).
+  var LANG_LABEL = { 'gn-mbya': 'Mbyá', 'yo': 'Iorubá', 'es': 'Espanhol', 'pt': 'Português' };
+  var availLangs = {};       // lang → true (tem conteúdo: léxico e/ou tradução)
+  var activeLangs = null;    // lang → bool (null = tudo ativo até computar)
+  function langActive(l) { return !activeLangs || activeLangs[l]; }
+  function activeTrLangs(tr) { return Object.keys(tr || {}).filter(function (l) { return langActive(l); }); }
+  function computeAvail() {
+    availLangs = {};
+    for (var id in byId) { var p = byId[id].pack; if (p === 'gn-mbya' || p === 'yo') availLangs[p] = true; }
+    myTexts.concat(sentList).forEach(function (s) {
+      if (s.lang && LANG_LABEL[s.lang]) availLangs[s.lang] = true;
+      Object.keys(s.tr || {}).forEach(function (l) { availLangs[l] = true; });
+    });
+    var saved = null; try { saved = JSON.parse(localStorage.getItem('ygg-langs')); } catch (e) {}
+    activeLangs = {};
+    Object.keys(availLangs).forEach(function (l) { activeLangs[l] = saved ? saved[l] !== false : true; });
+    renderLangMenu();
+  }
+  function persistLangs() { try { localStorage.setItem('ygg-langs', JSON.stringify(activeLangs)); } catch (e) {} }
+  function renderLangMenu() {
+    var m = $('#lang-menu'); if (!m) return;
+    m.innerHTML = '<div class="lm-h">línguas (lentes) — o mesmo corpus por várias perspectivas</div>' +
+      Object.keys(availLangs).sort().map(function (l) {
+        return '<label class="lm-row"><input type="checkbox" data-l="' + l + '"' + (activeLangs[l] ? ' checked' : '') + '> ' +
+          '<span class="dot" style="background:' + (packColor(l) || '#c9bcff') + '"></span> ' + (LANG_LABEL[l] || l) + '</label>';
+      }).join('');
+    m.querySelectorAll('input[data-l]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        activeLangs[cb.dataset.l] = cb.checked; persistLangs();
+        renderSentences($('#search').value || '');
+        if (focusId) J(API + '/no/' + encodeURIComponent(focusId)).then(renderInspector);
+      });
+    });
+  }
+
   // ── tier grátis: memória LOCAL (cache) p/ anônimos crescerem antes do signup ──
   var LOCAL_KEY = 'ygg-topo-local';
   function loadLocal() {
@@ -105,6 +141,8 @@
     if (pack === 'gn-mbya') return '#86c98e';
     if (pack === 'yo') return '#e9c349';
     if (pack === 'meu') return '#ffb3b5'; // YG-178: meus nós próprios (rosa)
+    if (pack === 'es') return '#c9bcff'; // lente de tradução (violeta)
+    if (pack === 'pt') return '#9fe3d8';
     var h = 0; for (var i = 0; i < pack.length; i++) h = (h * 31 + pack.charCodeAt(i)) % 360;
     return 'hsl(' + h + ',55%,68%)';
   }
@@ -224,6 +262,7 @@
     Object.keys(nodes).forEach(function (id) {
       if (onlyMine && !myWords[id]) return; // filtro "só minhas"
       var n = nodes[id], p = toScreen(n);
+      if ((n.pack === 'gn-mbya' || n.pack === 'yo') && !langActive(n.pack)) return; // lente de língua
       if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) return; // cull
       var r = nodeRadius(n) * Math.min(1.6, Math.max(0.5, view.k));
       var focused = id === focusId;
@@ -258,7 +297,10 @@
   function nodeAt(sx, sy) {
     var hit = null, best = 1e9;
     Object.keys(nodes).forEach(function (id) {
-      var n = nodes[id], p = toScreen(n), r = nodeRadius(n) * view.k + 6;
+      var n = nodes[id];
+      if (onlyMine && !myWords[id]) return;
+      if ((n.pack === 'gn-mbya' || n.pack === 'yo') && !langActive(n.pack)) return;
+      var p = toScreen(n), r = nodeRadius(n) * view.k + 6;
       var dx = sx - p.x, dy = sy - p.y, d = dx * dx + dy * dy;
       if (d < r * r && d < best) { best = d; hit = n; }
     });
@@ -531,6 +573,13 @@
         box.textContent = '[' + el.dataset.l + '] ' + el.dataset.tr; box.dataset.l = el.dataset.l; box.hidden = false;
       });
     });
+    // lente ativa: revela automaticamente a tradução da língua escolhida (Duolingo).
+    var actTr = activeTrLangs(tr);
+    if (actTr.length) {
+      var box = $('#sent-banner').querySelector('.b-trtext');
+      box.textContent = actTr.map(function (l) { return '[' + l + '] ' + tr[l]; }).join('  ·  ');
+      box.dataset.l = actTr[0]; box.hidden = false;
+    }
     fitView();
     loadSentenceEdges();
     toast(s.terms.length + ' palavras desta sentença — clique uma para explorar');
@@ -558,6 +607,8 @@
   function openHelp() { $('#help-ov').classList.add('show'); }
   function closeHelp() { $('#help-ov').classList.remove('show'); localStorage.setItem('ygg-help-seen', '1'); }
   $('#help-btn').addEventListener('click', openHelp);
+  $('#lang-btn').addEventListener('click', function (e) { e.stopPropagation(); $('#lang-menu').classList.toggle('show'); });
+  document.addEventListener('click', function (e) { if (!e.target.closest('.lang-wrap')) $('#lang-menu').classList.remove('show'); });
   $('#help-x').addEventListener('click', closeHelp);
   $('#help-go').addEventListener('click', closeHelp);
   $('#help-ov').addEventListener('click', function (e) { if (e.target === $('#help-ov')) closeHelp(); });
@@ -650,11 +701,13 @@
     // LOOKUP só (não renderiza): id→nó, p/ resolver as palavras de uma sentença.
     J(API + '/nos').then(function (cat) {
       (cat || []).forEach(function (n) { byId[n.id] = n; });
+      computeAvail(); // línguas disponíveis (léxico) → seletor de lentes
     });
     // entrada "ler primeiro": lista de sentenças (versos do Ayvu Rapytã).
     J(API + '/sentencas?lang=gn-mbya&limit=300').then(function (ss) {
       sentList = ss || [];
       renderSentences('');
+      computeAvail(); // + lentes de tradução presentes nos versos (es de Cadogan)
       $('#palette').classList.add('open');
       toast(sentList.length + ' sentenças (Ayvu Rapytã) — escolha uma para ler e ver suas palavras');
     });

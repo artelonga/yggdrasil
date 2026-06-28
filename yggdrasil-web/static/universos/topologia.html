@@ -129,6 +129,14 @@
     #help-x { position: absolute; top: .8rem; right: 1.1rem; cursor: pointer; color: var(--on-var); font-size: 1.2rem; }
     .help-g { font-size: .9rem; line-height: 1.55; padding: .6rem 0; border-top: 1px solid rgba(69,71,76,.25); }
     .help-g b { color: var(--secondary); }
+
+    /* seletor de línguas (lentes) */
+    .lang-wrap { position: relative; display: inline-block; }
+    #lang-menu { position: absolute; top: 2.4rem; right: 0; z-index: 50; display: none; width: 17rem; padding: .7rem .85rem; }
+    #lang-menu.show { display: block; }
+    #lang-menu .lm-h { font-size: .66rem; color: var(--on-var); line-height: 1.4; margin-bottom: .5rem; }
+    #lang-menu .lm-row { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; font-size: .9rem; cursor: pointer; }
+    #lang-menu .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   </style>
 </head>
 <body class="relic">
@@ -139,6 +147,8 @@
     </div>
     <div class="right">
       <button id="help-btn" class="r-ghost" title="o que é tudo isto? (aprenda explorando)">? guia</button>
+      <div class="lang-wrap"><button id="lang-btn" class="r-ghost" title="escolha suas línguas — o mesmo corpus por várias perspectivas (lentes)">🌐 línguas</button>
+        <div id="lang-menu" class="r-card"></div></div>
       <input id="search" class="r-input" type="search" placeholder="buscar termo…" autocomplete="off">
       <button id="sem-corpus" class="r-ghost" title="cosseno por co-ocorrência nos versos do Ayvu Rapytã">✧ corpus</button>
       <button id="sem-lexico" class="r-ghost" title="cosseno pela definição + exemplos do dicionário">✧ léxico</button>
