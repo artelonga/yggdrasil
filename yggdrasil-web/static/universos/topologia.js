@@ -52,6 +52,7 @@
   function packColor(pack) {
     if (pack === 'gn-mbya') return '#86c98e';
     if (pack === 'yo') return '#e9c349';
+    if (pack === 'meu') return '#ffb3b5'; // YG-178: meus nós próprios (rosa)
     var h = 0; for (var i = 0; i < pack.length; i++) h = (h * 31 + pack.charCodeAt(i)) % 360;
     return 'hsl(' + h + ',55%,68%)';
   }
@@ -346,8 +347,9 @@
       instBlock +
       '<h4>Referências (links)</h4>' + refs +
       '<div class="row-actions">' +
-        '<button class="r-ghost gated" id="act-rel">✎ nomear relação</button>' +
-        '<button class="r-ghost gated" id="act-ref">+ referência</button>' +
+        '<button class="r-ghost gated" id="act-vocab" title="adiciona ao seu vocabulário — revise depois">＋ vocabulário</button>' +
+        '<button class="r-ghost gated" id="act-conn" title="conecte esta palavra a outra que é sua (conexão pessoal)">＋ conexão</button>' +
+        '<button class="r-ghost gated" id="act-ref">＋ referência</button>' +
       '</div>';
     $('#inspector').classList.add('open');
     $('#insp-body').querySelectorAll('.nb[data-go]').forEach(function (el) {
@@ -364,7 +366,8 @@
           .then(function (edge) { if (edge) { mergeGraph({ nodes: [], edges: [edge] }); toast('promovido a relação ✦'); focus(n.id); } else toast('falhou'); });
       });
     });
-    var ar = $('#act-rel'); if (ar) ar.addEventListener('click', function () { nomearRelacao(n.id, data.neighbors || []); });
+    var av = $('#act-vocab'); if (av) av.addEventListener('click', function () { claim(n.id); });
+    var ac = $('#act-conn'); if (ac) ac.addEventListener('click', function () { minhaConexao(n.id); });
     var af = $('#act-ref'); if (af) af.addEventListener('click', function () { anexarRef(n.id); });
   }
   $('#insp-close').addEventListener('click', function () { $('#inspector').classList.remove('open'); });
@@ -382,6 +385,17 @@
         else toast('falhou (nó válido? logado?)');
       });
   }
+  // YG-178 slice 2: conexão PESSOAL (privada) entre duas palavras minhas/léxico.
+  function minhaConexao(id) {
+    var q = prompt('Conectar "' + short(id) + '" a qual palavra? (termo exato)');
+    if (!q) return;
+    var tid = byId[q] ? q : null;
+    if (!tid) { for (var k in byId) { if (byId[k].term === q) { tid = k; break; } } }
+    if (!tid) { toast('palavra não encontrada no léxico/seus nós'); return; }
+    var rel = prompt('Nome da conexão (opcional):') || null;
+    J('/api/v1/me/topologia/aresta', { method: 'POST', headers: headers(true), body: JSON.stringify({ a: id, b: tid, relation: rel }) })
+      .then(function (e) { if (e && e.a) { if (byId[tid]) ensureNode(byId[tid]); edges.push(e); toast('conexão sua criada'); focus(id); } else toast('falhou'); });
+  }
   function anexarRef(id) {
     var kind = prompt('Tipo da referência: sentence | etymology | audio | link', 'link');
     if (!kind) return;
@@ -396,12 +410,13 @@
   // catálogo = LOOKUP só (id→nó); NÃO se renderiza tudo (era a lag). O grafo
   // começa vazio e se filtra às palavras de UMA sentença ("ler primeiro").
   var byId = {};       // id → nó (term/gloss/x/y/pop)
-  var sentList = [];   // sentenças carregadas (/sentencas)
+  var sentList = [];   // sentenças do Ayvu Rapytã (/sentencas)
+  var myTexts = [];    // meus textos (corpus pessoal, /me/topologia/textos)
   var PAL_MAX = 120;
 
   function renderSentences(filter) {
     var f = (filter || '').toLowerCase();
-    var items = sentList.filter(function (s) {
+    var items = myTexts.concat(sentList).filter(function (s) {
       return !f || s.text.toLowerCase().indexOf(f) >= 0 || s.loc.toLowerCase().indexOf(f) >= 0;
     }).slice(0, PAL_MAX);
     var html = items.map(function (s) {
@@ -467,6 +482,25 @@
     $('#only-mine').classList.toggle('on', onlyMine);
     toast(onlyMine ? 'só minhas palavras' : 'léxico completo');
   });
+  // YG-178 slice 2: EXPRESSÃO — adicionar palavra própria / escrever texto.
+  $('#add-word').addEventListener('click', function () {
+    var term = prompt('Nova palavra sua (fora do léxico):'); if (!term) return;
+    var gloss = prompt('Significado (opcional):') || null;
+    J('/api/v1/me/topologia/no', { method: 'POST', headers: headers(true), body: JSON.stringify({ term: term, gloss: gloss }) })
+      .then(function (n) {
+        if (n && n.id) { byId[n.id] = n; ensureNode(n); myWords[n.id] = { status: 'visited', seen_count: 1 }; updateMineCount(); focus(n.id); toast('palavra sua adicionada'); }
+        else toast('falhou');
+      });
+  });
+  $('#add-text').addEventListener('click', function () {
+    var text = prompt('Escreva seu texto (vira seu corpus pessoal):'); if (!text) return;
+    var title = prompt('Título (opcional):') || null;
+    J('/api/v1/me/topologia/texto', { method: 'POST', headers: headers(true), body: JSON.stringify({ title: title, text: text }) })
+      .then(function (r) {
+        if (r) { J('/api/v1/me/topologia/textos').then(function (ts) { myTexts = ts || []; renderSentences(''); $('#palette').classList.add('open'); toast('texto adicionado ao seu corpus'); }); }
+        else toast('falhou');
+      });
+  });
   $('#search').addEventListener('input', function (e) {
     renderSentences(e.target.value);
     if (!$('#palette').classList.contains('open')) $('#palette').classList.add('open');
@@ -486,9 +520,16 @@
       document.body.classList.add('authed');
       $('#loginlink').hidden = true;
       // YG-178: carrega minhas palavras (camada pessoal) p/ colorir o que é meu.
-      J('/api/v1/me/topologia').then(function (m) {
-        if (m && m.words) { m.words.forEach(function (w) { myWords[w.node_id] = { status: w.status, seen_count: w.seen_count }; }); }
+      J('/api/v1/me/topologia', { headers: headers() }).then(function (m) {
+        if (!m) return;
+        (m.words || []).forEach(function (w) { myWords[w.node_id] = { status: w.status, seen_count: w.seen_count }; });
+        (m.nodes || []).forEach(function (n) { byId[n.id] = n; ensureNode(n); });          // meus nós próprios
+        (m.edges || []).forEach(function (e) { edges.push(e); });                            // minhas arestas
         updateMineCount();
+      });
+      // meus textos (corpus pessoal) entram no "Ler"
+      J('/api/v1/me/topologia/textos', { headers: headers() }).then(function (ts) {
+        myTexts = ts || []; renderSentences($('#search').value || '');
       });
     }
     // LOOKUP só (não renderiza): id→nó, p/ resolver as palavras de uma sentença.

@@ -305,6 +305,25 @@ fn read_db_sources(
     }
 }
 
+/// Visão de um **nó próprio** (YG-178): posição determinística numa região "minha"
+/// (à esquerda do léxico), `pack="meu"`, `kind="user"`.
+fn user_node_view(id: &str, term: &str, gloss: Option<&str>) -> ResolvedNode {
+    let h = id
+        .bytes()
+        .fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
+    ResolvedNode {
+        id: id.to_string(),
+        pack: "meu".to_string(),
+        kind: "user".to_string(),
+        term: term.to_string(),
+        gloss: gloss.map(|s| s.to_string()),
+        role: None,
+        x: -3000.0 - (h % 1200) as f64,
+        y: -600.0 + (h / 1200 % 1200) as f64,
+        pop: 0,
+    }
+}
+
 /// Resolve um `NodeId` contra o catálogo real. `None` se não existe — guarda que
 /// mantém o grafo limpo: só se liga/refere nós que existem num léxico real.
 pub fn resolve_node(id: &str) -> Option<ResolvedNode> {
@@ -452,7 +471,25 @@ pub fn init_topologia_db(conn: &Connection) -> rusqlite::Result<()> {
             last_seen  INTEGER NOT NULL,
             PRIMARY KEY (sub, node_id)
         );
-        CREATE INDEX IF NOT EXISTS idx_user_words_sub ON user_words(sub);",
+        CREATE INDEX IF NOT EXISTS idx_user_words_sub ON user_words(sub);
+        -- YG-178 slice 2: EXPRESSÃO — minhas arestas, meus nós e meus textos.
+        CREATE TABLE IF NOT EXISTS user_edges (
+            sub TEXT NOT NULL, a TEXT NOT NULL, b TEXT NOT NULL,
+            relation TEXT, created_at INTEGER NOT NULL,
+            PRIMARY KEY (sub, a, b)
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_edges_sub ON user_edges(sub);
+        CREATE TABLE IF NOT EXISTS user_nodes (
+            sub TEXT NOT NULL, id TEXT NOT NULL, term TEXT NOT NULL,
+            gloss TEXT, created_at INTEGER NOT NULL,
+            PRIMARY KEY (sub, id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_nodes_sub ON user_nodes(sub);
+        CREATE TABLE IF NOT EXISTS user_texts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sub TEXT NOT NULL, title TEXT, text TEXT NOT NULL, created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_texts_sub ON user_texts(sub);",
     )
 }
 
@@ -645,6 +682,128 @@ impl TopologiaDb {
         })
         .and_then(|m| m.collect::<Result<Vec<_>, _>>())
         .unwrap_or_default()
+    }
+
+    // ─── YG-178 slice 2: expressão (meus nós, minhas arestas, meus textos) ──────
+
+    /// Adiciona um **nó próprio** (palavra fora do léxico). id = `user:{sub}:{slug}`.
+    pub fn add_user_node(&self, sub: &str, term: &str, gloss: Option<&str>) -> ResolvedNode {
+        let id = format!("user:{}:{}", sub, slugify(term));
+        let now = chrono::Utc::now().timestamp_millis();
+        let conn = self.db.lock().unwrap();
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO user_nodes (sub, id, term, gloss, created_at) VALUES (?1,?2,?3,?4,?5)",
+            params![sub, id, term, gloss, now],
+        );
+        user_node_view(&id, term, gloss)
+    }
+
+    /// Meus nós próprios.
+    pub fn my_nodes(&self, sub: &str) -> Vec<ResolvedNode> {
+        let conn = self.db.lock().unwrap();
+        let Ok(mut stmt) = conn.prepare("SELECT id, term, gloss FROM user_nodes WHERE sub = ?1")
+        else {
+            return vec![];
+        };
+        stmt.query_map(params![sub], |r| {
+            Ok(user_node_view(
+                &r.get::<_, String>(0)?,
+                &r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?.as_deref(),
+            ))
+        })
+        .and_then(|m| m.collect::<Result<Vec<_>, _>>())
+        .unwrap_or_default()
+    }
+
+    /// `true` se `id` é um nó próprio deste usuário.
+    pub fn owns_node(&self, sub: &str, id: &str) -> bool {
+        let conn = self.db.lock().unwrap();
+        conn.query_row(
+            "SELECT 1 FROM user_nodes WHERE sub = ?1 AND id = ?2",
+            params![sub, id],
+            |_| Ok(()),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .is_some()
+    }
+
+    /// Cria/atualiza uma **aresta própria** (privada). Par canônico, sem loop.
+    pub fn add_user_edge(
+        &self,
+        sub: &str,
+        a: &str,
+        b: &str,
+        relation: Option<&str>,
+    ) -> Result<EdgeRow, TopoError> {
+        if a == b {
+            return Err(TopoError::SelfLoop);
+        }
+        let (a, b) = canonical_pair(a, b);
+        let now = chrono::Utc::now().timestamp_millis();
+        let conn = self.db.lock().unwrap();
+        conn.execute(
+            "INSERT INTO user_edges (sub, a, b, relation, created_at) VALUES (?1,?2,?3,?4,?5)
+             ON CONFLICT(sub, a, b) DO UPDATE SET relation = COALESCE(?4, relation)",
+            params![sub, a, b, relation, now],
+        )?;
+        Ok(EdgeRow {
+            a,
+            b,
+            weight: 1,
+            relation: relation.map(|s| s.to_string()),
+            source: EdgeSource::User,
+            score: None,
+            method: None,
+        })
+    }
+
+    /// Minhas arestas (todas, privadas).
+    pub fn my_edges(&self, sub: &str) -> Vec<EdgeRow> {
+        let conn = self.db.lock().unwrap();
+        let Ok(mut stmt) = conn.prepare("SELECT a, b, relation FROM user_edges WHERE sub = ?1")
+        else {
+            return vec![];
+        };
+        stmt.query_map(params![sub], |r| {
+            Ok(EdgeRow {
+                a: r.get(0)?,
+                b: r.get(1)?,
+                weight: 1,
+                relation: r.get(2)?,
+                source: EdgeSource::User,
+                score: None,
+                method: None,
+            })
+        })
+        .and_then(|m| m.collect::<Result<Vec<_>, _>>())
+        .unwrap_or_default()
+    }
+
+    /// Grava um **texto próprio** (corpus pessoal — a metade da EXPRESSÃO).
+    pub fn add_user_text(&self, sub: &str, title: Option<&str>, text: &str) -> i64 {
+        let now = chrono::Utc::now().timestamp_millis();
+        let conn = self.db.lock().unwrap();
+        let _ = conn.execute(
+            "INSERT INTO user_texts (sub, title, text, created_at) VALUES (?1,?2,?3,?4)",
+            params![sub, title, text, now],
+        );
+        conn.last_insert_rowid()
+    }
+
+    /// Meus textos crus (id, title, text) — o front resolve as palavras.
+    pub fn my_texts_raw(&self, sub: &str) -> Vec<(i64, Option<String>, String)> {
+        let conn = self.db.lock().unwrap();
+        let Ok(mut stmt) =
+            conn.prepare("SELECT id, title, text FROM user_texts WHERE sub = ?1 ORDER BY id DESC")
+        else {
+            return vec![];
+        };
+        stmt.query_map(params![sub], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .and_then(|m| m.collect::<Result<Vec<_>, _>>())
+            .unwrap_or_default()
     }
 
     /// Anexa uma referência (link) a um nó. Devolve a linha criada.
@@ -963,6 +1122,22 @@ mod tests {
         // subconjunto pessoal de alice tem NEE; bob não vê o de alice
         assert!(db.my_words("alice").iter().any(|w| w.node_id == NEE));
         assert!(db.my_words("bob").is_empty());
+    }
+
+    #[test]
+    fn camada_pessoal_no_aresta_texto_por_usuario() {
+        let db = TopologiaDb::in_memory().unwrap();
+        let n = db.add_user_node("alice", "minha-palavra", Some("glosa"));
+        assert!(n.id.starts_with("user:alice:"));
+        assert_eq!(n.pack, "meu");
+        assert!(db.owns_node("alice", &n.id) && !db.owns_node("bob", &n.id));
+        assert_eq!(db.my_nodes("alice").len(), 1);
+        let e = db.add_user_edge("alice", &n.id, NEE, Some("liga")).unwrap();
+        assert_eq!(e.source, EdgeSource::User);
+        assert_eq!(db.my_edges("alice").len(), 1);
+        assert!(db.my_edges("bob").is_empty());
+        let tid = db.add_user_text("alice", Some("t"), "ayvu nhande");
+        assert!(tid > 0 && db.my_texts_raw("alice").len() == 1);
     }
 
     #[test]

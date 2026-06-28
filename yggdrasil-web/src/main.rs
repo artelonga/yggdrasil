@@ -567,11 +567,24 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/topologia/semantica/recomputar",
             post(api::topologia::recomputar_semantica),
         )
-        // YG-178: camada pessoal — minhas palavras (auth por sub do JWT)
+        // YG-178: camada pessoal — minhas palavras/arestas/nós/textos (auth por sub)
         .route("/api/v1/me/topologia", get(api::topologia::my_topologia))
         .route(
             "/api/v1/me/topologia/visitar",
             post(api::topologia::visitar),
+        )
+        .route("/api/v1/me/topologia/no", post(api::topologia::add_meu_no))
+        .route(
+            "/api/v1/me/topologia/aresta",
+            post(api::topologia::add_minha_aresta),
+        )
+        .route(
+            "/api/v1/me/topologia/texto",
+            post(api::topologia::add_meu_texto),
+        )
+        .route(
+            "/api/v1/me/topologia/textos",
+            get(api::topologia::meus_textos),
         )
         .with_state(topologia_state);
 

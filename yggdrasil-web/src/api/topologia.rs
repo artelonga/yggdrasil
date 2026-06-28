@@ -332,17 +332,151 @@ pub async fn visitar(
 #[derive(Serialize)]
 struct MyView {
     words: Vec<crate::topologia::WordRow>,
+    edges: Vec<crate::topologia::EdgeRow>,
+    nodes: Vec<ResolvedNode>,
 }
 
-/// O subconjunto pessoal do usuário (minhas palavras + status). Exige login.
+/// O subconjunto pessoal do usuário (palavras + arestas + nós próprios). Login.
 pub async fn my_topologia(State(state): ApiState, headers: HeaderMap) -> axum::response::Response {
     let Some(sub) = caller(&state, &headers) else {
         return err(StatusCode::UNAUTHORIZED, "nao_autenticado");
     };
     Json(MyView {
         words: state.db.my_words(&sub),
+        edges: state.db.my_edges(&sub),
+        nodes: state.db.my_nodes(&sub),
     })
     .into_response()
+}
+
+/// `true` se `id` é referenciável pelo usuário: existe no léxico OU é nó próprio.
+fn mine_or_lexico(state: &TopologiaState, sub: &str, id: &str) -> bool {
+    resolve_node(id).is_some() || state.db.owns_node(sub, id)
+}
+
+// ─── EXPRESSÃO (slice 2): + palavra própria, + conexão, + texto ───────────────
+
+#[derive(Deserialize)]
+pub struct NoBody {
+    term: String,
+    #[serde(default)]
+    gloss: Option<String>,
+}
+
+/// Adiciona uma **palavra própria** (fora do léxico) ao meu vocabulário.
+pub async fn add_meu_no(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<NoBody>,
+) -> axum::response::Response {
+    let Some(sub) = caller(&state, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "nao_autenticado");
+    };
+    let term = match clean(Some(body.term), 120) {
+        Some(t) => t,
+        None => return err(StatusCode::BAD_REQUEST, "term_vazio"),
+    };
+    let gloss = clean(body.gloss, 500);
+    Json(state.db.add_user_node(&sub, &term, gloss.as_deref())).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct MeuArestaBody {
+    a: String,
+    b: String,
+    #[serde(default)]
+    relation: Option<String>,
+}
+
+/// Cria uma **conexão minha** entre dois termos (léxico ou meus). Privada.
+pub async fn add_minha_aresta(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<MeuArestaBody>,
+) -> axum::response::Response {
+    let Some(sub) = caller(&state, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "nao_autenticado");
+    };
+    if !mine_or_lexico(&state, &sub, &body.a) || !mine_or_lexico(&state, &sub, &body.b) {
+        return err(StatusCode::NOT_FOUND, "no_inexistente");
+    }
+    let relation = clean(body.relation, RELATION_MAX);
+    match state
+        .db
+        .add_user_edge(&sub, &body.a, &body.b, relation.as_deref())
+    {
+        Ok(e) => Json(e).into_response(),
+        Err(e) => map_write_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct TextoBody {
+    #[serde(default)]
+    title: Option<String>,
+    text: String,
+}
+
+/// Grava um **texto próprio** (corpus pessoal — a EXPRESSÃO). Devolve o id.
+pub async fn add_meu_texto(
+    State(state): ApiState,
+    headers: HeaderMap,
+    Json(body): Json<TextoBody>,
+) -> axum::response::Response {
+    let Some(sub) = caller(&state, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "nao_autenticado");
+    };
+    let text = match clean(Some(body.text), 4000) {
+        Some(t) => t,
+        None => return err(StatusCode::BAD_REQUEST, "texto_vazio"),
+    };
+    let title = clean(body.title, 200);
+    let id = state.db.add_user_text(&sub, title.as_deref(), &text);
+    Json(serde_json::json!({ "id": id })).into_response()
+}
+
+/// Meus textos como sentenças (palavras resolvidas no léxico ou nos meus nós) —
+/// entram no "Ler" do front como o meu corpus pessoal.
+pub async fn meus_textos(State(state): ApiState, headers: HeaderMap) -> axum::response::Response {
+    let Some(sub) = caller(&state, &headers) else {
+        return err(StatusCode::UNAUTHORIZED, "nao_autenticado");
+    };
+    let out: Vec<serde_json::Value> = state
+        .db
+        .my_texts_raw(&sub)
+        .into_iter()
+        .map(|(id, title, text)| {
+            let terms: Vec<String> = text
+                .split(|c: char| !c.is_alphanumeric() && c != '\'' && c != '\u{2019}')
+                .filter(|w| !w.is_empty())
+                .filter_map(|w| match_term(&state, &sub, w))
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            serde_json::json!({
+                "id": format!("meu#{id}"),
+                "lang": "meu",
+                "loc": title.unwrap_or_else(|| "meu texto".to_string()),
+                "text": text,
+                "terms": terms,
+            })
+        })
+        .collect();
+    Json(out).into_response()
+}
+
+/// Casa uma palavra escrita a um NodeId: léxico (`gn-mbya`/`yo`) ou nó próprio.
+fn match_term(state: &TopologiaState, sub: &str, word: &str) -> Option<String> {
+    use yggdrasil_core::comunicacao::lexicon::slugify;
+    let s = slugify(word);
+    for lang in ["gn-mbya", "yo"] {
+        let id = format!("{lang}:{s}");
+        if resolve_node(&id).is_some() {
+            return Some(id);
+        }
+    }
+    let uid = format!("user:{sub}:{s}");
+    state.db.owns_node(sub, &uid).then_some(uid)
 }
 
 // ─── POST /semantica/recomputar ───────────────────────────────────────────────
