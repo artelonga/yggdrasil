@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Topologia · universo centralizado — Yggdrasil</title>
+  <meta name="description" content="O grafo de sentido cross-linguístico: cada termo de qualquer linguagem é um nó; arestas ligam linguagens. Caminhe entre símbolos e o sentido emerge das relações.">
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Manrope:wght@300..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/ui/relic.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    body.relic { background: radial-gradient(120% 100% at 50% -10%, #1a1820 0%, var(--surface) 55%); }
+
+    /* top bar */
+    .r-top { background: rgba(19,19,19,.55); }
+    .r-top .left { display: flex; align-items: baseline; gap: .8rem; min-width: 0; }
+    .r-top .sub { color: var(--on-var); font-size: .72rem; letter-spacing: .04em; }
+    .r-top .right { display: flex; align-items: center; gap: .6rem; }
+    #search { width: min(20rem, 40vw); }
+
+    /* canvas */
+    #graph { position: fixed; inset: 0; display: block; cursor: grab; }
+    #graph:active { cursor: grabbing; }
+
+    /* legend (bottom-left) */
+    #legend { position: fixed; left: 1rem; bottom: 1rem; z-index: 20; display: flex; flex-direction: column;
+      gap: .35rem; font-size: .72rem; color: var(--on-var); pointer-events: none; }
+    #legend .row { display: flex; align-items: center; gap: .45rem; }
+    #legend .dot { width: 11px; height: 11px; border-radius: 50%; }
+    #legend .ln { width: 22px; height: 0; border-top: 2px solid var(--secondary); }
+    #legend .ln.exp { border-top: 2px dashed var(--on-var); }
+    #legend .lg-h { font-size: .6rem; text-transform: uppercase; letter-spacing: .14em; color: var(--secondary); margin-top: .5rem; }
+    #legend b { color: var(--on); }
+    #legend .ln.sem { border-top: 2px dotted #aa96ff; }
+    #legend .ln.sem-lex { border-top: 2px dotted #6fd0c0; }
+    #legend .ln.sem-neu { border-top: 2px dotted #ff9bd2; }
+    #sem-corpus.on { border-color: rgba(170,150,255,.7); color: #c9bcff; }
+    #sem-lexico.on { border-color: rgba(111,208,192,.7); color: #9fe3d8; }
+    #sem-neural.on { border-color: rgba(255,155,210,.7); color: #ffc4e3; }
+    #only-mine.on { border-color: rgba(233,195,73,.8); color: var(--secondary); }
+
+    /* palette drawer (left) */
+    #palette { position: fixed; top: 64px; left: 0; bottom: 0; width: 17rem; z-index: 25;
+      background: rgba(14,14,14,.92); backdrop-filter: blur(18px); box-shadow: var(--shadow);
+      transform: translateX(-100%); transition: transform .22s ease; display: flex; flex-direction: column; }
+    #palette.open { transform: none; }
+    #palette h3 { font-family: var(--head); font-style: italic; margin: 1rem 1.1rem .4rem 3.4rem; font-weight: 500; }
+    .pal-item.sent { display: block; }
+    .pal-item.sent .vt { color: var(--on); font-size: .9rem; margin-top: .15rem; }
+    #sent-banner { position: fixed; top: 76px; left: 50%; transform: translateX(-50%) translateY(-8px);
+      z-index: 30; max-width: min(60rem, 72vw); padding: .6rem 1.1rem; border-radius: var(--r-lg);
+      background: rgba(19,19,19,.82); backdrop-filter: blur(14px); box-shadow: var(--shadow);
+      font-family: var(--head); font-style: italic; font-size: 1.05rem; color: var(--on);
+      text-align: center; opacity: 0; transition: all .25s ease; pointer-events: none; }
+    #sent-banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #sent-banner .loc { font-family: var(--body); font-style: normal; font-size: .62rem;
+      text-transform: uppercase; letter-spacing: .14em; color: var(--secondary); margin-right: .6rem; }
+    #palette .hint { color: var(--on-var); font-size: .72rem; margin: 0 1.1rem .7rem; }
+    #pal-list { overflow-y: auto; padding: 0 .6rem 1rem; }
+    .pal-group { font-size: .62rem; text-transform: uppercase; letter-spacing: .14em; color: var(--secondary);
+      margin: .8rem .5rem .3rem; }
+    .pal-item { display: flex; align-items: center; gap: .5rem; padding: .4rem .5rem; border-radius: var(--r-md);
+      cursor: pointer; }
+    .pal-item:hover { background: var(--sc); }
+    .pal-item .term { font-family: var(--head); font-style: italic; }
+    .pal-item .gl { color: var(--on-var); font-size: .72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #pal-toggle { position: fixed; top: 76px; left: .8rem; z-index: 26; }
+
+    /* inspector (right) */
+    #inspector { position: fixed; top: 76px; right: .8rem; width: min(22rem, 92vw); max-height: calc(100vh - 92px);
+      overflow-y: auto; z-index: 25; display: none; }
+    #inspector.open { display: block; }
+    #inspector .term { font-size: 1.7rem; }
+    #inspector .meta { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 .8rem; }
+    #inspector .gloss { color: var(--on-var); font-size: .92rem; margin-bottom: 1rem; }
+    #inspector h4 { font-size: .62rem; text-transform: uppercase; letter-spacing: .14em; color: var(--secondary);
+      margin: 1rem 0 .4rem; }
+    #inspector .nb { display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+      padding: .4rem .55rem; border-radius: var(--r-md); cursor: pointer; }
+    #inspector .nb:hover { background: var(--sc); }
+    #inspector .nb .t { font-family: var(--head); font-style: italic; }
+    #inspector .nb .w { font-size: .68rem; color: var(--on-var); }
+    #inspector .nb .rel { font-size: .66rem; color: var(--secondary); }
+    #inspector .ref { display: block; color: var(--primary); font-size: .82rem; padding: .25rem 0; text-decoration: none; }
+    #inspector .ref:hover { text-decoration: underline; }
+    #inspector .empty { color: var(--on-var); font-size: .8rem; }
+    #inspector .inst { padding: .35rem 0; border-top: 1px solid rgba(69,71,76,.25); }
+    #inspector .inst .loc { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em; color: var(--secondary); }
+    #inspector .inst .vt { font-family: var(--head); font-style: italic; font-size: .92rem; color: var(--on); }
+    #inspector .inst .vp { font-size: .8rem; color: var(--on-var); }
+    #insp-close { position: absolute; top: .8rem; right: 1rem; cursor: pointer; color: var(--on-var); font-size: 1.1rem; }
+    .row-actions { display: flex; gap: .5rem; margin-top: 1rem; flex-wrap: wrap; }
+    .gated { display: none; }
+    body.authed .gated { display: inline-block; }
+
+    /* toast */
+    #toast { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%) translateY(2rem);
+      z-index: 40; background: var(--sc-high); color: var(--on); padding: .6rem 1rem; border-radius: 999px;
+      font-size: .82rem; opacity: 0; transition: all .25s ease; pointer-events: none; box-shadow: var(--shadow); }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* CTA tier grátis */
+    #cta { position: fixed; right: 1.2rem; bottom: 1.2rem; z-index: 45; display: none;
+      max-width: 22rem; padding: .9rem 1.1rem; border-radius: var(--r-xl);
+      background: rgba(28,27,27,.95); backdrop-filter: blur(18px); box-shadow: var(--shadow);
+      color: var(--on); font-size: .86rem; line-height: 1.5; }
+    #cta.show { display: block; }
+    #cta b { color: var(--secondary); }
+    #cta .r-cta { margin-top: .6rem; }
+    #cta #cta-x { position: absolute; top: .5rem; right: .7rem; cursor: pointer; color: var(--on-var); font-size: .9rem; }
+
+    /* traduções (lentes) — chips + texto revelado */
+    .tr-row, .b-tr { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; align-items: center; }
+    .tr-chip { cursor: pointer; border: 0; background: var(--sc-high); color: var(--on); border-radius: 999px;
+      font: inherit; font-size: .6rem; font-weight: 700; letter-spacing: .08em; padding: .12rem .5rem; }
+    .tr-chip:hover { background: var(--secondary); color: #3c2f00; }
+    .tr-propose { font-size: .66rem; color: var(--on-var); cursor: default; opacity: .7; }
+    .tr-text { font-size: .82rem; color: var(--on-var); margin-top: .3rem; font-style: italic; }
+    #sent-banner .b-tr { justify-content: center; margin-top: .5rem; }
+    #sent-banner .b-trtext { font-style: italic; color: var(--on-var); font-family: var(--body); font-size: .9rem; margin-top: .4rem; }
+    #inspector h4 .hint-i { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--on-var); font-size: .9em; }
+
+    /* guia / onboarding */
+    #help-ov { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+      background: rgba(7,7,11,.7); backdrop-filter: blur(6px); padding: 1.2rem; }
+    #help-ov.show { display: flex; }
+    #help-card { width: min(40rem, 96vw); max-height: 88vh; overflow-y: auto; position: relative; }
+    #help-x { position: absolute; top: .8rem; right: 1.1rem; cursor: pointer; color: var(--on-var); font-size: 1.2rem; }
+    .help-g { font-size: .9rem; line-height: 1.55; padding: .6rem 0; border-top: 1px solid rgba(69,71,76,.25); }
+    .help-g b { color: var(--secondary); }
+
+    /* seletor de línguas (lentes) */
+    .lang-wrap { position: relative; display: inline-block; }
+    #lang-menu { position: absolute; top: 2.4rem; right: 0; z-index: 50; display: none; width: 17rem; padding: .7rem .85rem; }
+    #lang-menu.show { display: block; }
+    #lang-menu .lm-h { font-size: .66rem; color: var(--on-var); line-height: 1.4; margin-bottom: .5rem; }
+    #lang-menu .lm-row { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; font-size: .9rem; cursor: pointer; }
+    #lang-menu .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+</head>
+<body class="relic">
+  <header class="r-top">
+    <div class="left">
+      <a href="/universos" class="word lnk" style="text-decoration:none">Yggdrasil</a>
+      <span class="sub">topologia · sentido cross-linguístico</span>
+    </div>
+    <div class="right">
+      <button id="help-btn" class="r-ghost" title="o que é tudo isto? (aprenda explorando)">? guia</button>
+      <div class="lang-wrap"><button id="lang-btn" class="r-ghost" title="escolha suas línguas — o mesmo corpus por várias perspectivas (lentes)">🌐 línguas</button>
+        <div id="lang-menu" class="r-card"></div></div>
+      <input id="search" class="r-input" type="search" placeholder="buscar termo…" autocomplete="off">
+      <button id="sem-corpus" class="r-ghost" title="cosseno por co-ocorrência nos versos do Ayvu Rapytã">✧ corpus</button>
+      <button id="sem-lexico" class="r-ghost" title="cosseno pela definição + exemplos do dicionário">✧ léxico</button>
+      <button id="sem-neural" class="r-ghost" title="cosseno por embedding neural LOCAL (Ollama)">✧ neural</button>
+      <button id="only-mine" class="r-ghost" title="filtrar só as palavras que são minhas">★ só minhas</button>
+      <button id="add-word" class="r-ghost" title="adiciona uma palavra sua (fora do léxico) ao seu vocabulário — revise depois">＋ palavra</button>
+      <button id="add-text" class="r-ghost" title="escreva seu próprio texto — vira seu corpus pessoal (linguagem pela expressão)">＋ texto</button>
+      <a id="loginlink" class="r-ghost" href="/login">entrar</a>
+      <span id="whoami" class="r-chip" hidden></span>
+    </div>
+  </header>
+
+  <canvas id="graph"></canvas>
+
+  <!-- banner de leitura: o texto da sentença escolhida (ler primeiro) -->
+  <div id="sent-banner"></div>
+
+  <button id="pal-toggle" class="r-ghost">☰ sentenças</button>
+  <aside id="palette" class="r-scroll">
+    <h3>Ler · Ayvu Rapytã</h3>
+    <p class="hint">Escolha uma sentença (verso). O grafo se filtra às PALAVRAS dela — não a tudo. Clique uma palavra para explorar.</p>
+    <div id="pal-list" class="r-scroll"></div>
+  </aside>
+
+  <aside id="inspector" class="r-card r-glass r-scroll">
+    <span id="insp-close">✕</span>
+    <div id="insp-body"></div>
+  </aside>
+
+  <div id="legend">
+    <div class="lg-h">palavras</div>
+    <div class="row"><span class="dot" style="width:11px;height:11px;border:1.5px solid #86c98e;background:transparent"></span> léxico (clique p/ reivindicar)</div>
+    <div class="row"><span class="dot" style="background:#e9c349"></span> <b>minha</b> · visita→aprendendo→sabida</div>
+    <div class="row"><span class="dot" style="background:#86c98e"></span> Mbyá &nbsp;<span class="dot" style="background:#e9c349"></span> Iorubá &nbsp;<span class="dot" style="background:#ffb3b5"></span> minha</div>
+    <div class="lg-h">ligações (só com toggle/uso)</div>
+    <div class="row"><span class="ln sem"></span> sentido · corpus &nbsp;<span class="ln sem-lex"></span> léxico &nbsp;<span class="ln sem-neu"></span> neural</div>
+    <div class="row"><span class="ln"></span> conexão minha &nbsp;<span class="ln exp"></span> exploração</div>
+    <div class="lg-h">tradução: clique <b>ES</b> num verso (Cadogan) · ? guia</div>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- CTA do tier grátis: aparece quando o anônimo já cultivou algumas palavras -->
+  <div id="cta"></div>
+
+  <!-- guia / onboarding: aprender explorando (o que cada coisa significa) -->
+  <div id="help-ov"><div id="help-card" class="r-card r-scroll">
+    <span id="help-x">✕</span>
+    <h2 class="r-display" style="font-size:1.6rem;margin-bottom:.2rem">Como explorar</h2>
+    <p class="hint" style="margin-bottom:1rem">Uma topologia de <b>sentido</b>: cada palavra de um léxico real é um ponto; você lê, conecta e cultiva. Aprenda mexendo.</p>
+    <div class="help-g"><b>📖 Ler</b> — escolha um <b>verso</b> (Ayvu Rapytã) no painel à esquerda. O grafo mostra só as <b>palavras daquele verso</b> — não tudo. Clique <b>ES</b> para ver a tradução de Cadogan (cada língua é uma <i>lente</i> do mesmo texto).</div>
+    <div class="help-g"><b>🟢 Pontos</b> — cada ponto é uma palavra do léxico. Verde = Mbyá, âmbar = Iorubá. Tamanho = frequência no corpus. <b>Ocos</b> = ainda não são suas.</div>
+    <div class="help-g"><b>★ minhas</b> — <b>clique numa palavra para reivindicá-la</b>: vira sua (anel dourado) e avança <i>visita → aprendendo → sabida</i> ao revê-la. <b>★ só minhas</b> filtra ao seu subconjunto. (Cresce sem conta; depois você salva.)</div>
+    <div class="help-g"><b>✧ sentido (cosseno)</b> — ligações por <b>significado</b>, não navegação. <b>corpus</b>: palavras que co-ocorrem nos versos. <b>léxico</b>: definições parecidas. <b>neural</b>: embedding local — liga <i>entre línguas</i> (água ↔ Yemọja). Ligue um toggle e foque um termo.</div>
+    <div class="help-g"><b>＋ palavra / ＋ texto</b> — <b>expressão</b>: adicione uma palavra sua (fora do léxico) ou escreva seu próprio texto → vira seu corpus pessoal.</div>
+    <div class="help-g"><b>🌐 línguas como lentes</b> — o corpus é um só; Mbyá (original) e Espanhol (Cadogan) já existem; Português e Iorubá entram como <i>traduções propostas</i>. Em breve: escolher suas línguas e percorrer o corpus por qualquer perspectiva (como trilhas do Duolingo).</div>
+    <button id="help-go" class="r-cta" style="margin-top:.8rem">começar a explorar</button>
+  </div></div>
+
+  <script src="/static/universos/topologia.js"></script>
+  <script defer src="/static/telemetria.js"></script>
+</body>
+</html>
