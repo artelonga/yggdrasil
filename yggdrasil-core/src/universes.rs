@@ -380,6 +380,23 @@ pub fn default_registry() -> UniverseRegistry {
     )
     .expect("comunicacao/mbya");
 
+    // ── Dino — jogo 3D (YG-180) ───────────────────────────────────────────────
+    // Universo client-side (a simulação roda no browser, como o poker): sem rotas
+    // de servidor, o `ApiContract` aponta só para a página.
+    let mut dino = UniverseNode::root(
+        "dino",
+        "Dino",
+        "Jogo 3D de dinossauros — spawne como um dino e enfrente NPCs da mesma \
+         espécie numa luta justa. Atacar (clique esq.), bloquear/esquivar (clique \
+         dir.), pular (espaço). Inventário estilo Minecraft.",
+    );
+    dino.api = ApiContract {
+        start: "/universos/dino".to_string(),
+        input: "/universos/dino".to_string(),
+        page: "/universos/dino".to_string(),
+    };
+    reg.register(dino).expect("dino root");
+
     reg
 }
 
@@ -477,12 +494,19 @@ mod tests {
     }
 
     #[test]
-    fn default_registry_tem_cinco_roots() {
+    fn default_registry_roots() {
         let reg = default_registry();
         let roots = reg.roots();
-        assert_eq!(roots.len(), 5);
+        assert_eq!(roots.len(), 6);
         let root_slugs: Vec<&str> = roots.iter().map(|n| n.slug.as_str()).collect();
-        for expected in &["snake", "tetris", "invaders", "poker", "comunicacao"] {
+        for expected in &[
+            "snake",
+            "tetris",
+            "invaders",
+            "poker",
+            "comunicacao",
+            "dino",
+        ] {
             assert!(
                 root_slugs.contains(expected),
                 "esperava {expected} em {root_slugs:?}"

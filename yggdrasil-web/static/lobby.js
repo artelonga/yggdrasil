@@ -19,6 +19,7 @@ const ICONS = {
   vim: '<path fill="currentColor" opacity="0.22" d="M12 2 22 12 12 22 2 12z"/><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8 9l4 7 4-7"/>',
   neuro: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5.5a3 3 0 0 0-3 3 3 3 0 0 0-2 5.2c0 2 1.6 3.3 3.5 3.3H12m0-11.5a3 3 0 0 1 3 3 3 3 0 0 1 2 5.2c0 2-1.6 3.3-3.5 3.3H12m0-11.5v11.5"/>',
   comunicacao: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
+  dino: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 20c1-5 3-7.5 6.5-7.5 0-3.2 2.2-5.5 5.5-5.5 1.7 0 2.8.7 3.2 1.6-.9.2-1.6 1-1.6 1.9 0 1.1.9 2 2 2-1 2.4-3.2 4-5.8 4.2L13 20"/><circle cx="17" cy="9" r="0.9" fill="currentColor"/>',
 };
 
 /** SVG inline para os chips (herda a cor do texto). */
@@ -310,6 +311,7 @@ const GAME_LABEL = {
   vim: 'Vim',
   neuro: 'Neuro',
   comunicacao: 'Comunicação',
+  dino: 'Dino',
 };
 
 // Universos acessíveis a partir do lobby (chips clicáveis sob o mapa).
@@ -321,6 +323,7 @@ const UNIVERSOS = [
   { slug: 'vim', name: 'Vim' },
   { slug: 'neuro', name: 'Neuro — Atlas 3D' },
   { slug: 'comunicacao', name: 'Comunicação' },
+  { slug: 'dino', name: 'Dino — 3D' },
 ];
 
 // YG-145: presença ao vivo por universo — jogos viram lugares com gente.

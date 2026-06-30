@@ -780,6 +780,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/universos/nee/world", get(serve_nee_world))
         .route("/universos/corpus", get(serve_corpus))
         .route("/universos/corpus-lab", get(serve_corpus_lab))
+        .route("/universos/dino", get(serve_dino))
         // Fallback: o catálogo (YG-68) lista 41 universos mas só os embedded
         // têm página própria — qualquer outro slug (planned/external/shandara)
         // volta ao catálogo em vez de 404. Segmentos estáticos têm precedência
@@ -985,6 +986,10 @@ async fn serve_tetris() -> impl IntoResponse {
 
 async fn serve_invaders() -> impl IntoResponse {
     Html(include_str!("../static/universos/invaders.html"))
+}
+
+async fn serve_dino() -> impl IntoResponse {
+    Html(include_str!("../static/universos/dino.html"))
 }
 
 async fn serve_poker() -> impl IntoResponse {
