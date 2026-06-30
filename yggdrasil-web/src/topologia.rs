@@ -117,7 +117,30 @@ struct Catalog {
 static CATALOG: OnceLock<Catalog> = OnceLock::new();
 
 fn catalog() -> &'static Catalog {
-    CATALOG.get_or_init(load_catalog)
+    CATALOG.get_or_init(|| active_loader().load())
+}
+
+// ─── LexiconLoader: o SEAM da fonte do catálogo (YG-179 / promoção do comunicação)
+//
+// Hoje a topologia lê o léxico+corpus do DISCO (`comunicacao/*/lexicon.*.json` +
+// `mbya_lexicon.db`). Este trait isola esse acoplamento num único ponto, para que
+// um `CoUniverseLoader` (que consome a API do `co` — `GET /api/v1/universes/{slug}/
+// entries`) possa entrar no lugar sem tocar no resto da feature, resolvendo também
+// o deploy (produção consulta o `co` em vez de embutir JSON+SQLite).
+// Contrato e plano: docs/architecture/comunicacao-universe-promotion.md.
+
+/// Fonte do catálogo (léxico + corpus) da topologia de sentido. Interno ao crate
+/// (o `Catalog` é privado); o seam isola a fonte, não expõe API pública.
+trait LexiconLoader: Send + Sync {
+    fn load(&self) -> Catalog;
+}
+
+/// Escolhe a fonte por `YGGDRASIL_TOPOLOGIA_SOURCE` (`disk` | `co`). Default `disk`.
+fn active_loader() -> Box<dyn LexiconLoader> {
+    match std::env::var("YGGDRASIL_TOPOLOGIA_SOURCE").as_deref() {
+        Ok("co") => Box::new(CoUniverseLoader::from_env()),
+        _ => Box::new(DiskLexiconLoader),
+    }
 }
 
 /// Diretório raiz do universo `comunicacao` (fonte dos nós). Default de dev.
@@ -128,6 +151,43 @@ fn comunicacao_dir() -> String {
 /// Caminho do `mbya_lexicon.db` (fonte do contexto: exemplos + Ayvu Rapytã).
 fn mbya_db_path() -> String {
     std::env::var("YGGDRASIL_MBYA_DB").unwrap_or_else(|_| "../mbya/mbya_lexicon.db".to_string())
+}
+
+/// Fonte por DISCO: `comunicacao/*/lexicon.*.json` + `mbya_lexicon.db` (atual).
+struct DiskLexiconLoader;
+impl LexiconLoader for DiskLexiconLoader {
+    fn load(&self) -> Catalog {
+        load_catalog()
+    }
+}
+
+/// **Futuro** (ver doc): consome o universo `comunicacao` servido pelo `co`
+/// (`GET /api/v1/universes/{slug}/entries` → `ResolvedNode`/`SentenceRow`). Ainda
+/// **não implementado**: quando selecionado, avisa e cai no disco — a feature nunca
+/// quebra, e o `load()` é o único ponto a preencher para concluir o desacoplamento.
+struct CoUniverseLoader {
+    base_url: String,
+    slug: String,
+}
+impl CoUniverseLoader {
+    fn from_env() -> Self {
+        Self {
+            base_url: std::env::var("YGGDRASIL_CO_BASE_URL").unwrap_or_default(),
+            slug: std::env::var("YGGDRASIL_CO_UNIVERSE")
+                .unwrap_or_else(|_| "comunicacao".to_string()),
+        }
+    }
+}
+impl LexiconLoader for CoUniverseLoader {
+    fn load(&self) -> Catalog {
+        tracing::warn!(
+            base_url = %self.base_url,
+            slug = %self.slug,
+            "CoUniverseLoader ainda não implementado (GET /api/v1/universes/{{slug}}/entries \
+             → ResolvedNode); caindo no DiskLexiconLoader"
+        );
+        DiskLexiconLoader.load()
+    }
 }
 
 fn load_catalog() -> Catalog {
@@ -1014,6 +1074,19 @@ mod tests {
     const NEE: &str = "guarani-mbya:ne-e";
     const AYVU: &str = "guarani-mbya:ayvu";
     const C4: &str = "musica:c4";
+
+    #[test]
+    fn lexicon_loader_seam() {
+        // o SEAM: ambas as fontes implementam o trait e produzem um Catalog (o Co
+        // cai no disco até ser implementado). Sem depender de dados em teste.
+        fn is_loader<T: LexiconLoader>() {}
+        is_loader::<DiskLexiconLoader>();
+        is_loader::<CoUniverseLoader>();
+        let _both: [Box<dyn LexiconLoader>; 2] = [
+            Box::new(DiskLexiconLoader),
+            Box::new(CoUniverseLoader::from_env()),
+        ];
+    }
 
     // Os testes de catálogo/semântica leem o léxico REAL (../comunicacao +
     // mbya_lexicon.db). Em ambiente sem esses artefatos, `all_nodes` vem vazio →

@@ -94,8 +94,15 @@ está live").
    (`guarani-mbya/`, `yoruba/`, …). Opcional: renomear o repo p/ `topologia-rs` para
    deixar claro que é código, não conteúdo.
 
-### Passo 2 — Desacoplar Yggdrasil  ·  *lado Yggdrasil (IMPLEMENTÁVEL aqui)*
-Introduzir um trait de carregamento, mantendo o disco como impl padrão:
+### Passo 2 — Desacoplar Yggdrasil  ·  *lado Yggdrasil*
+**✅ Seam FEITO** (`yggdrasil-web/src/topologia.rs`): trait `LexiconLoader` +
+`DiskLexiconLoader` (impl atual) + `CoUniverseLoader` (stub honesto: avisa e cai no
+disco) + chave `YGGDRASIL_TOPOLOGIA_SOURCE=disk|co` (default `disk`). Verificado:
+com `=co` loga o WARN e ainda serve do disco (4166 nós) — nunca quebra.
+**Falta**: preencher `CoUniverseLoader::load()` (mapear `GET /api/v1/universes/{slug}/
+entries` → `ResolvedNode`/`SentenceRow`), depois do Passo 1 (promoção no `co`).
+
+Trait introduzido, mantendo o disco como impl padrão:
 ```rust
 pub trait LexiconLoader {
     fn load_nodes(&self) -> Vec<ResolvedNode>;
