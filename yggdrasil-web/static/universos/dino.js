@@ -12,8 +12,8 @@ const ATTR = {
   blockDur: 0.5, blockMult: 0.12, dodgeImpulse: 9,
 };
 const NPC_COUNT = 4;
-const AGGRO = 22, WORLD = 70;
-const SENS = 0.0024;
+const WORLD = 70; // meia-largura do mundo TOROIDAL (bordas costuradas: edge↔edge)
+const TURN = 9;   // velocidade de giro do corpo p/ encarar o movimento
 
 const $ = (s) => document.querySelector(s);
 
@@ -46,7 +46,9 @@ scene.add(sun);
 
 // mundo simples: chão + cenário low-poly decorativo
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(WORLD * 2, WORLD * 2),
+  // bem maior que a região de wrap (±WORLD) — com o fog, a borda nunca aparece,
+  // dando sensação de mundo infinito mesmo com teleporte edge↔edge.
+  new THREE.PlaneGeometry(WORLD * 8, WORLD * 8),
   new THREE.MeshStandardMaterial({ color: 0x6f9a52 }),
 );
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
@@ -131,6 +133,7 @@ function makeEntity(isPlayer, x, z, tint) {
     hp: ATTR.maxHp, maxHp: ATTR.maxHp,
     vy: 0, onGround: true, yaw: isPlayer ? 0 : Math.random() * Math.PI * 2,
     atkCd: 0, atkAnim: 0, blockT: 0, moving: 0,
+    provoked: false, // NPC só revida DEPOIS de ser atacado (passivo por padrão)
     ai: isPlayer ? null : { state: 'wander', t: 0, tx: x, tz: z },
     plate: isPlayer ? null : makePlate(),
   };
@@ -149,7 +152,21 @@ function spawnAll() {
 
 // vetor de frente a partir do yaw (frente = -Z)
 function fwd(yaw) { return new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)); }
-function rightOf(yaw) { return new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)); }
+// yaw que encara a direção de movimento (dx,dz)
+function yawOf(dx, dz) { return Math.atan2(-dx, -dz); }
+// interpolação angular pelo caminho mais curto
+function lerpAngle(a, b, t) {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2; else if (d < -Math.PI) d += Math.PI * 2;
+  return a + d * Math.min(1, t);
+}
+// menor vetor de->para num mundo TOROIDAL (bordas costuradas)
+function wrapDelta(from, to) {
+  let dx = to.x - from.x, dz = to.z - from.z;
+  if (dx > WORLD) dx -= 2 * WORLD; else if (dx < -WORLD) dx += 2 * WORLD;
+  if (dz > WORLD) dz -= 2 * WORLD; else if (dz < -WORLD) dz += 2 * WORLD;
+  return new THREE.Vector3(dx, 0, dz);
+}
 
 // ── HUD ──────────────────────────────────────────────────────────────────────
 function makePlate() {
@@ -177,7 +194,7 @@ function selectSlot(i) {
 
 // ── input ────────────────────────────────────────────────────────────────────
 const keys = {};
-let locked = false, running = false;
+let running = false;
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'KeyE' || e.code === 'KeyI') $('#inv').classList.toggle('open');
@@ -186,20 +203,14 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { keys[e.code] = false; });
 addEventListener('wheel', (e) => { if (running) selectSlot(selSlot + (e.deltaY > 0 ? 1 : -1)); }, { passive: true });
 
-canvas.addEventListener('click', () => { if (running && !locked) canvas.requestPointerLock(); });
-document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
-addEventListener('mousemove', (e) => {
-  if (!locked || !player) return;
-  player.yaw -= e.movementX * SENS;
-  pitch = Math.max(-0.45, Math.min(0.8, pitch - e.movementY * SENS));
-});
+// sem pointer-lock / mouse-look: o corpo gira para encarar o movimento; câmera
+// segue de um ângulo fixo. Clique esq. = atacar, clique dir. = bloquear/esquivar.
 addEventListener('contextmenu', (e) => e.preventDefault());
 addEventListener('mousedown', (e) => {
-  if (!running || !locked || !player.alive) return;
+  if (!running || !player.alive) return;
   if (e.button === 0) attack(player);
   else if (e.button === 2) blockDodge(player);
 });
-let pitch = 0.15;
 
 // ── combate ──────────────────────────────────────────────────────────────────
 function attack(e) {
@@ -209,10 +220,10 @@ function attack(e) {
   const targets = e.isPlayer ? npcs : [player];
   for (const t of targets) {
     if (!t.alive) continue;
-    const to = t.group.position.clone().sub(origin); to.y = 0;
-    const dist = to.length();
-    if (dist > ATTR.atkRange) continue;
+    const to = wrapDelta(origin, t.group.position); // distância toroidal
+    if (to.length() > ATTR.atkRange) continue;
     if (f.dot(to.normalize()) < ATTR.atkCos) continue; // fora do arco
+    if (e.isPlayer) t.provoked = true; // só revida depois de atacado
     damage(t, ATTR.atkDmg);
   }
 }
@@ -242,8 +253,10 @@ function moveEntity(e, dx, dz, dt) {
   // dash da esquiva decai
   if (e.dodgeVX) { dx += e.dodgeVX; dz += e.dodgeVZ; e.dodgeVX *= 0.82; e.dodgeVZ *= 0.82; if (Math.abs(e.dodgeVX) < 0.3) e.dodgeVX = e.dodgeVZ = 0; }
   const p = e.group.position;
-  p.x = Math.max(-WORLD + 2, Math.min(WORLD - 2, p.x + dx * dt));
-  p.z = Math.max(-WORLD + 2, Math.min(WORLD - 2, p.z + dz * dt));
+  p.x += dx * dt; p.z += dz * dt;
+  // mundo TOROIDAL: ao cruzar a borda, teleporta para a borda oposta (costura)
+  if (p.x > WORLD) p.x -= 2 * WORLD; else if (p.x < -WORLD) p.x += 2 * WORLD;
+  if (p.z > WORLD) p.z -= 2 * WORLD; else if (p.z < -WORLD) p.z += 2 * WORLD;
   // gravidade / pulo
   e.vy -= ATTR.gravity * dt; p.y += e.vy * dt;
   if (p.y <= 0) { p.y = 0; e.vy = 0; e.onGround = true; }
@@ -265,14 +278,18 @@ function animate(e, time) {
 
 function updatePlayer(dt) {
   const p = player; if (!p.alive) return;
-  let dx = 0, dz = 0;
-  const f = fwd(p.yaw), r = rightOf(p.yaw);
-  if (keys.KeyW || keys.ArrowUp) { dx += f.x; dz += f.z; }
-  if (keys.KeyS || keys.ArrowDown) { dx -= f.x; dz -= f.z; }
-  if (keys.KeyD || keys.ArrowRight) { dx += r.x; dz += r.z; }
-  if (keys.KeyA || keys.ArrowLeft) { dx -= r.x; dz -= r.z; }
-  const len = Math.hypot(dx, dz); if (len > 0) { dx = dx / len * ATTR.speed; dz = dz / len * ATTR.speed; }
-  if ((keys.Space) && p.onGround) { p.vy = ATTR.jump; p.onGround = false; }
+  let dx = 0, dz = 0; // entrada em direções de MUNDO (câmera fixa) → intuitivo
+  if (keys.KeyW || keys.ArrowUp) dz -= 1;
+  if (keys.KeyS || keys.ArrowDown) dz += 1;
+  if (keys.KeyA || keys.ArrowLeft) dx -= 1;
+  if (keys.KeyD || keys.ArrowRight) dx += 1;
+  const len = Math.hypot(dx, dz);
+  if (len > 0) {
+    dx /= len; dz /= len;
+    p.yaw = lerpAngle(p.yaw, yawOf(dx, dz), dt * TURN); // mover GIRA o corpo
+    dx *= ATTR.speed; dz *= ATTR.speed;
+  }
+  if (keys.Space && p.onGround) { p.vy = ATTR.jump; p.onGround = false; }
   moveEntity(p, dx, dz, dt);
   if (p.atkCd > 0) p.atkCd -= dt;
   if (p.atkAnim > 0) p.atkAnim -= dt;
@@ -281,20 +298,20 @@ function updatePlayer(dt) {
 
 function updateNpc(n, dt) {
   if (!n.alive) return;
-  const toP = player.group.position.clone().sub(n.group.position); toP.y = 0;
-  const dist = toP.length();
   let dx = 0, dz = 0;
   n.ai.t -= dt;
-  if (player.alive && dist < AGGRO) {
-    // perseguir / atacar
-    n.yaw = Math.atan2(-toP.x, -toP.z); // encara o jogador (frente = -Z)
+  if (n.provoked && player.alive) {
+    // PROVOCADO (só depois de atacado): persegue/ataca, distância toroidal
+    const toP = wrapDelta(n.group.position, player.group.position);
+    const dist = toP.length();
+    n.yaw = lerpAngle(n.yaw, yawOf(toP.x, toP.z), dt * TURN);
     if (dist > ATTR.atkRange * 0.85) { const d = toP.normalize(); dx = d.x * ATTR.speed; dz = d.z * ATTR.speed; }
     else if (n.atkCd <= 0) attack(n);
   } else {
-    // vagar
+    // PASSIVO: só vaga (não ataca até ser atacado)
     if (n.ai.t <= 0) { const a = Math.random() * Math.PI * 2, r = 6 + Math.random() * 14; n.ai.tx = n.group.position.x + Math.cos(a) * r; n.ai.tz = n.group.position.z + Math.sin(a) * r; n.ai.t = 2 + Math.random() * 3; }
     const to = new THREE.Vector3(n.ai.tx - n.group.position.x, 0, n.ai.tz - n.group.position.z);
-    if (to.length() > 1) { n.yaw = Math.atan2(-to.x, -to.z); to.normalize(); dx = to.x * ATTR.speed * 0.4; dz = to.z * ATTR.speed * 0.4; }
+    if (to.length() > 1) { n.yaw = lerpAngle(n.yaw, yawOf(to.x, to.z), dt * TURN); to.normalize(); dx = to.x * ATTR.speed * 0.4; dz = to.z * ATTR.speed * 0.4; }
   }
   moveEntity(n, dx, dz, dt);
   if (n.atkCd > 0) n.atkCd -= dt;
@@ -304,11 +321,11 @@ function updateNpc(n, dt) {
 
 // câmera 3ª pessoa
 function updateCamera() {
-  const f = fwd(player.yaw);
-  const head = player.group.position.clone().add(new THREE.Vector3(0, 2.2, 0));
-  const dist = 8, height = 3.5 + pitch * 6;
-  camera.position.copy(head).addScaledVector(f, -dist).add(new THREE.Vector3(0, height, 0));
-  camera.lookAt(head);
+  // ângulo FIXO (atrás+acima): segue a posição, não gira — assim o giro do corpo
+  // ao mover fica nítido. Ao cruzar a costura do mundo, a câmera teleporta junto.
+  const t = player.group.position;
+  camera.position.set(t.x, 9, t.z + 12);
+  camera.lookAt(t.x, 1.6, t.z);
 }
 
 // projetar nameplates + barras
@@ -359,17 +376,17 @@ function reset() {
   if (player) scene.remove(player.group);
   for (const n of npcs) { scene.remove(n.group); n.plate?.remove(); }
   spawnAll();
-  pitch = 0.15; selectSlot(0);
+  selectSlot(0);
   $('#end').classList.add('hidden');
 }
 function startGame() {
   if (!player) reset();
   $('#start').classList.add('hidden');
-  running = true; canvas.requestPointerLock();
+  running = true;
 }
 
 $('#start-btn').addEventListener('click', startGame);
-$('#end-btn').addEventListener('click', () => { reset(); running = true; canvas.requestPointerLock(); });
+$('#end-btn').addEventListener('click', () => { reset(); running = true; });
 
 buildBars();
 tryLoadModel().finally(() => { spawnAll(); frame(); });
